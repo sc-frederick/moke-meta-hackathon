@@ -32,6 +32,7 @@ jobs:
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-bun-
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - run: bun run build:concepts
       - run: bun run test
       - run: bun run build
       - if: runner.os == 'Linux'

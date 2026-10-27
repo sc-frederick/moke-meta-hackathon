@@ -23,5 +23,10 @@
     "applicationRuntime": "bun",
     "applicationTransport": "Effect RPC over authenticated loopback HTTP",
     "rendererTransport": "Effect RPC over authorized Electron MessagePorts"
+  },
+  "design": {
+    "status": "visual-study",
+    "selection": "design/selection.json",
+    "surface": "design/concepts/DESIGN.md"
   }
 }
