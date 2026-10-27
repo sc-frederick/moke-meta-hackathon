@@ -1,7 +1,70 @@
-# moke-meta-hackathon
+# Moke
 
-Electron desktop shell with a bundled Bun backend, SvelteKit 3, Effect 4,
-Effect SQL, and shared schema-validated Effect RPC contracts.
+A desktop workbench for engineering drawing review, built for the Meta AI
+Developer Hackathon.
+
+Moke is being built to help engineers inspect drawing-review findings, correct
+the evidence behind them, and recheck the affected conclusions when a drawing
+changes. Each finding should lead back to the source sheet, the observations,
+and the calculation that supports it.
+
+## The review workflow
+
+The planned workflow keeps the engineer involved at each step:
+
+1. **Review a drawing set.** Keep the original PDFs in a local project and select
+   the sheets and engineering check to review.
+2. **Take a closer look.** Meta Muse identifies missing evidence and requests
+   detailed crops rendered from the original PDF. SAM proposes object boundaries
+   where segmentation helps.
+3. **Inspect a finding.** Follow it to the source region, accepted facts, and
+   explicit check inputs. Missing or unreadable evidence leaves a check unresolved.
+4. **Correct the interpretation.** Update an accepted fact and recompute the
+   dependent checks, including withdrawing a false alarm when warranted.
+5. **Recheck a revision.** Mark affected results as stale, inspect the new
+   evidence, and retain the history and unrelated results.
+
+The initial target is one engineering rule applied to a small drawing set:
+a supported issue, a corrected false alarm, and a revision recheck. The rule
+and SAM's contribution will be selected through experiments on representative
+drawings. Engineering applicability, measurements, and conclusions remain
+subject to reviewer verification.
+
+## Current status
+
+**Early development.** The desktop foundation and an interactive UI study are
+in place. The drawing-review workflow above is not implemented yet.
+
+- **Working foundation:** Electron desktop shell, bundled Bun backend, local
+  SQLite with backup and restore, schema-validated Effect RPC, and desktop tests.
+- **UI study:** project-based conversations, a findings menu, and a source panel
+  using sample content. The running app still opens the notes smoke example.
+- **Planned:** PDF rendering and evidence mapping, Muse/SAM review tools,
+  corrections and revision checks, durable review execution, and cloud handoff.
+
+Provider configuration and manual API checks are available. The app itself does
+not call Meta or Baseten yet.
+
+## Review architecture
+
+The selected architecture keeps projects and review execution local by default,
+with an explicit **Continue in cloud** action planned for long reviews:
+
+| Part                       | Responsibility                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| Electron and SvelteKit     | Desktop workbench, project navigation, findings, and source inspection                          |
+| Bun and Effect             | Application services, shared contracts, SQLite, evidence, calculations, and dependency tracking |
+| Pi Durable, planned        | Persist the agent's execution state behind an Effect application service                        |
+| Meta Muse and SAM, planned | Choose useful inspection actions, interpret drawing evidence, and propose geometry              |
+| Modal Sandbox, planned     | Continue the same versioned review engine from a checkpoint after an explicit handoff           |
+
+Local execution still uses hosted inference: selected drawing evidence is sent
+to Meta or Baseten. The planned cloud handoff also transfers the source material
+needed to continue the review. Neither path implies fully offline inference.
+
+See the [review runtime decision](docs/review-runtime.md) for ownership, recovery,
+and handoff requirements, and the [docs index](docs/README.md) for the supporting
+design and setup notes.
 
 ## Development
 
@@ -100,9 +163,18 @@ local backend credential is a process boundary, not end-user authentication.
 Authenticated apps must implement and pass `test:auth` before deployment. Apps
 intentionally without login record authentication as none in `.project-kit/manifest.json`.
 
-Choose visual design from the private Uiverse archive with `project-kit designs`
-and `project-kit design <slug> .`. Keep reference source assets and licenses out
-of public distributions.
+The desktop UI study adapts Nightdesk from the private Uiverse archive. See the
+[design notes](design/concepts/DESIGN.md) for the selected reference and license
+handling. Keep reference source assets out of public distributions.
+
+## Hackathon provenance
+
+The Moke name and review prompts predate this entry. This repository starts a
+fresh application implementation from the project-kit desktop starter; it does
+not reuse the earlier Moke application. The drawing-review behavior, evidence
+handling, corrections, and revision workflow are the intended new contribution.
+The [runtime decision](docs/review-runtime.md) records dependency attribution
+and the distinction between the underlying agent harness and Moke's work.
 
 ## Maintenance
 
