@@ -11,21 +11,30 @@
     "#lib/*": "./src/lib/*"
   },
   "scripts": {
-    "dev": "node scripts/desktop-dev.mjs",
-    "build": "vp build && node scripts/build-desktop.mjs",
-    "check": "svelte-kit sync && vp check && svelte-check --tsgo --tsconfig ./tsconfig.json --fail-on-warnings",
-    "test": "vp test run",
-    "test:e2e": "playwright test",
-    "verify": "pnpm check && pnpm test && pnpm build && pnpm test:e2e",
-    "effect:setup": "effect-tsgo patch --typescript-package @typescript/native",
-    "package:desktop": "pnpm build && electron-builder --publish never"
+    "dev": "bun --no-orphans scripts/desktop-dev.mjs",
+    "build": "bun run build:ui && bun run build:desktop && bun run build:backend",
+    "build:ui": "bun --bun vite build",
+    "build:desktop": "bun build ./desktop/main.ts --target node --packages external --outfile ./dist/electron/main.mjs && bun build ./desktop/preload.ts --target node --format cjs --external electron --outfile ./dist/preload/preload.cjs",
+    "check": "bun run typecheck && bun run lint && bun run format:check",
+    "typecheck": "bun --bun svelte-kit sync && bun check --no-script && bun --bun svelte-check --tsgo --tsconfig ./tsconfig.json --fail-on-warnings",
+    "lint": "bun --bun oxlint -c oxlint.config.ts --disable-nested-config src desktop backend scripts tests tools *.ts",
+    "format": "bun fmt",
+    "format:check": "bun fmt --check",
+    "test": "bun test",
+    "test:e2e": "bun --bun playwright test",
+    "verify": "bun run check && bun run test && bun run build && bun run test:e2e",
+    "effect:setup": "bun --bun effect-tsgo patch --typescript-package @typescript/native",
+    "postinstall": "bun run effect:setup",
+    "package:desktop": "bun run build && bun --bun electron-builder --publish never",
+    "build:backend": "bun build ./backend/main.ts --compile --outfile ./dist/backend/app-backend --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
+    "test:packaged": "bun scripts/test-packaged.ts"
   },
   "dependencies": {
-    "@effect/sql-sqlite-node": "4.0.4",
     "effect": "4.0.4",
     "electron-effect-rpc": "1.0.1"
   },
   "devDependencies": {
+    "@effect/sql-sqlite-bun": "4.0.4",
     "@effect/tsgo": "0.53.0",
     "@opentelemetry/api": "1.9.1",
     "@oxlint/plugins": "1.88.0",
@@ -33,20 +42,28 @@
     "@sveltejs/adapter-static": "4.0.0",
     "@sveltejs/kit": "3.0.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/bun": "1.4.4",
     "@types/node": "24.10.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "electron": "44.7.2",
     "electron-builder": "26.15.3",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2005",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.2.0",
-    "vite-plus": "1.2.0",
-    "vitest": "5.0.4"
+    "vite": "8.3.5"
   },
   "engines": {
-    "node": ">=24.16.0"
+    "bun": ">=1.4.4"
   },
-  "packageManager": "pnpm@12.11.2",
-  "desktopName": "moke-meta-hackathon.desktop"
+  "packageManager": "bun@1.4.4",
+  "desktopName": "moke-meta-hackathon.desktop",
+  "overrides": {
+    "hono": "4.12.14"
+  },
+  "trustedDependencies": [
+    "electron",
+    "esbuild"
+  ]
 }

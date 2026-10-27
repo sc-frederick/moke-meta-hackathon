@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, Menu, net, protocol } from "electron";
-import { SqliteClient } from "@effect/sql-sqlite-node";
 import { Effect, Layer, Logger, ManagedRuntime } from "effect";
 import { MainRpcServer } from "electron-effect-rpc/main";
 import { appendFileSync } from "node:fs";
@@ -7,8 +6,8 @@ import { mkdir } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { NotesRpc } from "../src/lib/notes.ts";
-import { NotesHandlers, NotesStore } from "../src/lib/server/notes-store.ts";
-import { exportDatabase, migrateDatabase, restoreDatabase } from "./database-files.ts";
+import { BackendApi } from "./backend.ts";
+import { NotesProxy } from "./notes-proxy.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -41,8 +40,6 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       const dataDirectory = process.env.PROJECT_KIT_DATA_DIRECTORY ?? app.getPath("userData");
-      const filename = join(dataDirectory, "app.sqlite");
-      const backupDirectory = join(dataDirectory, "backups");
 
       const migrationDirectory = app.isPackaged
         ? join(process.resourcesPath, "migrations")
@@ -57,33 +54,41 @@ if (!app.requestSingleInstanceLock()) {
 
       const logging = Logger.layer([fileLogger, Logger.consoleJson]);
 
+      const executable = process.platform === "win32" ? "app-backend.exe" : "app-backend";
+
+      const backend = BackendApi.layer({
+        command: app.isPackaged
+          ? [join(process.resourcesPath, "backend", executable)]
+          : ["bun", "--no-orphans", join(root, "backend/main.ts")],
+        dataDirectory,
+        migrationDirectory,
+        onUnexpectedExit: () => {
+          dialog.showErrorBox(
+            "Backend stopped",
+            "The application service stopped unexpectedly. Please reopen the app.",
+          );
+          app.quit();
+        },
+      });
+
       const server = MainRpcServer.layer(NotesRpc, {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
-      }).pipe(
-        Layer.provide(NotesHandlers),
-        Layer.provide(NotesStore.layer),
-        Layer.provide(SqliteClient.layer({ filename })),
-        Layer.provide(logging),
-      );
+      }).pipe(Layer.provide(NotesProxy), Layer.provideMerge(backend), Layer.provide(logging));
 
       const runtime = ManagedRuntime.make(server);
 
-      const start = Effect.gen(function* () {
-        yield* Effect.scoped(migrateDatabase(filename, migrationDirectory, backupDirectory));
-        yield* Effect.logInfo("Database is ready.");
-      }).pipe(Effect.provide(logging));
-
       try {
-        await Effect.runPromise(start);
-        await runtime.runPromise(Effect.logInfo("Desktop RPC is ready."));
+        await runtime.runPromise(Effect.logInfo("Desktop RPC and Bun backend are ready."));
       } catch {
         dialog.showErrorBox(
           "Unable to start",
-          "The database could not be opened or migrated. Existing data was preserved. Check the application logs.",
+          "The application service could not start or migrate its database. Existing data was preserved. Check the application logs.",
         );
         await runtime.dispose();
         app.exit(1);
+
+        return;
       }
 
       const buildRoot = join(root, "build");
@@ -149,9 +154,12 @@ if (!app.requestSingleInstanceLock()) {
 
                   if (result.canceled || result.filePath === undefined) return;
 
-                  await Effect.runPromise(
-                    Effect.scoped(exportDatabase(filename, result.filePath)),
-                  ).catch(showFailure);
+                  const destination = result.filePath;
+                  await runtime
+                    .runPromise(
+                      Effect.flatMap(BackendApi, ({ api }) => api.ExportDatabase({ destination })),
+                    )
+                    .catch(showFailure);
                 },
               },
               {
@@ -177,20 +185,18 @@ if (!app.requestSingleInstanceLock()) {
 
                   if (confirmation.response !== 1) return;
 
-                  await runtime.dispose();
-
                   try {
-                    await Effect.runPromise(
-                      Effect.scoped(
-                        restoreDatabase(filename, source, migrationDirectory, backupDirectory),
-                      ),
+                    await runtime.runPromise(
+                      Effect.flatMap(BackendApi, ({ api }) => api.RestoreDatabase({ source })),
                     );
                   } catch {
                     showFailure();
+
+                    return;
                   }
 
                   app.relaunch();
-                  app.exit(0);
+                  app.quit();
                 },
               },
               { type: "separator" },

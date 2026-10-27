@@ -7,5 +7,21 @@
     "authentication": "undecided"
   },
   "effectRevision": "e17ecdbe902aa7108f775c8ab9c0ddf9f38801ab",
-  "references": "installed"
+  "references": "installed",
+  "toolchain": {
+    "packageManager": "bun@1.4.4",
+    "toolingRuntime": "bun",
+    "typechecker": "bun check",
+    "componentChecker": "svelte-check --tsgo",
+    "formatter": "bun fmt",
+    "linter": "oxlint",
+    "testRunner": "bun:test",
+    "frontendBuilder": "vite",
+    "desktopBuilder": "bun build",
+    "backendBuilder": "bun build --compile",
+    "desktopRuntime": "electron",
+    "applicationRuntime": "bun",
+    "applicationTransport": "Effect RPC over authenticated loopback HTTP",
+    "rendererTransport": "Effect RPC over authorized Electron MessagePorts"
+  }
 }

@@ -3,8 +3,8 @@ import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { expect, test } from "vite-plus/test";
-import { exportDatabase, migrateDatabase, restoreDatabase } from "../desktop/database-files.ts";
+import { expect, test } from "bun:test";
+import { exportDatabase, migrateDatabase, restoreDatabase } from "../backend/database-files.ts";
 
 test("an upgrade backs up real data; export and restore recover it", async () => {
   const root = await mkdtemp(join(tmpdir(), "database-files-"));
@@ -46,7 +46,7 @@ test("an upgrade backs up real data; export and restore recover it", async () =>
     restored.close();
     const applied = await readFile(join(migrations, "0002_add_settings.sql"), "utf8");
     await writeFile(join(migrations, "0002_add_settings.sql"), applied + " -- edited");
-    await expect(migrate()).rejects.toThrow();
+    expect(migrate()).rejects.toThrow();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -67,7 +67,7 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
       join(migrations, "0002_broken.sql"),
       "CREATE TABLE partial (id INTEGER); THIS IS NOT SQL;",
     );
-    await expect(
+    expect(
       Effect.runPromise(Effect.scoped(migrateDatabase(filename, migrations, backups))),
     ).rejects.toThrow();
     const database = new DatabaseSync(filename);
@@ -77,7 +77,7 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
     database.close();
     const corrupt = join(root, "bad.sqlite");
     await writeFile(corrupt, "invalid database");
-    await expect(
+    expect(
       Effect.runPromise(Effect.scoped(restoreDatabase(filename, corrupt, migrations, backups))),
     ).rejects.toThrow();
     const preserved = new DatabaseSync(filename);

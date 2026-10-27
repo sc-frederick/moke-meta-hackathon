@@ -8,7 +8,7 @@
     "noFallthroughCasesInSwitch": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
-    "types": ["$app/types", "node"],
+    "types": ["$app/types", "node", "bun"],
     "plugins": [
       {
         "name": "@effect/language-service",
@@ -19,12 +19,12 @@
           "effect/sql",
           "effect/http",
           "@effect/sql-d1",
-          "@effect/sql-sqlite-node",
+          "@effect/sql-sqlite-bun",
           "@effect/platform-node"
         ]
       }
     ]
   },
-  "include": ["src", "desktop", "tests", "scripts", "*.ts", "tools/lint.ts"],
+  "include": ["src", "desktop", "backend", "tests", "scripts", "*.ts", "tools/lint.ts"],
   "exclude": ["repos", "tools/oxlint", "node_modules", "build", "dist", "release", ".alchemy"]
 }

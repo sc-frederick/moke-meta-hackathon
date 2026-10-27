@@ -2,8 +2,11 @@
   "appId": "com.scfrederick.moke-meta-hackathon",
   "productName": "moke-meta-hackathon",
   "directories": { "output": "release" },
-  "files": ["build/**/*", "dist/**/*", "package.json"],
-  "extraResources": [{ "from": "migrations", "to": "migrations" }],
+  "files": ["build/**/*", "dist/electron/**/*", "dist/preload/**/*", "package.json"],
+  "extraResources": [
+    { "from": "migrations", "to": "migrations" },
+    { "from": "dist/backend", "to": "backend" }
+  ],
   "asar": true,
   "forceCodeSigning": false,
   "mac": {

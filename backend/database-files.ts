@@ -5,13 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Effect, Schema } from "effect";
 
-/** A safe failure at the database file, migration, or recovery boundary. */
-export class DatabaseFileError extends Schema.TaggedError<DatabaseFileError>()(
-  "DatabaseFileError",
-  {
-    message: Schema.String,
-  },
-) {}
+import { DatabaseFileError } from "../src/lib/backend-rpc.ts";
 
 const MigrationRow = Schema.Struct({ name: Schema.String, sha256: Schema.String });
 const parseHistory = Schema.decodeUnknownSync(Schema.Array(MigrationRow));

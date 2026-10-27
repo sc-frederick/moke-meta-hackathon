@@ -36,6 +36,7 @@ test("desktop RPC persists a note across app restarts", async () => {
     await expect(page.getByRole("list", { name: "Saved notes" })).toContainText(
       "Saved through Electron RPC",
     );
+    await page.screenshot({ path: test.info().outputPath("desktop.png") });
   } finally {
     await app.close();
   }
