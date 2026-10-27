@@ -29,6 +29,37 @@
     "selection": "design/selection.json",
     "surface": "design/concepts/DESIGN.md"
   },
+  "reviewRuntime": {
+    "status": "selected-not-implemented",
+    "documentation": "docs/review-runtime.md",
+    "comparisonDocumentation": "docs/research/agent-harness-comparison.md",
+    "harness": "@earendil-works/pi-durable",
+    "applicationRuntime": "bun",
+    "localExecutionDefault": true,
+    "cloudExecution": {
+      "provider": "modal",
+      "service": "Sandboxes",
+      "activation": "explicit-checkpoint-handoff"
+    },
+    "modelServing": "Meta Model API or eligible partner inference",
+    "sourcesCheckedOn": "2026-10-27",
+    "sources": [
+      "https://github.com/earendil-works/pi/blob/main/packages/durable/README.md",
+      "https://modal.com/docs/guide/sandboxes",
+      "https://modal.com/docs/guide/sandbox-snapshots",
+      "https://modal.com/docs/guide/volumes"
+    ]
+  },
+  "hackathon": {
+    "bonusDocumentation": "docs/hackathon-bonuses.md",
+    "primaryBonusTarget": "Best Agentic Use-Case",
+    "secondaryBonusTarget": "Best Build on Meta Open Weight Models",
+    "sourcesCheckedOn": "2026-10-27",
+    "sources": [
+      "https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details",
+      "https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver"
+    ]
+  },
   "inference": {
     "environmentTemplate": ".env.example",
     "setupDocumentation": "docs/inference.md",
