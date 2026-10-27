@@ -5,6 +5,12 @@ Effect SQL, and shared schema-validated Effect RPC contracts.
 
 ## Development
 
+Add the Meta and Baseten hackathon keys to the root `.env` file. For a fresh
+checkout, copy `.env.example` to `.env` first. See [Inference setup](docs/inference.md)
+for the key names and [Model reference](docs/models.md) for the full Meta catalog
+and Baseten's required hackathon model ID. The [docs index](docs/README.md) links
+the rest of the project documentation.
+
 Install the Bun version in `.bun-version`, then run:
 
 ```sh
