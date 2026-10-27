@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { Note, NotesRpc, StorageError } from "../notes.ts";
+import { Note, NotesRpc, StorageError } from "../src/lib/notes.ts";
 
 /** Application-owned capability for saving and listing notes. */
 export class NotesStore extends Context.Service<

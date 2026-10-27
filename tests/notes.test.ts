@@ -1,11 +1,11 @@
-import { SqliteClient } from "@effect/sql-sqlite-node";
+import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { Effect, Layer } from "effect";
 import { RpcTest } from "effect/rpc";
 import { SqlClient } from "effect/sql";
 import { readFile } from "node:fs/promises";
-import { expect, test } from "vite-plus/test";
+import { expect, test } from "bun:test";
 import { NotesRpc } from "../src/lib/notes.ts";
-import { NotesHandlers, NotesStore } from "../src/lib/server/notes-store.ts";
+import { NotesHandlers, NotesStore } from "../backend/notes-store.ts";
 
 test("RPC saves and reads notes through real SQLite", async () => {
   const schema = await readFile(new URL("../migrations/0001_notes.sql", import.meta.url), "utf8");

@@ -6,10 +6,17 @@ use its atomic batch primitive for fixed multi-statement operations.
 
 ## Desktop
 
-The database is app.sqlite in Electron's userData directory. Startup closes its
-migration connection before acquiring the application SQL Layer. The Node SQLite
-driver uses the built-in node:sqlite module, so no separate native SQLite addon is
-required. Heavy database work can move to a utility process when the app needs it.
+The database is app.sqlite in Electron's userData directory. Electron passes that
+directory to its private Bun backend, which exclusively owns database operations.
+Startup closes its migration connection before accepting API requests. Application
+queries use Effect SQL with the Bun SQLite driver. The migration and backup code
+uses Bun's node:sqlite compatibility API so the existing backup format, migration
+hashes, and recovery behavior remain intact. No separate SQLite addon is required.
+
+Each note operation opens and closes its scoped SQL Layer. A backend-owned
+semaphore serializes queries, exports, and restores, so restore never replaces an
+open application database. The renderer receives only note APIs. Export and
+restore are typed operations available to the authenticated desktop shell.
 
 Add migration files named 0001_name.sql, 0002_name.sql, and so on. Files may contain
 multiple SQL statements. The runner owns transactions; migrations must not contain
@@ -18,10 +25,15 @@ backs up the database using SQLite's consistent backup API, then applies pending
 files and history records in one transaction. Failures preserve existing data.
 The five most recent automatic pre-migration backups are retained.
 
-File > Export database creates a consistent backup, including committed WAL data.
-File > Restore database checks integrity and migration compatibility, closes the
-application runtime, keeps a pre-restore backup, replaces the database, and
-restarts. A migration or restore failure must never reset or delete user data.
+File > Export database creates a consistent backup, including committed WAL data,
+then finalizes it in DELETE journal mode so it can be opened as a standalone,
+read-only file on every OS. Automatic backups use the same format.
+File > Restore database checks integrity and migration compatibility after prior
+operations have closed their connections, keeps a pre-restore backup, asks SQLite
+to checkpoint and leave WAL mode, replaces the database, and restarts the desktop
+app. SQLite manages its journal files; never remove live WAL files manually.
+Failed restores leave the backend usable and preserve the current database.
+A migration or restore failure must never reset or delete user data.
 
 ## Web
 

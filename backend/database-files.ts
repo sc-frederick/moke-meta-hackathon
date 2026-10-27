@@ -5,13 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 import { Effect, Schema } from "effect";
 
-/** A safe failure at the database file, migration, or recovery boundary. */
-export class DatabaseFileError extends Schema.TaggedError<DatabaseFileError>()(
-  "DatabaseFileError",
-  {
-    message: Schema.String,
-  },
-) {}
+import { DatabaseFileError } from "../src/lib/backend-rpc.ts";
 
 const MigrationRow = Schema.Struct({ name: Schema.String, sha256: Schema.String });
 const parseHistory = Schema.decodeUnknownSync(Schema.Array(MigrationRow));
@@ -33,6 +27,31 @@ const open = (filename: string, readOnly = false) =>
     sqlite(() => new DatabaseSync(filename, { readOnly }), "The database could not be opened."),
     (database) => Effect.sync(() => database.close()),
   );
+
+// A standalone backup must not need WAL sidecars to be opened read-only on macOS.
+// https://github.com/oven-sh/bun/issues/45171
+const finishJournal = (database: DatabaseSync) =>
+  sqlite(
+    () =>
+      Schema.decodeUnknownSync(Schema.Struct({ journal_mode: Schema.Literal("delete") }))(
+        database.prepare("PRAGMA journal_mode = DELETE").get(),
+      ),
+    "The database journal could not be finalized. Existing data was preserved.",
+  );
+
+const saveBackup = Effect.fn("saveBackup")(function* (
+  database: DatabaseSync,
+  destination: string,
+  message: string,
+) {
+  yield* io(() => backup(database, destination), message);
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const target = yield* open(destination);
+      yield* finishJournal(target);
+    }),
+  );
+});
 
 const loadMigrations = Effect.fn("loadMigrations")(function* (directory: string) {
   const entries = yield* io(() => readdir(directory), "The migration directory could not be read.");
@@ -90,8 +109,9 @@ const snapshot = Effect.fn("snapshot")(function* (
   );
   const name = `${new Date().toISOString().replaceAll(":", "-")}-${reason}-${randomUUID()}.sqlite`;
   const filename = join(directory, name);
-  yield* io(
-    () => backup(database, filename),
+  yield* saveBackup(
+    database,
+    filename,
     "The database backup failed. The original database was preserved.",
   );
 
@@ -185,7 +205,7 @@ export const exportDatabase = Effect.fn("exportDatabase")(function* (
   destination: string,
 ) {
   const database = yield* open(filename, true);
-  yield* io(() => backup(database, destination), "The database could not be exported.");
+  yield* saveBackup(database, destination, "The database could not be exported.");
 
   return destination;
 });
@@ -225,15 +245,17 @@ export const restoreDatabase = Effect.fn("restoreDatabase")(function* (
   if (existsSync(filename)) {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const current = yield* open(filename, true);
+        const current = yield* open(filename);
         yield* snapshot(current, backupDirectory, "before-restore");
+        // SQLite checkpoints and removes its own WAL before the main file is replaced.
+        yield* finishJournal(current);
       }),
     );
   }
 
   const replacement = join(dirname(filename), `${basename(filename)}.${randomUUID()}.restore`);
   yield* Effect.acquireRelease(
-    io(() => backup(incoming, replacement), "The backup could not be prepared for restore."),
+    saveBackup(incoming, replacement, "The backup could not be prepared for restore."),
     () => Effect.promise(() => rm(replacement, { force: true })),
   );
   yield* io(

@@ -1,6 +1,9 @@
 # moke-meta-hackathon
 
-Use pnpm and Vite+. Run pnpm verify before handing back implementation changes.
+Use the Bun version in .bun-version. Run bun run verify before handing back implementation changes.
+Use Bun for installs, scripts, checking, formatting, tests, and desktop/backend builds.
+SvelteKit's frontend build uses Vite running on Bun. Oxlint runs on Bun and retains
+the vendored rules. Keep svelte-check --tsgo for Svelte and Effect diagnostics.
 Project decisions and source provenance live in .project-kit/manifest.json.
 
 ## Effect and coding standards
@@ -29,9 +32,14 @@ the application rather than adding a second UI system.
 
 ## Runtime boundaries
 
-Use Effect SQL and Effect RPC. Web bindings come from the Alchemy declaration;
-keep request resources scoped to the request. Desktop database access stays
-outside the renderer, with RPC restricted to the app's trusted top-level frame.
+Use Effect SQL and Effect RPC. Electron owns windows, menus, dialogs, and the
+trusted renderer bridge. The bundled Bun process owns application APIs, SQL,
+migrations, and recovery. All process connections use shared Effect Schema
+contracts. Never import backend services or Bun APIs into Electron or the renderer.
+Keep SQL resources scoped to each operation and serialize recovery with queries.
+Desktop RPC remains restricted to the app's trusted top-level frame. The Bun HTTP
+endpoint binds only to loopback, requires its private per-launch credential, and
+rejects browser-origin requests. Keep credentials out of renderer code and logs.
 
 Keep SQLite migrations immutable after application. Desktop migrations run after
 a consistent backup and stop visibly on failure. Read docs/data.md before changing

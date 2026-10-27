@@ -1,0 +1,33 @@
+[run]
+bun = true
+shell = "bun"
+
+[install]
+exact = true
+
+[test]
+root = "./tests"
+pathIgnorePatterns = ["**/e2e/**"]
+
+[fmt]
+printWidth = 100
+ignorePatterns = [
+  "repos/**",
+  "tools/oxlint/**",
+  "node_modules/**",
+  ".svelte-kit/**",
+  "build/**",
+  "dist/**",
+  "release/**",
+  ".alchemy/**",
+  ".wrangler/**",
+  "test-results/**",
+  "playwright-report/**",
+  "coverage/**",
+  ".project-kit/**",
+  "design/reference/**",
+  "design/concepts/**",
+  ".agents/**",
+  ".codex/**",
+  ".claude/**",
+]

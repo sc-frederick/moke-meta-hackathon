@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { OxlintConfig } from "oxlint";
 
 // Keep the registered rules explicit so application type checking never traverses
 // the vendored plugin implementation. Review this list when its upstream pin moves.
@@ -32,9 +33,32 @@ const effectRules = [
 ];
 
 /** Enable the pinned generic and Effect rules from the vendored plugins. */
-export function lintSettings(pluginDirectory = "tools/oxlint/anti-slop") {
+export function lintSettings(pluginDirectory = "tools/oxlint/anti-slop"): OxlintConfig {
   return {
     options: { typeAware: true, typeCheck: true },
+    overrides: [
+      {
+        files: ["desktop/**", "src/**"],
+        rules: {
+          "no-restricted-globals": [
+            "error",
+            { name: "Bun", message: "Bun APIs belong in tooling or a separate Bun process." },
+          ],
+          "no-restricted-imports": [
+            "error",
+            {
+              patterns: [
+                {
+                  group: ["bun", "bun:*", "@effect/sql-sqlite-bun", "node:sqlite", "**/backend/**"],
+                  message:
+                    "Database and Bun services belong in the backend; use the shared typed RPC contract.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
     ignorePatterns: [
       "repos/**",
       "tools/oxlint/**",
@@ -65,23 +89,3 @@ export function lintSettings(pluginDirectory = "tools/oxlint/anti-slop") {
     },
   };
 }
-
-/** Keep vendored references and generated outputs outside formatting. */
-export const formatIgnores = [
-  "repos/**",
-  "tools/oxlint/**",
-  "node_modules/**",
-  ".svelte-kit/**",
-  "build/**",
-  "dist/**",
-  "release/**",
-  ".alchemy/**",
-  ".wrangler/**",
-  "test-results/**",
-  "pnpm-lock.yaml",
-  ".project-kit/**",
-  "design/reference/**",
-  ".agents/**",
-  ".codex/**",
-  ".claude/**",
-];

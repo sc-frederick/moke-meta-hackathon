@@ -1,18 +1,27 @@
 # Desktop releases
 
 Development uses a loopback Vite server. Release builds package a static SvelteKit
-3 application in Electron with the same schema-first Effect RPC contract, carried
-over MessagePorts. The preload bridge exposes only the application's RPC endpoint.
-The main process authorizes the trusted top-level frame before connecting it.
+3 application in Electron with the same schema-first Effect RPC contract, carried over MessagePorts to the Electron shell. The preload bridge exposes only
+note APIs. The main process authorizes the trusted top-level frame before
+connecting it, then forwards calls through the same shared schemas to Bun.
 
-GitHub CI checks and packages Windows, macOS, and Linux builds. Releases run from
-version tags matching package.json. They publish unsigned installers and SHA256SUMS
-to GitHub Releases after all builds succeed. Code signing and notarization are not
+GitHub CI checks and packages Windows, macOS, and Linux builds concurrently on
+pull requests, pushes to main, and manual runs of the Verify desktop workflow.
+All three jobs can run at once, and a failure on one platform leaves the others
+running. New commits cancel superseded CI runs. Each job uploads its installers
+as a `desktop-<OS>-<architecture>` artifact, available on the workflow run for seven
+days. CI builds Windows NSIS installers, macOS DMG and ZIP files, and Linux
+AppImage and Debian packages using each runner's native architecture. Repository
+text files use LF line endings on every OS so Windows passes the same format
+checks.
+
+Releases run from version tags matching package.json. They publish unsigned
+installers and SHA256SUMS to GitHub Releases after all builds succeed. Code signing and notarization are not
 configured; the workflow does not require Apple or Windows developer credentials.
 Unsigned applications retain the platform's normal installation prompts.
 
 ```sh
-pnpm package:desktop
+bun run package:desktop
 ```
 
 Increment package.json's version, commit the release, then push its matching v tag
@@ -20,6 +29,34 @@ when ready to publish. The generator itself never creates release tags.
 The initial homepage assumes `sc-frederick/<project-name>`; update package.json to
 the actual project URL before release. Linux desktopName and application identity
 are generated from the project name.
+
+## Bun backend and build tools
+
+CI installs the exact Bun version from `.bun-version` and uses `bun install
+--frozen-lockfile`. Native Bun commands check types, format, run unit tests, bundle
+Electron entrypoints, and compile the backend. SvelteKit keeps its Vite integration,
+running on Bun. Oxlint and Electron Builder also run on Bun; the local custom rules
+and patched Svelte/Effect component checks remain enabled.
+
+Each installer includes a native `app-backend` executable in `resources/backend`,
+outside `app.asar`, plus the immutable SQL migrations. No system Bun or Node is
+required by the packaged app. CI launches the packaged application after building
+its installers on each OS, verifying the compiled backend and renderer together.
+
+Electron starts one backend and sends its schema-validated startup configuration
+over a private stdin pipe. The backend migrates the database, binds an ephemeral
+port on `127.0.0.1`, and returns a versioned, schema-validated readiness message.
+Effect RPC encodes and decodes every request, success, and known application
+failure. A random per-launch bearer credential authorizes Electron; the backend
+rejects browser-origin requests. The credential stays in the two processes and
+is absent from command-line arguments, renderer capabilities, and logs.
+
+The Bun process owns application services, SQL, migrations, backups, and recovery.
+Electron owns windows, menus, dialogs, and the renderer bridge. Closing Electron's
+pipe gracefully stops the backend and its scoped server. The compiled runtime's
+`--no-orphans` support also terminates it if Electron dies abruptly. Startup
+failures stop visibly; an unexpected backend exit prompts the user to reopen the
+app. Backend code does not run in Electron's embedded Node runtime.
 
 ## Update delivery
 
@@ -37,7 +74,7 @@ silent update path across unsigned Windows, macOS, and Linux distributions.
 
 ## Data, configuration, and logs
 
-The main process owns SQLite and filesystem access. File > Export database and
+The Bun backend owns SQLite and application filesystem access. File > Export database and
 File > Restore database provide data recovery. Read docs/data.md before changing
 that lifecycle. Never add database or filesystem capabilities directly to the UI.
 

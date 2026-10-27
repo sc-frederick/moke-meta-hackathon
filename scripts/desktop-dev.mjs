@@ -1,28 +1,40 @@
-import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createServer } from "vite-plus";
+import { createServer } from "vite";
 
-const vp = fileURLToPath(new URL("../node_modules/vite-plus/bin/vp", import.meta.url));
-const built = spawnSync(process.execPath, [vp, "pack"], { stdio: "inherit" });
+const built = Bun.spawnSync([process.execPath, "run", "build:desktop"], {
+  stdin: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
+});
 
-if (built.status !== 0) process.exit(built.status ?? 1);
+if (built.exitCode !== 0) process.exit(built.exitCode);
 
 const server = await createServer({ server: { host: "127.0.0.1", port: 5173, strictPort: true } });
 
 await server.listen();
 
-const electron = fileURLToPath(new URL("../node_modules/electron/cli.js", import.meta.url));
+try {
+  const electron = fileURLToPath(new URL("../node_modules/electron/cli.js", import.meta.url));
 
-const child = spawn(process.execPath, [electron, "."], {
-  stdio: "inherit",
-  env: { ...process.env, PROJECT_KIT_DEV_URL: "http://127.0.0.1:5173" },
-});
+  const child = Bun.spawn([process.execPath, electron, "."], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    env: { ...process.env, PROJECT_KIT_DEV_URL: "http://127.0.0.1:5173" },
+  });
 
-child.on("exit", async (code) => {
+  const interrupt = () => child.kill("SIGINT");
+  const terminate = () => child.kill("SIGTERM");
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", terminate);
+
+  try {
+    process.exitCode = await child.exited;
+  } finally {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+    child.kill();
+  }
+} finally {
   await server.close();
-  process.exit(code ?? 1);
-});
-
-process.once("SIGINT", () => child.kill("SIGINT"));
-
-process.once("SIGTERM", () => child.kill("SIGTERM"));
+}
