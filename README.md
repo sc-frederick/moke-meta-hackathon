@@ -18,6 +18,23 @@ forwards typed application requests to Bun. The renderer has no database or Bun
 access. The packaged app includes a standalone Bun executable; users do not
 install Bun or Node.
 
+## Desktop UI study
+
+Open [the interactive study](design/concepts/index.html) directly in a browser.
+It previews the approved project-based chat navigation, findings menu, and source
+panel using sample content. The current app entry remains the notes smoke example.
+See [the design notes](design/concepts/DESIGN.md) for the interaction and reference.
+Screenshots show the [findings menu](design/concepts/preview.png) and
+[source panel](design/concepts/preview-source.png).
+
+```sh
+bun run build:concepts
+bun run check:concepts
+```
+
+The study is self-contained. Its Svelte source is checked by `bun run check`, and
+CI rebuilds the standalone HTML on all supported desktop platforms.
+
 ## Toolchain
 
 | Task                       | Tool                                                                             |
