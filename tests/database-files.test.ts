@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { constants, Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -85,6 +87,56 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
       preserved.prepare("SELECT count(*) AS count FROM __project_kit_migrations").get(),
     ).toEqual({ count: 1 });
     preserved.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("WAL exports are standalone and restore clears persistent journals before replacement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "database-wal-"));
+  const filename = join(root, "app.sqlite");
+  const exported = join(root, "export.sqlite");
+  const backups = join(root, "backups");
+
+  try {
+    await Effect.runPromise(Effect.scoped(migrateDatabase(filename, "migrations", backups)));
+    const database = new Database(filename);
+    database.run("PRAGMA journal_mode = WAL");
+    database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1);
+    database.run("INSERT INTO notes(text) VALUES ('Keep committed WAL data')");
+    database.close();
+
+    expect(existsSync(`${filename}-wal`)).toBe(true);
+    await Effect.runPromise(Effect.scoped(exportDatabase(filename, exported)));
+    const portable = new DatabaseSync(exported, { readOnly: true });
+
+    try {
+      expect(portable.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "delete" });
+      expect(portable.prepare("SELECT text FROM notes").all()).toEqual([
+        { text: "Keep committed WAL data" },
+      ]);
+    } finally {
+      portable.close();
+    }
+
+    const changed = new Database(filename);
+    changed.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1);
+    changed.run("DELETE FROM notes");
+    changed.close();
+    await Effect.runPromise(
+      Effect.scoped(restoreDatabase(filename, exported, "migrations", backups)),
+    );
+    expect(existsSync(`${filename}-wal`)).toBe(false);
+    expect(existsSync(`${filename}-shm`)).toBe(false);
+    const restored = new DatabaseSync(filename, { readOnly: true });
+
+    try {
+      expect(restored.prepare("SELECT text FROM notes").all()).toEqual([
+        { text: "Keep committed WAL data" },
+      ]);
+    } finally {
+      restored.close();
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -25,12 +25,15 @@ backs up the database using SQLite's consistent backup API, then applies pending
 files and history records in one transaction. Failures preserve existing data.
 The five most recent automatic pre-migration backups are retained.
 
-File > Export database creates a consistent backup, including committed WAL data.
+File > Export database creates a consistent backup, including committed WAL data,
+then finalizes it in DELETE journal mode so it can be opened as a standalone,
+read-only file on every OS. Automatic backups use the same format.
 File > Restore database checks integrity and migration compatibility after prior
-operations have closed their connections, keeps a pre-restore backup, replaces
-the database, and restarts the desktop app. Failed restores leave the backend
-usable and preserve the current database. A migration or restore failure must
-never reset or delete user data.
+operations have closed their connections, keeps a pre-restore backup, asks SQLite
+to checkpoint and leave WAL mode, replaces the database, and restarts the desktop
+app. SQLite manages its journal files; never remove live WAL files manually.
+Failed restores leave the backend usable and preserve the current database.
+A migration or restore failure must never reset or delete user data.
 
 ## Web
 
