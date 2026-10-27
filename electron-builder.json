@@ -1,0 +1,23 @@
+{
+  "appId": "com.scfrederick.moke-meta-hackathon",
+  "productName": "moke-meta-hackathon",
+  "directories": { "output": "release" },
+  "files": ["build/**/*", "dist/**/*", "package.json"],
+  "extraResources": [{ "from": "migrations", "to": "migrations" }],
+  "asar": true,
+  "forceCodeSigning": false,
+  "mac": {
+    "target": ["dmg", "zip"],
+    "identity": "-",
+    "hardenedRuntime": false,
+    "category": "public.app-category.productivity"
+  },
+  "win": { "target": ["nsis"], "signAndEditExecutable": false },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Utility",
+    "syncDesktopName": true,
+    "maintainer": "Stephen Frederick"
+  },
+  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+}

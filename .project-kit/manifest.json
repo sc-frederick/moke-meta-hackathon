@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "generatorVersion": "0.1.0",
+  "settings": {
+    "name": "moke-meta-hackathon",
+    "profile": "desktop",
+    "authentication": "undecided"
+  },
+  "effectRevision": "e17ecdbe902aa7108f775c8ab9c0ddf9f38801ab",
+  "references": "skipped"
+}

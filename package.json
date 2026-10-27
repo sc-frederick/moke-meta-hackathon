@@ -1,0 +1,52 @@
+{
+  "name": "moke-meta-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "moke-meta-hackathon application",
+  "homepage": "https://github.com/sc-frederick/moke-meta-hackathon",
+  "author": "Stephen Frederick",
+  "type": "module",
+  "main": "dist/electron/main.mjs",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "dev": "node scripts/desktop-dev.mjs",
+    "build": "vp build && node scripts/build-desktop.mjs",
+    "check": "svelte-kit sync && vp check && svelte-check --tsgo --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "vp test run",
+    "test:e2e": "playwright test",
+    "verify": "pnpm check && pnpm test && pnpm build && pnpm test:e2e",
+    "effect:setup": "effect-tsgo patch --typescript-package @typescript/native",
+    "package:desktop": "pnpm build && electron-builder --publish never"
+  },
+  "dependencies": {
+    "@effect/sql-sqlite-node": "4.0.4",
+    "effect": "4.0.4",
+    "electron-effect-rpc": "1.0.1"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "0.53.0",
+    "@opentelemetry/api": "1.9.1",
+    "@oxlint/plugins": "1.88.0",
+    "@playwright/test": "1.64.1",
+    "@sveltejs/adapter-static": "4.0.0",
+    "@sveltejs/kit": "3.0.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "24.10.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.2.0",
+    "vite-plus": "1.2.0",
+    "vitest": "5.0.4"
+  },
+  "engines": {
+    "node": ">=24.16.0"
+  },
+  "packageManager": "pnpm@12.11.2",
+  "desktopName": "moke-meta-hackathon.desktop"
+}

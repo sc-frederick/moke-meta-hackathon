@@ -1,0 +1,30 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "types": ["$app/types", "node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnostics": true,
+        "refactors": true,
+        "allowedUnstableApis": [
+          "effect/rpc",
+          "effect/sql",
+          "effect/http",
+          "@effect/sql-d1",
+          "@effect/sql-sqlite-node",
+          "@effect/platform-node"
+        ]
+      }
+    ]
+  },
+  "include": ["src", "desktop", "tests", "scripts", "*.ts", "tools/lint.ts"],
+  "exclude": ["repos", "tools/oxlint", "node_modules", "build", "dist", "release", ".alchemy"]
+}
