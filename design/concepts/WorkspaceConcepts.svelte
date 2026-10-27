@@ -120,14 +120,16 @@
   }
 
   function chooseThread(project: Project, name: string) {
+    mobileNavigationOpen = false;
+    closeFindings();
+    if (activeProject.id === project.id && thread === name) return;
+
     activeProject = project;
     thread = name;
     isNew = false;
     exchanges = [];
     selectedFinding = null;
     draft = "";
-    mobileNavigationOpen = false;
-    closeFindings();
   }
 
   async function send(event: SubmitEvent) {
@@ -284,7 +286,8 @@
                       >{/each}
                     {#if isNew && activeProject.id === project.id}<button
                         class="current"
-                        onclick={newConversation}
+                        aria-current="page"
+                        onclick={() => chooseThread(project, "New conversation")}
                         ><Icon name="message" size={14} /><span>New conversation</span></button
                       >{/if}
                   </div>
