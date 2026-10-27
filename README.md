@@ -35,6 +35,26 @@ bun run check:concepts
 The study is self-contained. Its Svelte source is checked by `bun run check`, and
 CI rebuilds the standalone HTML on all supported desktop platforms.
 
+## Check API keys
+
+Keep `MODEL_API_KEY` and `BASETEN_API_KEY` in the root `.env`, which Git ignores.
+For a fresh checkout, copy `.env.example` to `.env` and fill in the keys. From the
+repository root, run:
+
+```sh
+bun run check:api-keys
+# Or: bun scripts/check-api-keys.ts
+```
+
+Bun loads `.env` automatically. The script sends one small text generation to
+Meta and one to Baseten using the configured base URLs and text models. Each
+request has a 30-second timeout and may consume API credits. It prints a result
+for each provider without printing keys or response bodies, then exits with code
+1 if either check fails. Image, audio, and segmentation models are not tested.
+
+The requests follow [Meta's Chat Completions API](https://dev.meta.ai/docs/protocols/chat-completions)
+and [Baseten's Model APIs](https://docs.baseten.co/inference/model-apis/overview).
+
 ## Toolchain
 
 | Task                       | Tool                                                                             |

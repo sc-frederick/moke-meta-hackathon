@@ -12,6 +12,7 @@
   },
   "scripts": {
     "dev": "bun --no-orphans scripts/desktop-dev.mjs",
+    "check:api-keys": "bun scripts/check-api-keys.ts",
     "build": "bun run build:ui && bun run build:desktop && bun run build:backend",
     "build:ui": "bun --bun vite build",
     "build:desktop": "bun build ./desktop/main.ts --target node --packages external --outfile ./dist/electron/main.mjs && bun build ./desktop/preload.ts --target node --format cjs --external electron --outfile ./dist/preload/preload.cjs",
