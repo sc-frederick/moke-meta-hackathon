@@ -41,6 +41,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
   if (process.env.PROJECT_KIT_EXECUTABLE !== undefined) {
     options.executablePath = process.env.PROJECT_KIT_EXECUTABLE;
     options.args = [`--user-data-dir=${join(directory, "profile")}`];
+    options.cwd = directory;
   }
 
   let app = await electron.launch(options);
@@ -88,20 +89,22 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixtureA);
     await expect(page.getByTestId("review-workbench")).toBeVisible();
+    await page.getByRole("button", { name: "Create a project", exact: true }).click();
     await page.getByTestId("project-name-input").fill("Lighting coordination");
     await page.getByTestId("create-project-button").click();
     await expect(page.getByTestId("import-pdf")).toBeEnabled();
 
     await page.getByRole("button", { name: "Review settings" }).click();
-    const callLimit = page.getByLabel("Maximum calls per inspection");
-    await expect(callLimit).toHaveValue("12");
+    const callLimit = page.getByRole("button", { name: /^Maximum calls per inspection:/ });
+    await expect(callLimit).toContainText("12 calls");
 
     for (const limit of ["4", "8", "12"]) {
-      await callLimit.selectOption(limit);
-      await expect(callLimit).toHaveValue(limit);
+      await callLimit.click();
+      await page.getByRole("option", { name: new RegExp(`${limit} calls`) }).click();
+      await expect(callLimit).toContainText(`${limit} calls`);
     }
 
-    await page.getByRole("button", { name: "Close source panel" }).click();
+    await page.getByRole("button", { name: "Close review settings" }).click();
     await page.getByTestId("import-pdf").click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
 
@@ -153,7 +156,12 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await page
         .getByTestId(`${side}-statement-input`)
         .fill(`${count} fixtures in this source scope.`);
+      const details = page.getByTestId(`${side}-advanced`);
+
+      if ((await details.getAttribute("open")) === null)
+        await details.locator("summary").first().click();
       await page.getByTestId(`${side}-rationale-input`).fill(rationale);
+      await details.locator("summary").first().click();
       await page.getByTestId(`${side}-coverage-checkbox`).check();
       await page.getByTestId(`accept-${side}-count`).click();
       await expect(page.getByTestId("evaluate-finding")).toBeEnabled();
@@ -167,7 +175,9 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     };
 
     const saveNote = async (text: string) => {
-      await page.getByLabel("Message action").selectOption("note");
+      const note = page.getByRole("button", { name: "Save as note", exact: true });
+
+      if ((await note.getAttribute("aria-pressed")) !== "true") await note.click();
       await page.getByLabel("Message", { exact: true }).fill(text);
       await page.getByRole("button", { name: "Send message" }).click();
       await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
@@ -193,17 +203,18 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.locator(".source-provenance")).toContainText("page 1");
 
     if (live) {
-      await page.getByTestId("start-inspection").click();
-      await expect(page.getByTestId("execution-status")).toHaveText(
-        /· (completed|failed|uncertain|incompatible) ·/,
-        { timeout: 240000 },
-      );
-      await expect(page.getByTestId("execution-status")).toContainText("completed");
+      await page
+        .getByLabel("Message", { exact: true })
+        .fill(
+          "Inspect the selected lighting count against the schedule and propose counts with drawing evidence.",
+        );
+      await page.getByRole("button", { name: "Send message" }).click();
+      await expect(page.locator(".application-message").first()).toBeVisible({ timeout: 240000 });
       await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "drawn: 2",
+        "2 on drawing",
       );
       await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "scheduled: 3",
+        "3 in schedule",
       );
       await page.screenshot({ path: test.info().outputPath("packaged-live-muse.png") });
     }
@@ -211,7 +222,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await accept("drawn", 2, "Counted the two type A symbols within Room 101 on L-101.");
     await accept("scheduled", 3, "Read the Room 101 row on L-601.");
     await expect(page.getByRole("region", { name: "Proposed observations" })).toHaveCount(0);
-    await evaluate("Supported issue");
+    await evaluate("Count mismatch");
     await expect(page.getByTestId("check-history")).toContainText("2 drawn");
     await expect(page.getByTestId("check-history")).toContainText("3 scheduled");
 
@@ -223,12 +234,12 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await createFinding("Room 102 type B");
     await accept("drawn", 1, "Deliberate initial misread for the correction acceptance case.");
     await accept("scheduled", 2, "Read the Room 102 row on L-601.");
-    await evaluate("Supported issue");
+    await evaluate("Count mismatch");
 
     await createFinding("Independent type C detail", true);
     await accept("drawn", 2, "Reviewed the two C symbols in the independent L-601 control detail.");
     await accept("scheduled", 2, "Read the independent control quantity on the same sheet.");
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
 
     const controlId = await page
       .getByTestId("check-history")
@@ -238,10 +249,10 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await openFinding("Room 102 type B");
     await accept("drawn", 2, "Corrected the initial misread after inspecting both B symbols.");
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
     await expect(page.getByTestId("check-history").locator("li")).toHaveCount(2);
     await expect(page.getByTestId("check-history").locator("li").first()).toContainText(
-      "Supported issue",
+      "Count mismatch",
     );
 
     if (screenshots)
@@ -299,7 +310,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       3,
       "Accepted fresh Revision B source showing the added third type A fixture.",
     );
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
     await expect(page.getByTestId("check-history")).toContainText("3 drawn");
 
     if (screenshots)
@@ -433,7 +444,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await openFinding("Room 101 type A");
     await expect(page.getByTestId("check-history").locator("li")).toHaveCount(3);
     await expect(page.getByTestId("check-history").locator("li").last()).toContainText(
-      "Checked, no issue",
+      "Counts match",
     );
     expect(rendererErrors).toEqual([]);
   } finally {

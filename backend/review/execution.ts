@@ -1,6 +1,16 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Harness, type Conversation } from "@earendil-works/pi-durable";
-import { Context, Effect, Layer, Option, PubSub, Schema, Semaphore, Stream } from "effect";
+import {
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  PubSub,
+  Schema,
+  Semaphore,
+  Stream,
+} from "effect";
 import { SqlClient } from "effect/sql";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -12,6 +22,7 @@ import {
   ExecutionStatus,
   RunId,
   StartExecution,
+  routeReviewDiscipline,
   type ExecutionEvent,
 } from "../../src/lib/review/execution.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
@@ -35,6 +46,7 @@ import {
   reviewPromptVersion,
   selectedReviewPrompt,
 } from "./prompts/review-prompt.ts";
+import { reviewModels } from "#lib/review/models.ts";
 
 /** One parent ManagedRuntime enters callback Effects; this service never creates a runtime. */
 export interface ExecutionConfiguration {
@@ -46,6 +58,7 @@ export interface ExecutionConfiguration {
     options?: Effect.RunOptions,
   ) => Promise<A>;
   readonly provider?: ProviderConfiguration;
+  readonly providers?: ReadonlyArray<ProviderConfiguration>;
   readonly closeTimeoutMs?: number;
 }
 
@@ -131,6 +144,10 @@ export class ReviewExecution extends Context.Service<
       ReviewExecution,
       Effect.gen(function* () {
         const { owner, port } = configuration;
+
+        const providers =
+          configuration.providers ?? (configuration.provider ? [configuration.provider] : []);
+
         let callbackEntry = configuration.runPromise;
 
         const runPromise: ExecutionConfiguration["runPromise"] = (operation, options) =>
@@ -424,7 +441,7 @@ export class ReviewExecution extends Context.Service<
           launchDrained.add(finished.promise);
 
           try {
-            const provider = configuration.provider;
+            const provider = providers.find((entry) => (entry.provider ?? "meta") === run.provider);
 
             if (provider === undefined || run.route === "offline")
               throw failure("unavailable", "No inference provider is configured.");
@@ -438,7 +455,9 @@ export class ReviewExecution extends Context.Service<
                 "This inspection uses an earlier instruction version. Start a new inspection explicitly.",
               );
 
-            const admitted = createAdmittedModels(provider, {
+            const selectedProvider = { ...provider, model: run.model };
+
+            const admitted = createAdmittedModels(selectedProvider, {
               maxInputTokens: run.max_input_tokens,
               maxOutputTokens: run.max_output_tokens,
               begin: async (phase, fingerprint) => {
@@ -777,7 +796,13 @@ export class ReviewExecution extends Context.Service<
             Effect.mapError(() => failure("input", "The execution request was invalid.")),
           );
 
-          const identity = ["start", request.projectId, request.findingId, request.budget];
+          const identity = [
+            "start",
+            request.projectId,
+            request.findingId,
+            request.budget,
+            ...(request.model === undefined ? [] : [request.model]),
+          ];
 
           const fingerprint = JSON.stringify(
             request.reviewRequest === undefined ? identity : [...identity, request.reviewRequest],
@@ -790,7 +815,18 @@ export class ReviewExecution extends Context.Service<
 
           if (closing) return yield* failure("cancelled", "Execution is closing.");
 
-          const provider = configuration.provider;
+          const model =
+            request.model ??
+            configuration.provider?.model ??
+            ((configuration.provider?.provider ?? providers[0]?.provider ?? "meta") === "meta"
+              ? "muse-spark-1.3"
+              : "meta-models/muse-spark-open-1026");
+
+          const modelRoute = reviewModels.find((entry) => entry.id === model);
+
+          const provider = providers.find(
+            (entry) => (entry.provider ?? "meta") === modelRoute?.provider,
+          );
 
           if (provider === undefined)
             return yield* failure(
@@ -821,7 +857,17 @@ export class ReviewExecution extends Context.Service<
             request.reviewRequest === undefined || instruction === undefined
               ? null
               : {
-                  request: request.reviewRequest,
+                  request: {
+                    ...request.reviewRequest,
+                    discipline:
+                      request.reviewRequest.discipline === "auto"
+                        ? routeReviewDiscipline(instruction) !== "general"
+                          ? routeReviewDiscipline(instruction)
+                          : routeReviewDiscipline(
+                              `${evidence.finding.objectClass} ${evidence.finding.title} ${evidence.sheets.map((sheet) => sheet.label).join(" ")}`,
+                            )
+                        : request.reviewRequest.discipline,
+                  },
                   instruction,
                   instructionRevision: reviewInstructionRevision,
                 };
@@ -844,6 +890,7 @@ export class ReviewExecution extends Context.Service<
                 );
               const runId = Schema.decodeUnknownSync(RunId)(randomUUID());
               const providerName = provider.provider ?? "meta";
+              const startedAt = DateTime.toEpochMillis(yield* DateTime.now);
 
               const run = {
                 run_id: runId,
@@ -858,8 +905,7 @@ export class ReviewExecution extends Context.Service<
                 version: 0,
                 route: provider.route,
                 provider: providerName,
-                model:
-                  providerName === "meta" ? "muse-spark-1.3" : "meta-models/muse-spark-open-1026",
+                model,
                 max_calls: request.budget.maxCalls,
                 max_input_tokens: request.budget.maxInputTokens,
                 max_output_tokens: request.budget.maxOutputTokens,
@@ -868,6 +914,8 @@ export class ReviewExecution extends Context.Service<
                 reserved_output_tokens: 0,
                 prompt_version: reviewPromptVersion,
                 review_context_json: context === null ? null : JSON.stringify(context),
+                started_at: startedAt,
+                state_changed_at: startedAt,
               };
 
               yield* sql`INSERT INTO review_execution_runs ${sql.insert(run)}`;
@@ -1189,17 +1237,24 @@ export class ReviewExecution extends Context.Service<
         return ReviewExecution.of({
           setup: Effect.succeed(
             new ExecutionSetup({
-              configured: configuration.provider !== undefined,
+              configured: providers.length > 0,
               provider:
                 configuration.provider === undefined
                   ? null
                   : (configuration.provider.provider ?? "meta"),
               model:
-                configuration.provider === undefined
+                configuration.provider?.model ??
+                (configuration.provider === undefined
                   ? null
                   : (configuration.provider.provider ?? "meta") === "meta"
                     ? "muse-spark-1.3"
-                    : "meta-models/muse-spark-open-1026",
+                    : "meta-models/muse-spark-open-1026"),
+              models: reviewModels.map((model) => ({
+                ...model,
+                available: providers.some(
+                  (provider) => (provider.provider ?? "meta") === model.provider,
+                ),
+              })),
               segmentation: port.segmentation !== undefined,
               promptVersion: reviewPromptVersion,
               instructionRevision: reviewInstructionRevision,

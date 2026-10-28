@@ -16,6 +16,7 @@ import { Predicate, Redacted, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { parseResponseReceipt } from "./response.ts";
 import { createExecutionTelemetry, type RequestPhase } from "./telemetry.ts";
+import { reviewModels } from "#lib/review/models.ts";
 
 /** Injectable HTTP transport; Bun's optional fetch utilities are supplied by the adapter. */
 export type ProviderTransport = (
@@ -144,13 +145,16 @@ export function createAdmittedModels(
     throw new Error("Recorded execution requires a recorded transport");
   const identity = createExecutionTelemetry();
   const base: Provider = configuration.provider === "baseten" ? basetenProvider() : metaProvider();
-  const modelId = base.id === "baseten" ? "meta-models/muse-spark-open-1026" : "muse-spark-1.3";
+
+  const modelId =
+    configuration.model ??
+    (base.id === "baseten" ? "meta-models/muse-spark-open-1026" : "muse-spark-1.3");
 
   const baseUrl =
     base.id === "baseten" ? "https://inference.baseten.co/v1" : "https://api.meta.ai/v1";
 
   if (
-    (configuration.model !== undefined && configuration.model !== modelId) ||
+    !reviewModels.some((model) => model.id === modelId && model.provider === base.id) ||
     (configuration.baseUrl !== undefined && configuration.baseUrl.replace(/\/$/, "") !== baseUrl)
   )
     throw new Error("Inference route does not match the selected pinned model");

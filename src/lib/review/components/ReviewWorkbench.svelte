@@ -8,7 +8,7 @@
     ReviewSnapshot,
     Sheet,
   } from "#lib/review/contracts.ts";
-  import { Schema } from "effect";
+  import { Option, Schema } from "effect";
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
@@ -16,7 +16,7 @@
   import { sendReviewMessage } from "#lib/review/conversation.ts";
   import {
     ExecutionBudget,
-    ReviewDiscipline,
+    ReviewDisciplineSelection,
     reviewDisciplines,
     type ExecutionSetup,
     type ExecutionStatus,
@@ -24,7 +24,14 @@
   import FindingInspector from "./FindingInspector.svelte";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
-  import { findingSubtitle, formatOutcome, projectMonogram } from "./review-format.ts";
+  import ReviewSelect from "./ReviewSelect.svelte";
+  import { ReviewModelId, reviewModels } from "#lib/review/models.ts";
+  import {
+    findingSubtitle,
+    formatOutcome,
+    projectMonogram,
+    formatElapsed,
+  } from "./review-format.ts";
 
   let { client }: { client: ReviewClient } = $props();
 
@@ -44,11 +51,12 @@
   let selectedProjectId = $state<Project["id"] | null>(null);
   let selectedConversationId = $state<string | null>(null);
   let selectedFindingId = $state<string | null>(null);
-  let sourceTab = $state<"evidence" | "sheets" | "revision" | "settings">("evidence");
+  let sourceTab = $state<"evidence" | "sheets" | "revision">("evidence");
   let panelOpen = $state(false);
   let reviewFindingId = $state<string | null>(null);
   let reviewMode = $state<"review" | "note">("review");
-  let discipline = $state<typeof ReviewDiscipline.Type>("general");
+  let discipline = $state<typeof ReviewDisciplineSelection.Type>("auto");
+  let selectedModel = $state<typeof ReviewModelId.Type>("muse-spark-1.3");
   let setup = $state.raw<ExecutionSetup | null>(null);
   let executionStatus = $state.raw<ExecutionStatus | null>(null);
   let callLimit = $state(12);
@@ -65,8 +73,14 @@
   let expandedProjects = $state.raw<ReadonlyArray<string>>([]);
 
   let createFindingOpen = $state(false);
-  let newProjectOpen = $state(false);
+  let projectDialog: HTMLDialogElement | undefined = $state();
+  let settingsDialog: HTMLDialogElement | undefined = $state();
+  let projectNameInput: HTMLInputElement | undefined = $state();
   let sourceSide = $state<"drawn" | "scheduled">("drawn");
+  let selectingRegion = $state(false);
+
+  let applySelectedRegion: ((region: import("#lib/review/contracts.ts").Region) => void) | null =
+    null;
 
   let revisionChoices = $state<
     Array<{
@@ -129,6 +143,25 @@
 
   const budget = $derived(
     new ExecutionBudget({ maxCalls: callLimit, maxInputTokens: 64000, maxOutputTokens: 4096 }),
+  );
+
+  const modelOptions = $derived(
+    (
+      setup?.models ??
+      reviewModels.map((model) => ({
+        ...model,
+        available: setup?.configured && setup.provider === model.provider,
+      }))
+    ).map((model) => ({
+      value: model.id,
+      label: model.label,
+      description: `${model.provider === "meta" ? "Meta" : "Baseten"}${model.available ? "" : " · add a connection in settings"}`,
+      disabled: !model.available,
+    })),
+  );
+
+  const selectedModelAvailable = $derived(
+    modelOptions.some((model) => model.value === selectedModel && !model.disabled),
   );
 
   const executionBlocked = $derived(
@@ -236,13 +269,21 @@
 
     if (!ok) return;
     newProjectName = "";
-    newProjectOpen = false;
+    projectDialog?.close();
     selectedFindingId = null;
     selectedConversationId = snapshot?.conversations[0]?.id ?? null;
     reviewFindingId = null;
     executionStatus = null;
     draft = "";
     closeSource();
+  }
+
+  async function openProjectDialog() {
+    closeFindings();
+    mobileNavigationOpen = false;
+    projectDialog?.showModal();
+    await tick();
+    projectNameInput?.focus();
   }
 
   function rememberConversation() {
@@ -306,7 +347,7 @@
     });
 
     if (reviewMode === "review") {
-      if (reviewFinding === null || !setup?.configured || executionBlocked) return;
+      if (reviewFinding === null || !selectedModelAvailable || executionBlocked) return;
       busy = true;
 
       const result = await sendReviewMessage(client, {
@@ -314,6 +355,7 @@
         executionCommandId: newCommandId(),
         findingId: reviewFinding.id,
         discipline,
+        model: selectedModel,
         budget,
       });
 
@@ -533,6 +575,8 @@
   }
 
   function openFinding(finding: Finding) {
+    selectingRegion = false;
+    applySelectedRegion = null;
     selectedFindingId = finding.id;
     selectReviewFinding(finding.id);
     panelOpen = true;
@@ -544,6 +588,8 @@
   }
 
   function closeSource() {
+    selectingRegion = false;
+    applySelectedRegion = null;
     sourceRequest++;
     sourceLoading = false;
     panelOpen = false;
@@ -613,6 +659,20 @@
   }
 
   function openSetup(tab: "sheets" | "settings" | "revision", create = false) {
+    if (tab === "settings") {
+      closeFindings();
+      mobileNavigationOpen = false;
+      settingsDialog?.showModal();
+
+      return;
+    }
+
+    if (panelOpen && sourceTab === tab && !create) {
+      closeSource();
+
+      return;
+    }
+
     panelOpen = true;
     sourceTab = tab;
     createFindingOpen = create;
@@ -629,6 +689,8 @@
   }
 
   function handleKey(event: KeyboardEvent) {
+    if (event.defaultPrevented || projectDialog?.open || settingsDialog?.open) return;
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       closeFindings();
@@ -797,8 +859,12 @@
     void client.executionSetup().then((result) => {
       if (controller.signal.aborted) return;
 
-      if (result.ok) setup = result.value;
-      else error = result.error.message;
+      if (result.ok) {
+        setup = result.value;
+        const configuredModel = Schema.decodeUnknownOption(ReviewModelId)(result.value.model);
+
+        if (Option.isSome(configuredModel)) selectedModel = configuredModel.value;
+      } else error = result.error.message;
     });
 
     return () => {
@@ -868,7 +934,10 @@
               >{importing ? "Importing PDF…" : "Import PDF"}</span
             ></button
           >
-          <button class="ghost sheets-trigger" onclick={() => openSetup("sheets")}
+          <button
+            class="ghost sheets-trigger"
+            aria-expanded={panelOpen && sourceTab === "sheets"}
+            onclick={() => openSetup("sheets")}
             ><ReviewIcon name="file-text" size={15} /><span>Sheets</span><span class="finding-count"
               >{sheets.length}</span
             ></button
@@ -888,46 +957,131 @@
         {/if}
       </div>
     </header>
+    <dialog
+      class="workspace-dialog"
+      bind:this={projectDialog}
+      aria-labelledby="project-dialog-title"
+    >
+      <form class="project-form" data-testid="create-project-form" onsubmit={createProject}>
+        <header>
+          <h2 id="project-dialog-title">New project</h2>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Close new project"
+            disabled={busy}
+            onclick={() => projectDialog?.close()}><ReviewIcon name="x" size={17} /></button
+          >
+        </header>
+        <p>Keep drawings, conversations, and findings together.</p>
+        <label
+          >Project name<input
+            bind:this={projectNameInput}
+            data-testid="project-name-input"
+            bind:value={newProjectName}
+            required
+            maxlength="160"
+            placeholder="For example, Oak Street renovation"
+          /></label
+        >
+        {#if error}<p class="dialog-error" role="alert">{error}</p>{/if}
+        <footer>
+          <button type="button" class="ghost" disabled={busy} onclick={() => projectDialog?.close()}
+            >Cancel</button
+          ><button
+            class="primary"
+            type="submit"
+            disabled={busy || !newProjectName.trim()}
+            data-testid="create-project-button">{busy ? "Creating…" : "Create project"}</button
+          >
+        </footer>
+      </form>
+    </dialog>
+    <dialog
+      class="workspace-dialog settings-dialog"
+      bind:this={settingsDialog}
+      aria-labelledby="settings-dialog-title"
+    >
+      <header>
+        <h2 id="settings-dialog-title">Review settings</h2>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Close review settings"
+          onclick={() => settingsDialog?.close()}><ReviewIcon name="x" size={17} /></button
+        >
+      </header>
+      <section class="settings-section">
+        <h3>Review effort</h3>
+        <ReviewSelect
+          label="Maximum calls per inspection"
+          value={String(callLimit)}
+          options={[
+            { value: "4", label: "Quick · 4 calls" },
+            { value: "8", label: "Standard · 8 calls" },
+            { value: "12", label: "Thorough · 12 calls" },
+          ]}
+          onChange={(value) => {
+            callLimit = Schema.decodeUnknownSync(Schema.NumberFromString)(value);
+          }}
+        />
+        <p class="muted">
+          Sets how much work Moke can do in one inspection. Nothing starts until you send a request.
+        </p>
+      </section>
+      <section class="settings-section">
+        <h3>Model connections</h3>
+        <p>
+          Meta <span class="connection-state"
+            >{setup?.models?.some((model) => model.provider === "meta" && model.available)
+              ? "Connected"
+              : "Not connected"}</span
+          >
+        </p>
+        <p>
+          Baseten <span class="connection-state"
+            >{setup?.models?.some((model) => model.provider === "baseten" && model.available)
+              ? "Connected"
+              : "Not connected"}</span
+          >
+        </p>
+        <p class="muted">Add a connection from File → Import provider credential configuration.</p>
+      </section>
+      <section class="settings-section">
+        <h3>You make the final call</h3>
+        <p class="muted">
+          Moke compares counts on drawings and schedules. Review its evidence and approve counts
+          before using the results. Code compliance needs a separate review.
+        </p>
+        <details>
+          <summary>Technical details</summary>
+          <p class="muted">
+            Each request allows up to 64,000 input tokens and 4,096 output tokens. The call limit
+            includes up to two SAM requests when connected. Image-token usage and cost may be
+            unavailable.
+          </p>
+          <p class="muted">{setup?.promptVersion} · {setup?.instructionRevision.slice(0, 12)}</p>
+        </details>
+      </section>
+      <footer><button class="ghost" onclick={() => settingsDialog?.close()}>Done</button></footer>
+    </dialog>
     <div class="app-body">
       {#if sidebarOpen}
         <aside class="sidebar" aria-label="Conversation navigation">
           <button
             class="new-chat"
             data-testid="new-conversation"
-            onclick={createConversation}
-            disabled={!project || busy}
-            ><ReviewIcon name="plus" size={16} /><span>New conversation</span></button
+            onclick={project ? createConversation : openProjectDialog}
+            disabled={busy}
+            ><ReviewIcon name="plus" size={16} /><span
+              >{project ? "New conversation" : "New project"}</span
+            ></button
           >
           <button class="nav-action" onclick={openSearch}
             ><ReviewIcon name="search" size={16} /><span>Search findings</span><kbd>⌘ K</kbd
             ></button
           >
           {#if !ready}<p role="status">Loading projects…</p>{/if}
-          {#if ready && (projects.length === 0 || newProjectOpen)}
-            <form class="create-project" data-testid="create-project-form" onsubmit={createProject}>
-              <h2>Create a project</h2>
-              <label
-                >Project name<input
-                  data-testid="project-name-input"
-                  bind:value={newProjectName}
-                  required
-                  maxlength="160"
-                  placeholder="Project name"
-                /></label
-              >
-              <div class="actions">
-                {#if projects.length > 0}<button
-                    type="button"
-                    onclick={() => (newProjectOpen = false)}>Cancel</button
-                  >{/if}<button
-                  class="primary"
-                  type="submit"
-                  disabled={busy}
-                  data-testid="create-project-button">Create project</button
-                >
-              </div>
-            </form>
-          {/if}
           <nav class="projects" aria-label="Projects">
             {#each projects as entry (entry.id)}
               <section class="project-group" aria-label={entry.name}>
@@ -966,10 +1120,15 @@
             {/each}
           </nav>
           <div class="sidebar-footer">
-            <button class="nav-action" onclick={() => (newProjectOpen = true)} disabled={busy}
-              ><ReviewIcon name="folder" size={16} /><span>New project</span></button
-            >
-            <button class="nav-action" onclick={() => openSetup("settings")}
+            {#if project}
+              <button class="nav-action" onclick={openProjectDialog} disabled={busy}
+                ><ReviewIcon name="folder" size={16} /><span>New project</span></button
+              >
+            {/if}
+            <button
+              class="nav-action"
+              aria-label="Review settings"
+              onclick={() => openSetup("settings")}
               ><ReviewIcon name="settings" size={16} /><span>Review settings</span><span
                 class={["connection-dot", { connected: setup?.configured }]}
                 title={setup?.configured ? "Provider configured" : "Provider not configured"}
@@ -1020,14 +1179,7 @@
                 {@render mark(28)}
                 <h1>Start a drawing review</h1>
                 <p>Create a project, import its drawings, and choose a coordination check.</p>
-                <button
-                  class="ghost"
-                  onclick={() => {
-                    sidebarOpen = true;
-                    mobileNavigationOpen = true;
-                    newProjectOpen = true;
-                  }}>Create a project</button
-                >
+                <button class="ghost" onclick={openProjectDialog}>Create a project</button>
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
@@ -1055,8 +1207,17 @@
             {/if}
             {#each conversationMessages as message (message.id)}
               <article
-                class={["message", { "application-message": message.role === "application" }]}
+                class={[
+                  "message",
+                  {
+                    "application-message": message.role === "application",
+                    "reviewer-message": message.role === "reviewer",
+                  },
+                ]}
               >
+                {#if message.origin?.elapsedMs !== undefined}<p class="work-duration">
+                    Worked for {formatElapsed(message.origin.elapsedMs)}
+                  </p>{/if}
                 <div class="byline">
                   {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
                       class="moke-mark">{@render mark(16)}</span
@@ -1078,181 +1239,154 @@
                   >{/if}
               </article>
             {/each}
-          </div>
-        </div>
-        <div class="composer-region">
-          {#if project}
-            <div class="scope-bar">
-              <label class="scope-select"
-                ><span class="sr-only">Review finding</span><select
-                  aria-label="Review finding"
-                  value={reviewFindingId ?? ""}
-                  onchange={(event) => selectReviewFinding(event.currentTarget.value)}
-                  ><option value="">Choose a coordination check…</option
-                  >{#each findings as finding (finding.id)}<option value={finding.id}
-                      >{finding.title}</option
-                    >{/each}</select
-                ></label
-              >
-              <button
-                class="text-button"
-                data-testid="open-create-finding"
-                onclick={() => openSetup("sheets", true)}
-                ><ReviewIcon name="plus" size={14} />New check</button
-              >
-            </div>
             {#if reviewFinding}
-              {#key reviewFinding.id}<ExecutionControls
+              {#key reviewFinding.id + (activeConversation?.id ?? "")}<ExecutionControls
                   {client}
                   finding={reviewFinding}
-                  {setup}
-                  {budget}
-                  {discipline}
                   conversation={activeConversation}
-                  projectVersion={project.version}
+                  hasReply={conversationMessages.some(
+                    (message) => message.origin?.runId === executionStatus?.runId,
+                  )}
                   bind:status={executionStatus}
                   onProgress={() => refresh()}
                 />{/key}
             {/if}
-          {/if}
-          <form class="composer" onsubmit={postMessage}>
-            <label class="sr-only" for="chat-message">Message</label><textarea
-              id="chat-message"
-              bind:this={composerInput}
-              bind:value={draft}
-              rows="2"
-              maxlength="2000"
-              placeholder={reviewMode === "review"
-                ? "Ask Moke to inspect the selected check…"
-                : "Add a project note…"}
-              disabled={project === null || activeConversation === null}></textarea>
-            <div class="composer-tools">
-              <div class="composer-options">
-                <select aria-label="Message action" bind:value={reviewMode}
-                  ><option value="review">Review with Moke</option><option value="note"
-                    >Save note</option
-                  ></select
-                >{#if reviewMode === "review"}<select
-                    aria-label="Review discipline"
-                    bind:value={discipline}
-                    >{#each reviewDisciplines as scope (scope.id)}<option value={scope.id}
-                        >{scope.label}</option
-                      >{/each}</select
-                  >{/if}
-              </div>
-              <button
-                type="submit"
-                class="send"
-                disabled={!draft.trim() ||
-                  busy ||
-                  !project ||
-                  (reviewMode === "review" &&
-                    (!reviewFinding || !setup?.configured || executionBlocked))}
-                aria-label="Send message"
-                title={reviewMode === "review" ? "Send and start bounded inspection" : "Save note"}
-                ><ReviewIcon name="arrow-up" size={17} /></button
-              >
-            </div>
-          </form>
-          <div class="composer-help">
-            {#if reviewMode === "note"}Notes are saved without starting an inspection.{:else if !reviewFinding}Choose
-              a check or create one to review drawing evidence.{:else if !setup?.configured}Provider
-              not configured. <button class="text-button" onclick={() => openSetup("settings")}
-                >Open review settings</button
-              >{:else if executionBlocked}Resolve the current inspection before sending another
-              request.{:else}Up to {callLimit} calls · proposed evidence · governing code unverified{/if}
           </div>
         </div>
+        {#if project}
+          <div class="composer-region">
+            {#if project}
+              <div class="scope-bar">
+                <div class="scope-select">
+                  <ReviewSelect
+                    label="Check"
+                    value={reviewFindingId ?? ""}
+                    options={[
+                      { value: "", label: "Choose a check…" },
+                      ...findings.map((finding) => ({ value: finding.id, label: finding.title })),
+                    ]}
+                    disabled={busy || executionBlocked}
+                    onChange={selectReviewFinding}
+                  />
+                </div>
+                <button
+                  class="text-button"
+                  data-testid="open-create-finding"
+                  onclick={() => openSetup("sheets", true)}
+                  ><ReviewIcon name="plus" size={14} />New check</button
+                >
+              </div>
+            {/if}
+            <form class="composer" onsubmit={postMessage}>
+              <label class="sr-only" for="chat-message">Message</label><textarea
+                id="chat-message"
+                bind:this={composerInput}
+                bind:value={draft}
+                rows="2"
+                maxlength="2000"
+                placeholder={reviewMode === "review"
+                  ? "Ask Moke to inspect the selected check…"
+                  : "Add a project note…"}
+                disabled={project === null || activeConversation === null}></textarea>
+              <div class="composer-tools">
+                <div class="composer-options">
+                  <ReviewSelect
+                    label="Model"
+                    value={selectedModel}
+                    options={modelOptions}
+                    disabled={busy || executionBlocked}
+                    onChange={(value) => {
+                      selectedModel = Schema.decodeUnknownSync(ReviewModelId)(value);
+                    }}
+                  />
+                  <ReviewSelect
+                    label="Reviewer"
+                    value={discipline}
+                    options={[
+                      {
+                        value: "auto",
+                        label: "Auto",
+                        description: "Choose from your request and drawing sheets",
+                      },
+                      ...reviewDisciplines.map((scope) => ({
+                        value: scope.id,
+                        label: scope.label,
+                      })),
+                    ]}
+                    disabled={busy || executionBlocked}
+                    onChange={(value) => {
+                      discipline = Schema.decodeUnknownSync(ReviewDisciplineSelection)(value);
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="note-toggle"
+                  aria-label="Save as note"
+                  aria-pressed={reviewMode === "note"}
+                  disabled={busy || executionBlocked}
+                  onclick={() => {
+                    reviewMode = reviewMode === "note" ? "review" : "note";
+                  }}>Note</button
+                >
+                <button
+                  type="submit"
+                  class="send"
+                  disabled={!draft.trim() ||
+                    busy ||
+                    !project ||
+                    (reviewMode === "review" &&
+                      (!reviewFinding || !selectedModelAvailable || executionBlocked))}
+                  aria-label="Send message"
+                  title={reviewMode === "review"
+                    ? "Send and start bounded inspection"
+                    : "Save note"}><ReviewIcon name="arrow-up" size={17} /></button
+                >
+              </div>
+            </form>
+            <div class="composer-help">
+              {#if reviewMode === "note"}Notes are saved without starting an inspection.{:else if !reviewFinding}Choose
+                what to compare using the Check menu above.{:else if !setup?.configured}Provider not
+                configured. <button class="text-button" onclick={() => openSetup("settings")}
+                  >Open review settings</button
+                >{:else if executionBlocked}Resolve the current inspection before sending another
+                request.{:else}You approve the results. Moke never accepts counts for you.{/if}
+            </div>
+          </div>
+        {/if}
       </section>
       {#if panelOpen}
         <aside class="source-panel" aria-label="Finding source" data-testid="source-panel">
           <header class="source-header">
-            <ReviewIcon
-              name={sourceTab === "settings" ? "settings" : "file-text"}
-              size={16}
-            /><strong
-              >{sourceTab === "settings"
-                ? "Review settings"
-                : sourceTab === "evidence"
-                  ? (selectedFinding?.title ?? "Evidence")
-                  : (project?.name ?? "Project")}</strong
+            <ReviewIcon name="file-text" size={16} /><strong
+              >{sourceTab === "evidence"
+                ? (selectedFinding?.title ?? "Evidence")
+                : (project?.name ?? "Project")}</strong
             ><button class="icon-button" aria-label="Close source panel" onclick={closeSource}
               ><ReviewIcon name="x" size={17} /></button
             >
           </header>
-          {#if sourceTab !== "settings"}<div class="source-tabs">
-              <button
-                class={{ current: sourceTab === "evidence" }}
-                disabled={busy || !selectedFinding}
-                onclick={() => {
-                  if (selectedFinding === null) return;
-                  sourceTab = "evidence";
-                  void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
-                }}>Evidence</button
-              ><button
-                disabled={busy}
-                class={{ current: sourceTab === "sheets" }}
-                onclick={() => (sourceTab = "sheets")}>Sheets</button
-              ><button
-                class={{ current: sourceTab === "revision" }}
-                disabled={busy}
-                onclick={() => (sourceTab = "revision")}>Revision</button
-              >
-            </div>{/if}
+          <div class="source-tabs">
+            <button
+              class={{ current: sourceTab === "evidence" }}
+              disabled={busy || !selectedFinding}
+              onclick={() => {
+                if (selectedFinding === null) return;
+                sourceTab = "evidence";
+                void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
+              }}>Evidence</button
+            ><button
+              disabled={busy}
+              class={{ current: sourceTab === "sheets" }}
+              onclick={() => (sourceTab = "sheets")}>Sheets</button
+            ><button
+              class={{ current: sourceTab === "revision" }}
+              disabled={busy}
+              onclick={() => (sourceTab = "revision")}>Revision</button
+            >
+          </div>
           <div class="source-scroll">
-            {#if sourceTab === "settings"}
-              <section class="settings-section">
-                <h2>Model connection</h2>
-                {#if setup}<p>
-                    {setup.configured
-                      ? setup.provider + " · " + setup.model
-                      : "No provider configured"}
-                  </p>
-                  <p class="muted">
-                    Use File → Import provider credential configuration… to select your
-                    configuration and restart. Credentials stay in the trusted desktop and backend.
-                  </p>{:else}<p role="status">Loading configuration…</p>{/if}
-              </section>
-              <section class="settings-section">
-                <h2>Inspection limit</h2>
-                <label
-                  >Maximum calls per inspection<select bind:value={callLimit}
-                    ><option value={4}>4 calls</option><option value={8}>8 calls</option><option
-                      value={12}>12 calls</option
-                    ></select
-                  ></label
-                >
-                <p class="muted">
-                  The selection resets to 12 on restart. Includes at most 2 SAM requests when
-                  available. Each model request reserves up to 64,000 text-input tokens and 4,096
-                  output tokens. Billing and image-token usage are unknown. Nothing starts
-                  automatically on reopen.
-                </p>
-              </section>
-              <section class="settings-section">
-                <h2>Review boundary</h2>
-                <p>
-                  This beta inspects one drawn-to-schedule count check at a time using its selected
-                  PDF sheets. It does not complete a permit or discipline review.
-                </p>
-                <p class="muted">
-                  Governing code is unverified: there is no browser or verified code library in this
-                  runtime. Jurisdiction, adopted editions, permit stage, supporting calculations and
-                  prior comments remain Needs input where relevant. Confirm them independently.
-                </p>
-                <p class="muted">
-                  {setup?.segmentation
-                    ? "SAM is available for proposed object locations."
-                    : "SAM is unavailable for this provider route."} Only you accept facts, confirm coverage
-                  and close findings.
-                </p>
-              </section>
-              {#if setup}<section class="settings-section provenance">
-                  <h2>Moke instructions</h2>
-                  <p>{setup.promptVersion}</p>
-                  <p>skills revision {setup.instructionRevision}</p>
-                </section>{/if}
-            {:else if sourceTab === "sheets"}
+            {#if sourceTab === "sheets"}
               {#if sourceLoading}<p class="muted" role="status">
                   Rendering source…
                 </p>{:else if sourceImageUrl && previewedSheet}<SourceViewer
@@ -1278,16 +1412,34 @@
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
                   label="Original source render"
+                  bind:selecting={selectingRegion}
+                  onSelectRegion={(region) => {
+                    if (!previewedSheet) return;
+                    const box = previewedSheet.box;
+                    const x = Math.max(box.x, region.x);
+                    const y = Math.max(box.y, region.y);
+                    const width = Math.min(box.x + box.width, region.x + region.width) - x;
+                    const height = Math.min(box.y + box.height, region.y + region.height) - y;
+                    if (width <= 0 || height <= 0) return;
+                    applySelectedRegion?.({ x, y, width, height });
+                    sourceOverlays = [
+                      { region: { x, y, width, height }, title: "Selected review area" },
+                    ];
+                    notice = "Review area selected. Confirm its count below.";
+                  }}
                 />{/if}
               {#if previewedSheet && sourceArtifact}<div class="source-provenance">
                   <strong>{previewedSheet.label}</strong><span
                     >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page
                     {previewedSheet.pageIndex + 1} · {sourceArtifact.dpi} DPI</span
-                  ><span
-                    >Source SHA {revisions
-                      .find((item) => item.id === previewedSheet?.revisionId)
-                      ?.sha256.slice(0, 16)}</span
                   >
+                  <details>
+                    <summary>Source details</summary><span
+                      >Source SHA {revisions
+                        .find((item) => item.id === previewedSheet?.revisionId)
+                        ?.sha256.slice(0, 16)}</span
+                    >
+                  </details>
                 </div>{/if}
               {#key selectedFinding.id}<FindingInspector
                   finding={selectedFinding}
@@ -1299,6 +1451,15 @@
                   onEvaluate={evaluateFinding}
                   onStatus={setFindingStatus}
                   onRequestDetail={requestDetail}
+                  onChooseRegion={async (side, apply) => {
+                    if (!selectedFinding) return;
+                    applySelectedRegion = apply;
+                    selectingRegion = true;
+                    await loadSourceForFinding(selectedFinding, 96, undefined, side);
+                    document
+                      .querySelector('[aria-label="Pan and zoom source canvas"]')
+                      ?.scrollIntoView({ block: "nearest" });
+                  }}
                 />{/key}
             {:else if sourceTab === "revision"}
               {#if revisions.length >= 2}
@@ -1791,6 +1952,26 @@
     font-size: 15px;
     line-height: 1.75;
   }
+  .reviewer-message {
+    width: fit-content;
+    max-width: 88%;
+    margin-left: auto;
+    padding: 12px 16px;
+    background: var(--nd-raised);
+    border-radius: 16px 16px 4px 16px;
+  }
+  .reviewer-message .byline {
+    display: none;
+  }
+  .reviewer-message p {
+    margin: 0;
+  }
+  .work-duration {
+    color: var(--nd-ink-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 12px;
+  }
   .message p {
     margin: 8px 0 0;
     white-space: pre-wrap;
@@ -1850,16 +2031,6 @@
     min-width: 0;
     flex: 1;
   }
-  .scope-select select {
-    max-width: 100%;
-    width: 100%;
-    border: 0;
-    background: var(--nd-shell);
-    color: var(--nd-ink-muted);
-    padding: 4px 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .text-button {
     display: inline-flex;
     align-items: center;
@@ -1867,6 +2038,19 @@
     white-space: nowrap;
     color: var(--nd-ink-muted);
     padding: 4px 0;
+  }
+  .note-toggle {
+    border: 0;
+    background: transparent;
+    color: var(--nd-ink-muted);
+    padding: 7px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .note-toggle[aria-pressed="true"] {
+    color: var(--nd-ink);
+    background: var(--nd-raised);
   }
   .composer {
     border: 1px solid var(--nd-hairline-strong);
@@ -1900,16 +2084,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-  }
-  .composer-options select {
-    min-width: 0;
-    max-width: 180px;
-    border: 0;
-    border-radius: 5px;
-    padding: 5px 3px;
-    background: var(--nd-panel);
-    color: var(--nd-ink-muted);
-    font-size: 12px;
   }
   .send {
     flex-shrink: 0;
@@ -2040,11 +2214,6 @@
     padding-bottom: 20px;
     border-bottom: 1px solid var(--nd-hairline);
   }
-  .settings-section h2 {
-    font-size: 16px;
-    font-weight: 550;
-    margin: 0;
-  }
   .settings-section p {
     font-size: 13px;
     line-height: 1.65;
@@ -2052,9 +2221,6 @@
   }
   .muted {
     color: var(--nd-ink-muted);
-  }
-  .provenance {
-    overflow-wrap: anywhere;
   }
   .findings-bubble {
     margin: 0;
@@ -2119,28 +2285,21 @@
     line-height: 1.6;
     color: var(--nd-ink-muted);
   }
-  .create-project {
+  .project-form {
     display: grid;
     gap: 12px;
     padding: 12px 2px;
   }
-  .create-project h2 {
+  .project-form h2 {
     margin: 0;
     font-size: 15px;
   }
-  .actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-  .create-project label,
-  .settings-section label,
+  .project-form label,
   .sheet-list label {
     display: grid;
     gap: 6px;
   }
-  .create-project input,
-  .settings-section select,
+  .project-form input,
   .sheet-list select {
     width: 100%;
     min-width: 0;
@@ -2149,9 +2308,8 @@
     background: var(--nd-shell);
     padding: 8px;
   }
-  .actions button,
   .source-scroll > button,
-  .create-project button {
+  .project-form button {
     border: 1px solid var(--nd-hairline-strong);
     border-radius: 6px;
     padding: 8px 10px;
@@ -2174,6 +2332,82 @@
     border: 1px solid var(--nd-hairline);
     border-radius: 8px;
     padding: 12px;
+  }
+  .workspace-dialog {
+    color: var(--nd-ink);
+    background: var(--nd-panel);
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 14px;
+    padding: 24px;
+    width: min(480px, calc(100vw - 32px));
+    max-height: calc(100dvh - 48px);
+    overflow: auto;
+    box-shadow: 0 20px 64px rgb(0 0 0 / 0.28);
+  }
+  .workspace-dialog::backdrop {
+    background: rgb(0 0 0 / 0.48);
+  }
+  .workspace-dialog header {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .workspace-dialog h2 {
+    font-size: 20px;
+    margin: 0;
+  }
+  .workspace-dialog h3 {
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+  .workspace-dialog p {
+    line-height: 1.6;
+    font-size: 13px;
+  }
+  .workspace-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+  }
+  .workspace-dialog footer button {
+    border-radius: 7px;
+    padding: 8px 14px;
+    border: 1px solid var(--nd-hairline-strong);
+  }
+  .project-form {
+    display: grid;
+    gap: 18px;
+  }
+  .project-form p {
+    color: var(--nd-ink-muted);
+    margin: 0;
+  }
+  .project-form .dialog-error {
+    color: var(--nd-warning);
+  }
+  .settings-dialog {
+    width: min(520px, calc(100vw - 32px));
+  }
+  .settings-dialog .settings-section {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .settings-dialog .settings-section p {
+    margin: 6px 0;
+  }
+  .connection-state {
+    float: right;
+    color: var(--nd-ink-muted);
+  }
+  .workspace-dialog details {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+  }
+  .workspace-dialog summary {
+    cursor: pointer;
   }
   .sr-only {
     position: absolute;

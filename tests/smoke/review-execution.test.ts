@@ -125,6 +125,9 @@ async function directory() {
     ),
   );
   db.exec(
+    await readFile(new URL("../../migrations/0008_execution_timing.sql", import.meta.url), "utf8"),
+  );
+  db.exec(
     "CREATE TABLE fixture_receipts (command_id TEXT PRIMARY KEY, receipt TEXT NOT NULL); CREATE TABLE fixture_proposals (command_id TEXT PRIMARY KEY, value INTEGER NOT NULL)",
   );
   db.close();

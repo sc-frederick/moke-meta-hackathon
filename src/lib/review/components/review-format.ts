@@ -1,5 +1,12 @@
 import type { CheckRun, CountFact, Finding, Sheet } from "#lib/review/contracts.ts";
 
+/** Compact elapsed time shared by live progress and saved replies. */
+export function formatElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 /** Human-readable check outcome for lists and the source header. */
 export function formatOutcome(outcome: Finding["outcome"]): string {
   switch (outcome) {
@@ -10,11 +17,11 @@ export function formatOutcome(outcome: Finding["outcome"]): string {
     case "needs_evidence":
       return "Needs evidence";
     case "supported_issue":
-      return "Supported issue";
+      return "Count mismatch";
     case "checked_no_issue":
-      return "Checked, no issue";
+      return "Counts match";
     case "stale":
-      return "Stale";
+      return "Drawing changed";
     case "outside_scope":
       return "Outside scope";
   }

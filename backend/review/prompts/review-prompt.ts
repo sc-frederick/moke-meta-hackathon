@@ -16,6 +16,7 @@ import fireAlarm from "./assets/disciplines/fire_alarm.md" with { type: "text" }
 import fireSprinkler from "./assets/disciplines/fire_sprinkler.md" with { type: "text" };
 import fireProtection from "./assets/disciplines/fire_protection.md" with { type: "text" };
 import provenance from "./provenance.json";
+import { routeReviewDiscipline } from "#lib/review/execution.ts";
 
 /** Version of the bounded runtime adaptation; upstream files are vendored unmodified. */
 export const reviewPromptVersion = "moke-selected-coordination-v2";
@@ -39,7 +40,10 @@ const disciplines: Record<typeof ReviewDiscipline.Type, string> = {
 
 /** Adapt Moke to the selected-count engine without promising unavailable checks. */
 export function selectedReviewPrompt(context: typeof ExecutionReviewContext.Type | null): string {
-  const discipline = context?.request.discipline ?? "general";
+  const discipline =
+    context?.request.discipline === "auto"
+      ? routeReviewDiscipline(context.instruction)
+      : (context?.request.discipline ?? "general");
 
   return [
     `Moke instruction ${reviewPromptVersion}; skills revision ${reviewInstructionRevision}.`,

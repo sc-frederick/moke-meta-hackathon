@@ -15,6 +15,7 @@ After `bun run prepare:pdf-assets`, the backend bundle includes:
 | ----------------------------------------------------- | --------------------------------------------------------------- |
 | `dist/backend/pdf-assets/pdfjs/`                      | `legacy/build/pdf.worker.mjs`, `cmaps/`, `standard_fonts/`      |
 | `dist/backend/pdf-assets/native/skia.<platform>.node` | Platform `@napi-rs/canvas` binary                               |
+| `dist/backend/pdf-assets/modules/@napi-rs/canvas/`    | JavaScript support for PDF.js runtime canvas imports            |
 | `dist/backend/pdf-assets/layout.json`                 | Selected native package for `process.platform` / `process.arch` |
 | `dist/backend/pdf-assets/licenses.json`               | Bundled license text                                            |
 | `dist/backend/pdf-worker`                             | NDJSON worker (import, bounded region render)                   |
@@ -23,6 +24,14 @@ Runtime environment for workers:
 
 - `MOKE_PDFJS_ASSETS` → pdfjs tree (no developer `node_modules`)
 - `NAPI_RS_NATIVE_LIBRARY_PATH` → absolute path to the staged `.node` file
+- `NODE_PATH` → the staged `modules/` directory, replacing inherited search paths
+
+PDF.js uses a runtime `createRequire` for canvas globals and auxiliary canvases.
+The executable's static canvas import does not satisfy that lookup. Stage the
+JavaScript support files as well as the native library. Packaged Electron tests
+launch from an isolated data directory so a developer checkout cannot supply a
+missing runtime dependency. The shell rejects assets for a different OS or CPU
+before starting the backend.
 
 Platform selection lives in `scripts/prepare-pdf-assets.ts` (`canvasNativePackage` / `canvasNativeFileName`).
 

@@ -23,6 +23,20 @@ perform complete permit reviews or generate complete permit reports.
 
 ## Operating Context
 
+The primary users are AEC engineers, contractors, and project managers reviewing
+coordination issues while working with drawings. Assume little interest in AI
+configuration and little patience for unfamiliar computer workflows. Lead with
+the drawing, the count, the comparison, and the next action. Keep coordinates,
+model provenance, record identifiers, and token accounting behind disclosures.
+Use familiar labels and short explanations; keep reviewer approval explicit.
+
+Both project entry points open the same centered creation dialog. Settings use a
+separate centered dialog. The composer names its Model, Reviewer, and Check
+selectors; Auto routes from the request and selected drawing scope. User requests
+appear as chat bubbles, followed by elapsed review progress and Moke's response.
+Reviewers can select source areas visually and expand technical controls when
+needed. Earlier checks and exact evidence remain available.
+
 The original interactive desktop UI study established chat as the main work
 surface. Project information and findings live in a rounded popover at the top
 right, using T3 Code's information menu as the reference. Selecting a finding

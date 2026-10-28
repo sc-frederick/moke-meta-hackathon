@@ -37,6 +37,11 @@ backs up the database using SQLite's consistent backup API, then applies pending
 files and history records in one transaction. Failures preserve existing data.
 The five most recent automatic pre-migration backups are retained.
 
+Migration 0008 adds nullable execution timestamps for elapsed review time. Older
+runs keep unknown timing instead of an estimated duration. Complete packages
+accept the original, prompt-context, and timed execution layouts, retaining the
+timestamps when exporting and restoring historical reviews.
+
 The partial database export creates a consistent backup, including committed WAL data,
 then finalizes it in DELETE journal mode so it can be opened as a standalone,
 read-only file on every OS. Automatic backups use the same format.

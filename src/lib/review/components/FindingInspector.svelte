@@ -21,6 +21,7 @@
     onEvaluate,
     onStatus,
     onRequestDetail,
+    onChooseRegion,
   }: {
     finding: Finding;
     sheets: ReadonlyArray<Sheet>;
@@ -40,6 +41,7 @@
     onEvaluate: () => void;
     onStatus: (closed: boolean, taskCompleted: boolean) => void;
     onRequestDetail: (side: "drawn" | "scheduled", region: Region) => void;
+    onChooseRegion: (side: "drawn" | "scheduled", apply: (region: Region) => void) => void;
   } = $props();
 
   const history = $derived(checksForFinding(checks, finding.id));
@@ -133,22 +135,31 @@
 
   {#if proposals.length > 0}
     <section aria-label="Proposed observations">
-      <h3>Model proposals · awaiting acceptance</h3>
+      <h3>Suggested counts</h3>
+      <p class="meta">Check the highlighted area before accepting a count.</p>
       {#each proposals as proposal (proposal.id)}
-        <p>{proposal.side}: {proposal.value} · {proposal.evidence.statement}</p>
-        {#if proposal.origin}<p class="meta">
-            {proposal.origin.route} · {proposal.origin.provider} / {proposal.origin.model} · response
-            {proposal.origin.responseId ?? "ID unavailable"}
-          </p>
-          <p class="meta">
-            {proposal.origin.promptVersion} · {proposal.origin.discipline?.replaceAll("_", " ") ??
-              "general"} · skills {proposal.origin.instructionRevision?.slice(0, 12) ?? "legacy"}
-          </p>{/if}
-        <p class="meta">
-          {sheets.find((sheet) => sheet.id === proposal.evidence.sheetId)?.label} · PDF region {proposal
-            .evidence.region.x}, {proposal.evidence.region.y}, {proposal.evidence.region.width} × {proposal
-            .evidence.region.height}
+        <p>
+          <strong
+            >{proposal.value} {proposal.side === "drawn" ? "on drawing" : "in schedule"}</strong
+          >
+          · {proposal.evidence.statement}
         </p>
+        <details class="technical-details">
+          <summary>Source details</summary>
+          {#if proposal.origin}<p class="meta">
+              {proposal.origin.route} · {proposal.origin.provider} / {proposal.origin.model} · response
+              {proposal.origin.responseId ?? "ID unavailable"}
+            </p>
+            <p class="meta">
+              {proposal.origin.promptVersion} · {proposal.origin.discipline?.replaceAll("_", " ") ??
+                "general"} · skills {proposal.origin.instructionRevision?.slice(0, 12) ?? "legacy"}
+            </p>{/if}
+          <p class="meta">
+            {sheets.find((sheet) => sheet.id === proposal.evidence.sheetId)?.label} · PDF region {proposal
+              .evidence.region.x}, {proposal.evidence.region.y}, {proposal.evidence.region.width} × {proposal
+              .evidence.region.height}
+          </p>
+        </details>
         <button
           disabled={busy}
           onclick={() => onRequestDetail(proposal.side, proposal.evidence.region)}
@@ -170,13 +181,13 @@
               scheduledRegion = editableRegion(proposal.evidence.region);
               scheduledCoverage = false;
             }
-          }}>Use proposal as draft</button
+          }}>Use this count</button
         >
       {/each}
     </section>
   {/if}
   <section class="operand" aria-label="drawn operand">
-    <h3>Drawn count</h3>
+    <h3>On the drawing</h3>
     <p class="sheet-line">{drawnSheet ? drawnSheet.label : "Missing sheet"}</p>
     {#if drawnFact && drawnFact.evidence.sheetId !== finding.drawnSheetId}<p class="warn">
         Accepted input cites an earlier revision. Confirm unchanged correspondence or accept fresh
@@ -196,63 +207,72 @@
         data-testid="drawn-count-input"
       /></label
     >
-    <fieldset class="region-fields">
-      <legend>Source region in PDF points</legend>
-      <label
-        >X<input
-          type="number"
-          disabled={busy}
-          bind:value={drawnRegion.x}
-          data-testid="drawn-region-x"
-        /></label
-      >
-      <label
-        >Y<input
-          type="number"
-          disabled={busy}
-          bind:value={drawnRegion.y}
-          data-testid="drawn-region-y"
-        /></label
-      >
-      <label
-        >Width<input
-          type="number"
-          disabled={busy}
-          bind:value={drawnRegion.width}
-          data-testid="drawn-region-width"
-        /></label
-      >
-      <label
-        >Height<input
-          type="number"
-          disabled={busy}
-          bind:value={drawnRegion.height}
-          data-testid="drawn-region-height"
-        /></label
-      >
-    </fieldset>
+
     <label
-      >Visible statement<textarea
+      >What you see<textarea
         disabled={busy}
         rows="2"
         maxlength="2000"
         bind:value={drawnStatement}
         data-testid="drawn-statement-input"></textarea></label
     >
-    <label
-      >Rationale<textarea
-        disabled={busy}
-        rows="2"
-        maxlength="2000"
-        bind:value={drawnRationale}
-        data-testid="drawn-rationale-input"></textarea></label
+    <button
+      type="button"
+      disabled={busy}
+      onclick={() =>
+        onChooseRegion("drawn", (region) => {
+          drawnRegion = editableRegion(region);
+        })}>Select area on drawing</button
     >
+    <details class="technical-details" data-testid="drawn-advanced">
+      <summary>Area coordinates and review note</summary>
+      <fieldset class="region-fields">
+        <legend>Source region in PDF points</legend>
+        <label
+          >X<input
+            type="number"
+            disabled={busy}
+            bind:value={drawnRegion.x}
+            data-testid="drawn-region-x"
+          /></label
+        >
+        <label
+          >Y<input
+            type="number"
+            disabled={busy}
+            bind:value={drawnRegion.y}
+            data-testid="drawn-region-y"
+          /></label
+        >
+        <label
+          >Width<input
+            type="number"
+            disabled={busy}
+            bind:value={drawnRegion.width}
+            data-testid="drawn-region-width"
+          /></label
+        >
+        <label
+          >Height<input
+            type="number"
+            disabled={busy}
+            bind:value={drawnRegion.height}
+            data-testid="drawn-region-height"
+          /></label
+        >
+      </fieldset>
+      <label
+        >Review note (optional)<textarea
+          disabled={busy}
+          rows="2"
+          maxlength="2000"
+          bind:value={drawnRationale}
+          data-testid="drawn-rationale-input"></textarea></label
+      >
+    </details>
     <label class="checkbox"
-      ><input
-        type="checkbox"
-        bind:checked={drawnCoverage}
-        data-testid="drawn-coverage-checkbox"
-      />Coverage of the selected scope is complete</label
+      ><input type="checkbox" bind:checked={drawnCoverage} data-testid="drawn-coverage-checkbox" />I
+      checked the entire selected area</label
     >
     <div class="operand-actions">
       <button
@@ -261,7 +281,6 @@
           drawnSheet === undefined ||
           !drawnSheet.confirmed ||
           !drawnStatement.trim() ||
-          !drawnRationale.trim() ||
           !Number.isInteger(drawnValue) ||
           drawnValue < 0 ||
           drawnValue > 100000 ||
@@ -271,7 +290,8 @@
           onAccept("drawn", {
             value: drawnValue,
             statement: drawnStatement.trim(),
-            rationale: drawnRationale.trim(),
+            rationale:
+              drawnRationale.trim() || "Reviewer accepted this count against the selected source.",
             coverageConfirmed: drawnCoverage,
             region: drawnRegion,
           })}>Accept drawn count</button
@@ -280,7 +300,7 @@
         type="button"
         disabled={busy || !drawnRegionValid}
         data-testid="detail-drawn"
-        onclick={() => onRequestDetail("drawn", drawnRegion)}>300 DPI detail</button
+        onclick={() => onRequestDetail("drawn", drawnRegion)}>Enlarge source</button
       >
       {#if drawnFact}<button
           type="button"
@@ -292,13 +312,13 @@
           }}>Correct drawn</button
         >{/if}
     </div>
-    {#if drawnFact}<p class="fact-id">
+    {#if drawnFact}<p class="fact-id" hidden>
         Fact {drawnFact.id.slice(0, 8)} · v{drawnFact.version}
       </p>{/if}
   </section>
 
   <section class="operand" aria-label="scheduled operand">
-    <h3>Scheduled count</h3>
+    <h3>In the schedule</h3>
     <p class="sheet-line">{scheduledSheet ? scheduledSheet.label : "Missing sheet"}</p>
     {#if scheduledFact && scheduledFact.evidence.sheetId !== finding.scheduledSheetId}<p
         class="warn"
@@ -320,63 +340,75 @@
         data-testid="scheduled-count-input"
       /></label
     >
-    <fieldset class="region-fields">
-      <legend>Source region in PDF points</legend>
-      <label
-        >X<input
-          type="number"
-          disabled={busy}
-          bind:value={scheduledRegion.x}
-          data-testid="scheduled-region-x"
-        /></label
-      >
-      <label
-        >Y<input
-          type="number"
-          disabled={busy}
-          bind:value={scheduledRegion.y}
-          data-testid="scheduled-region-y"
-        /></label
-      >
-      <label
-        >Width<input
-          type="number"
-          disabled={busy}
-          bind:value={scheduledRegion.width}
-          data-testid="scheduled-region-width"
-        /></label
-      >
-      <label
-        >Height<input
-          type="number"
-          disabled={busy}
-          bind:value={scheduledRegion.height}
-          data-testid="scheduled-region-height"
-        /></label
-      >
-    </fieldset>
+
     <label
-      >Visible statement<textarea
+      >What you see<textarea
         disabled={busy}
         rows="2"
         maxlength="2000"
         bind:value={scheduledStatement}
         data-testid="scheduled-statement-input"></textarea></label
     >
-    <label
-      >Rationale<textarea
-        disabled={busy}
-        rows="2"
-        maxlength="2000"
-        bind:value={scheduledRationale}
-        data-testid="scheduled-rationale-input"></textarea></label
+    <button
+      type="button"
+      disabled={busy}
+      onclick={() =>
+        onChooseRegion("scheduled", (region) => {
+          scheduledRegion = editableRegion(region);
+        })}>Select area on drawing</button
     >
+    <details class="technical-details" data-testid="scheduled-advanced">
+      <summary>Area coordinates and review note</summary>
+      <fieldset class="region-fields">
+        <legend>Source region in PDF points</legend>
+        <label
+          >X<input
+            type="number"
+            disabled={busy}
+            bind:value={scheduledRegion.x}
+            data-testid="scheduled-region-x"
+          /></label
+        >
+        <label
+          >Y<input
+            type="number"
+            disabled={busy}
+            bind:value={scheduledRegion.y}
+            data-testid="scheduled-region-y"
+          /></label
+        >
+        <label
+          >Width<input
+            type="number"
+            disabled={busy}
+            bind:value={scheduledRegion.width}
+            data-testid="scheduled-region-width"
+          /></label
+        >
+        <label
+          >Height<input
+            type="number"
+            disabled={busy}
+            bind:value={scheduledRegion.height}
+            data-testid="scheduled-region-height"
+          /></label
+        >
+      </fieldset>
+      <label
+        >Review note (optional)<textarea
+          disabled={busy}
+          rows="2"
+          maxlength="2000"
+          bind:value={scheduledRationale}
+          data-testid="scheduled-rationale-input"></textarea></label
+      >
+    </details>
     <label class="checkbox"
       ><input
         type="checkbox"
         bind:checked={scheduledCoverage}
         data-testid="scheduled-coverage-checkbox"
-      />Coverage of the selected scope is complete</label
+      />I checked the entire selected area</label
     >
     <div class="operand-actions">
       <button
@@ -385,7 +417,6 @@
           scheduledSheet === undefined ||
           !scheduledSheet.confirmed ||
           !scheduledStatement.trim() ||
-          !scheduledRationale.trim() ||
           !Number.isInteger(scheduledValue) ||
           scheduledValue < 0 ||
           scheduledValue > 100000 ||
@@ -395,7 +426,9 @@
           onAccept("scheduled", {
             value: scheduledValue,
             statement: scheduledStatement.trim(),
-            rationale: scheduledRationale.trim(),
+            rationale:
+              scheduledRationale.trim() ||
+              "Reviewer accepted this count against the selected source.",
             coverageConfirmed: scheduledCoverage,
             region: scheduledRegion,
           })}>Accept scheduled count</button
@@ -404,7 +437,7 @@
         type="button"
         disabled={busy || !scheduledRegionValid}
         data-testid="detail-scheduled"
-        onclick={() => onRequestDetail("scheduled", scheduledRegion)}>300 DPI detail</button
+        onclick={() => onRequestDetail("scheduled", scheduledRegion)}>Enlarge source</button
       >
       {#if scheduledFact}<button
           type="button"
@@ -416,7 +449,7 @@
           }}>Correct scheduled</button
         >{/if}
     </div>
-    {#if scheduledFact}<p class="fact-id">
+    {#if scheduledFact}<p class="fact-id" hidden>
         Fact {scheduledFact.id.slice(0, 8)} · v{scheduledFact.version}
       </p>{/if}
   </section>
@@ -427,21 +460,21 @@
       class="primary"
       disabled={busy}
       data-testid="evaluate-finding"
-      onclick={onEvaluate}>Evaluate coordination</button
+      onclick={onEvaluate}>Compare counts</button
     >
     <label class="checkbox"
       ><input
         type="checkbox"
         checked={finding.closed}
         onchange={(event) => onStatus(event.currentTarget.checked, finding.taskCompleted)}
-      />Reviewer closed</label
+      />Close finding</label
     >
     <label class="checkbox"
       ><input
         type="checkbox"
         checked={finding.taskCompleted}
         onchange={(event) => onStatus(finding.closed, event.currentTarget.checked)}
-      />Completed task</label
+      />Mark task complete</label
     >
   </div>
 
@@ -453,17 +486,22 @@
       <ol data-testid="check-history">
         {#each history as run (run.id)}
           <li data-check-id={run.id}>
-            <strong>{formatOutcome(run.outcome)}</strong>
-            {#if run.difference !== null}
-              <span>{run.drawnCount} − {run.scheduledCount} = {run.difference}</span>
-            {/if}
-            <p>{run.explanation}</p>
-            <p class="fact-id">
-              Check {run.id.slice(0, 8)} · drawn {run.drawnFactId?.slice(0, 8) ?? "—"} · scheduled {run.scheduledFactId?.slice(
-                0,
-                8,
-              ) ?? "—"}
-            </p>
+            <details open={run.id === finding.latestCheckId}>
+              <summary>
+                <strong>{formatOutcome(run.outcome)}</strong>
+                {#if run.difference !== null}
+                  <span>{run.drawnCount} − {run.scheduledCount} = {run.difference}</span>
+                {/if}
+              </summary>
+              <p>{run.explanation}</p>
+              <details class="technical-details">
+                <summary>Record details</summary>
+                <p class="fact-id">
+                  Check {run.id.slice(0, 8)} · drawn {run.drawnFactId?.slice(0, 8) ?? "—"} · scheduled
+                  {run.scheduledFactId?.slice(0, 8) ?? "—"}
+                </p>
+              </details>
+            </details>
           </li>
         {/each}
       </ol>
@@ -472,6 +510,17 @@
 </div>
 
 <style>
+  .technical-details {
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+  }
+  summary {
+    cursor: pointer;
+    padding: 6px 0;
+  }
+  .technical-details label {
+    margin-top: 10px;
+  }
   .region-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;

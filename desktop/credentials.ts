@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { InferenceConfiguration } from "../src/lib/backend-rpc.ts";
 import {
   CredentialError,
-  parseProviderConfiguration,
-  readProviderConfiguration,
+  parseProviderConfigurations,
+  readProviderConfigurations,
 } from "./credential-files.ts";
 
 const StoredCredential = Schema.Struct({
@@ -20,10 +20,10 @@ const secureStorageAvailable = () =>
   (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
 
 /** Packaged launches use OS-encrypted storage or an explicitly selected session-only file. */
-export async function readInferenceConfiguration(directory: string, packaged: boolean) {
+export async function readInferenceConfigurations(directory: string, packaged: boolean) {
   const sessionFile = process.env.MOKE_SESSION_CREDENTIAL_FILE;
 
-  if (sessionFile !== undefined) return readProviderConfiguration(sessionFile, true);
+  if (sessionFile !== undefined) return readProviderConfigurations(sessionFile, true);
   const storedFile = join(directory, "provider-credential.json");
 
   if (existsSync(storedFile)) {
@@ -38,7 +38,7 @@ export async function readInferenceConfiguration(directory: string, packaged: bo
         await readFile(storedFile, "utf8"),
       );
 
-      return parseProviderConfiguration(
+      return parseProviderConfigurations(
         safeStorage.decryptString(Buffer.from(stored.encrypted, "base64")),
       );
     } catch {
@@ -48,25 +48,37 @@ export async function readInferenceConfiguration(directory: string, packaged: bo
     }
   }
 
-  if (packaged) return undefined;
+  if (packaged) return [];
   const provider = process.env.MOKE_PROVIDER === "baseten" ? "baseten" : "meta";
-  const key = provider === "meta" ? process.env.MODEL_API_KEY : process.env.BASETEN_API_KEY;
 
-  if (!key?.trim()) return undefined;
+  const order =
+    provider === "meta" ? (["meta", "baseten"] as const) : (["baseten", "meta"] as const);
 
-  return parseProviderConfiguration(
-    JSON.stringify({
-      provider,
-      apiKey: key,
-      baseUrl: provider === "meta" ? "https://api.meta.ai/v1" : "https://inference.baseten.co/v1",
-      model: provider === "meta" ? "muse-spark-1.3" : "meta-models/muse-spark-open-1026",
-    }),
-  );
+  return order.flatMap((entry) => {
+    const apiKey = entry === "meta" ? process.env.MODEL_API_KEY : process.env.BASETEN_API_KEY;
+
+    if (!apiKey?.trim()) return [];
+
+    return parseProviderConfigurations(
+      JSON.stringify({
+        provider: entry,
+        apiKey,
+        baseUrl: entry === "meta" ? "https://api.meta.ai/v1" : "https://inference.baseten.co/v1",
+        model: entry === "meta" ? "muse-spark-1.3" : "meta-models/muse-spark-open-1026",
+      }),
+    );
+  });
 }
 
 /** A shell-selected configuration is encrypted before saving, and never enters renderer RPC. */
 export async function storeInferenceConfiguration(directory: string, source: string) {
-  const config = await readProviderConfiguration(source);
+  const incoming = await readProviderConfigurations(source);
+  const existing = await readInferenceConfigurations(directory, true);
+
+  const configs = [
+    ...incoming,
+    ...existing.filter((entry) => !incoming.some((item) => item.provider === entry.provider)),
+  ];
 
   if (!secureStorageAvailable())
     throw new CredentialError({
@@ -75,7 +87,11 @@ export async function storeInferenceConfiguration(directory: string, source: str
     });
 
   const encrypted = safeStorage
-    .encryptString(JSON.stringify(Schema.encodeSync(InferenceConfiguration)(config)))
+    .encryptString(
+      JSON.stringify({
+        providers: configs.map((config) => Schema.encodeSync(InferenceConfiguration)(config)),
+      }),
+    )
     .toString("base64");
 
   await writeFile(

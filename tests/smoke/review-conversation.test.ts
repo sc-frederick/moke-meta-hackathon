@@ -31,9 +31,139 @@ import {
   type ReviewDiscipline,
 } from "#lib/review/execution.ts";
 import { sendReviewMessage } from "#lib/review/conversation.ts";
+import { reviewModels } from "#lib/review/models.ts";
 
 const id = () => Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
 const budget = new ExecutionBudget({ maxCalls: 2, maxInputTokens: 64000, maxOutputTokens: 256 });
+
+test("model choice uses its provider credential, freezes on replay, and records Auto routing and elapsed time", async () => {
+  const requests: Array<{ model: string; authorization: string | null }> = [];
+
+  const session = await fixture(async (_input, init) => {
+    const request = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Struct({ model: Schema.String })),
+    )(Schema.decodeUnknownSync(Schema.String)(init?.body));
+
+    requests.push({
+      model: request.model,
+      authorization: new Headers(init?.headers).get("authorization"),
+    });
+
+    if (request.model !== "meta-models/muse-spark-open-1026")
+      return response(false, "Check the drawing count before accepting it.");
+
+    const chunks = [
+      {
+        id: "local_baseten",
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant", content: "Check the drawing count before accepting it." },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: "local_baseten",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 30, completion_tokens: 10, total_tokens: 40 },
+      },
+    ];
+
+    return new Response(
+      chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  }, true);
+
+  try {
+    const setup = await Effect.runPromise(session.execution.setup);
+    expect(setup.models?.filter((model) => model.available)).toHaveLength(3);
+
+    for (const model of reviewModels) {
+      const state = await session.state();
+      const conversation = state.conversations[0];
+
+      if (!conversation) throw new Error("Missing conversation");
+
+      const submission = {
+        command: ReviewCommand.cases.PostMessage.make({
+          commandId: id(),
+          projectId: session.projectId,
+          expectedVersion: state.project?.version ?? -1,
+          conversationId: conversation.id,
+          text: "Inspect the electrical lighting count in Room 101.",
+        }),
+        executionCommandId: id(),
+        findingId: session.findingId,
+        discipline: "auto" as const,
+        model: model.id,
+        budget,
+      };
+
+      const sent = await sendReviewMessage(session.client, submission);
+
+      if (!sent.saved || !sent.execution) throw new Error(sent.error ?? "Missing execution");
+      const status = await completed(session, sent.execution);
+      expect(status.model).toBe(model.id);
+      expect(status.provider).toBe(model.provider);
+      expect(status.startedAt).toBeGreaterThan(0);
+      expect(status.stateChangedAt).toBeGreaterThanOrEqual(status.startedAt ?? 0);
+      expect(status.conversationId).toBe(conversation.id);
+      expect(requests.at(-1)).toEqual({
+        model: model.id,
+        authorization: `Bearer ${model.provider === "meta" ? "local-fixture-only" : "local-baseten-only"}`,
+      });
+      const saved = await session.state();
+      const answer = saved.messages.find((message) => message.origin?.runId === status.runId);
+      expect(answer?.origin?.discipline).toBe("electrical");
+      expect(answer?.origin?.elapsedMs).toBeGreaterThanOrEqual(0);
+      const before = requests.length;
+
+      const replay = await sendReviewMessage(session.client, {
+        ...submission,
+        model: model.id === "muse-wonder-1.0" ? "muse-spark-1.3" : "muse-wonder-1.0",
+      });
+
+      expect(replay.saved && replay.execution === null).toBe(true);
+      expect(requests).toHaveLength(before);
+    }
+  } finally {
+    await session.dispose();
+  }
+});
+
+test("a model without its own provider credential is unavailable and never falls back", async () => {
+  const requests: string[] = [];
+
+  const session = await fixture(async () => {
+    requests.push("sent");
+
+    return response(false);
+  });
+
+  try {
+    const setup = await Effect.runPromise(session.execution.setup);
+    expect(setup.models?.find((model) => model.provider === "baseten")?.available).toBe(false);
+
+    const result = await Effect.runPromise(
+      Effect.result(
+        session.execution.start({
+          commandId: id(),
+          projectId: session.projectId,
+          findingId: session.findingId,
+          model: "meta-models/muse-spark-open-1026",
+          budget,
+        }),
+      ),
+    );
+
+    expect(Result.isFailure(result)).toBe(true);
+    expect(requests).toHaveLength(0);
+  } finally {
+    await session.dispose();
+  }
+});
 
 function response(finish: boolean, text = "done") {
   const item = finish
@@ -75,7 +205,7 @@ function response(finish: boolean, text = "done") {
   });
 }
 
-async function fixture(transport?: ProviderTransport) {
+async function fixture(transport?: ProviderTransport, includeBaseten = false) {
   const directory = await mkdtemp(join(tmpdir(), "moke-conversation-"));
   const ownership = ManagedRuntime.make(DataDirectoryOwnership.layer(directory));
   const owner = await ownership.runPromise(DataDirectoryOwnership);
@@ -124,6 +254,24 @@ async function fixture(transport?: ProviderTransport) {
                 route: "recorded",
                 transport,
               },
+              providers: [
+                {
+                  provider: "meta",
+                  apiKey: Redacted.make("local-fixture-only"),
+                  route: "recorded",
+                  transport,
+                },
+                ...(includeBaseten
+                  ? [
+                      {
+                        provider: "baseten" as const,
+                        apiKey: Redacted.make("local-baseten-only"),
+                        route: "recorded" as const,
+                        transport,
+                      },
+                    ]
+                  : []),
+              ],
             },
       ),
     );

@@ -43,6 +43,7 @@ export class BackendConfig extends Schema.Class<BackendConfig>("BackendConfig")(
   token: Schema.RedactedFromValue(Schema.String.check(Schema.isMinLength(32))),
   processing: Schema.optionalKey(ProcessingConfiguration),
   inference: Schema.optionalKey(InferenceConfiguration),
+  inferenceAlternatives: Schema.optionalKey(Schema.Array(InferenceConfiguration)),
 }) {}
 
 /** Versioned, validated readiness message emitted after migrations and API startup. */

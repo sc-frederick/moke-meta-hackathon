@@ -80,10 +80,10 @@
                 /></label
               >
               <label
-                >Review coverage<select name="coverage" value={sheet.coverage}>
-                  <option value="unreviewed">Unreviewed</option>
-                  <option value="partial">Partial</option>
-                  <option value="reviewer_complete">Reviewer complete</option>
+                >How much have you checked?<select name="coverage" value={sheet.coverage}>
+                  <option value="unreviewed">Not reviewed yet</option>
+                  <option value="partial">Part of the sheet</option>
+                  <option value="reviewer_complete">The whole sheet</option>
                 </select></label
               >
               <div class="actions">
@@ -120,13 +120,13 @@
         }
       }}
     >
-      <h2>New coordination check</h2>
+      <h2>New count check</h2>
       <p class="muted">
         Choose one object type and a bounded room or area. Moke compares its drawn and scheduled
         counts.
       </p>
       <label
-        >Title<input
+        >Check name<input
           bind:value={title}
           required
           maxlength="160"
@@ -134,7 +134,7 @@
         /></label
       >
       <label
-        >Object class and review boundary<input
+        >What are you counting?<input
           bind:value={objectClass}
           required
           maxlength="160"
@@ -142,14 +142,14 @@
         /></label
       >
       <label
-        >Drawn sheet<select bind:value={drawnSheetId} required
+        >Drawing sheet<select bind:value={drawnSheetId} required
           ><option value="">Choose confirmed sheet…</option
           >{#each confirmed as sheet (sheet.id)}<option value={sheet.id}>{sheet.label}</option
             >{/each}</select
         ></label
       >
       <label
-        >Scheduled sheet<select bind:value={scheduledSheetId} required
+        >Schedule sheet<select bind:value={scheduledSheetId} required
           ><option value="">Choose confirmed sheet…</option
           >{#each confirmed as sheet (sheet.id)}<option value={sheet.id}>{sheet.label}</option
             >{/each}</select
@@ -157,7 +157,7 @@
       >
       <label class="checkbox"
         ><input type="checkbox" bind:checked={applicabilityConfirmed} required />Both sources apply
-        to the same object type and review boundary</label
+        to the same items and area</label
       >
       {#if confirmed.length === 0}<p class="muted">
           Confirm at least one source sheet above first.
@@ -167,7 +167,7 @@
           class="primary"
           type="submit"
           data-testid="create-finding-submit"
-          disabled={busy || confirmed.length === 0}>Create finding</button
+          disabled={busy || confirmed.length === 0}>Create check</button
         >
       </div>
     </form>

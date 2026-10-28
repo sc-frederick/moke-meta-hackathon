@@ -1,11 +1,12 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
-import { Effect, Schema, Semaphore } from "effect";
+import { DateTime, Effect, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 import {
   ExecutionError,
   ExecutionEvent,
   ExecutionState,
   ExecutionStatus,
+  ExecutionReviewContext,
   RunId,
 } from "../../src/lib/review/execution.ts";
 import { FindingId, ProjectId } from "../../src/lib/review/contracts.ts";
@@ -33,6 +34,8 @@ export const RunRecord = Schema.Struct({
   reserved_output_tokens: Schema.Int,
   prompt_version: Schema.optionalKey(Schema.String),
   review_context_json: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  started_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  state_changed_at: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 });
 
 /** SQLite row after boundary decoding. */
@@ -108,7 +111,8 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
     state: typeof ExecutionState.Type,
   ) {
     const sql = yield* SqlClient.SqlClient;
-    yield* sql`UPDATE review_execution_runs SET state=${state},version=version+1 WHERE run_id=${run.run_id} AND version=${run.version}`;
+    const changedAt = DateTime.toEpochMillis(yield* DateTime.now);
+    yield* sql`UPDATE review_execution_runs SET state=${state},state_changed_at=${changedAt},version=version+1 WHERE run_id=${run.run_id} AND version=${run.version}`;
 
     const changed = yield* Schema.decodeUnknownEffect(
       Schema.Array(Schema.Struct({ n: Schema.Literal(1) })),
@@ -143,6 +147,13 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
       Schema.Array(Schema.Struct({ n: Schema.Int, acknowledged: Schema.Int })),
     )(counts);
 
+    const context =
+      run.review_context_json == null
+        ? null
+        : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionReviewContext))(
+            run.review_context_json,
+          );
+
     return new ExecutionStatus({
       runId: run.run_id,
       projectId: run.project_id,
@@ -159,6 +170,9 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
       uncertaintyAcknowledged: parsed[0]?.acknowledged === 1,
       costUsd: null,
       imageInputTokens: null,
+      startedAt: run.started_at ?? null,
+      stateChangedAt: run.state_changed_at ?? null,
+      conversationId: context?.request.conversationId ?? null,
     });
   });
 

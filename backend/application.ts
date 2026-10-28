@@ -134,9 +134,16 @@ export class Application extends Context.Service<
         const review = createReviewOperations({ query: reviewQuery, documents, owner });
         const inference = config.inference;
 
+        const providers = [
+          ...(inference === undefined ? [] : [inference]),
+          ...(config.inferenceAlternatives ?? []),
+        ];
+
+        const meta = providers.find((provider) => provider.provider === "meta");
+
         let port = review.port;
 
-        if (inference?.provider === "meta") {
+        if (meta !== undefined) {
           const segmentation = yield* ReviewSegmentation.pipe(
             Effect.provide(
               yield* Layer.build(
@@ -144,7 +151,7 @@ export class Application extends Context.Service<
                   dataDirectory: owner.canonicalDirectory,
                   queries: operations,
                   owner,
-                  apiKey: inference.apiKey,
+                  apiKey: meta.apiKey,
                   loadArtifact: review.artifact,
                   readImage: review.port.readImage,
                 }),
@@ -162,6 +169,7 @@ export class Application extends Context.Service<
             ? executionOptions
             : {
                 ...executionOptions,
+                providers: providers.map((provider) => ({ ...provider, route: "live" as const })),
                 provider: {
                   provider: inference.provider,
                   apiKey: inference.apiKey,

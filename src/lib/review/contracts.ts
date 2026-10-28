@@ -219,6 +219,7 @@ export class ReviewMessage extends Schema.Class<ReviewMessage>("ReviewMessage")(
     Schema.Struct({
       runId: Identifier,
       findingId: FindingId,
+      elapsedMs: Schema.optionalKey(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
       promptVersion: Schema.String,
       instructionRevision: Schema.NullOr(Schema.String),
       discipline: Schema.NullOr(Schema.String),

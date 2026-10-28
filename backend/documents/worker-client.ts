@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { DocumentError } from "#lib/review/contracts.ts";
 import type { DocumentsConfig } from "./config.ts";
+import { join } from "node:path";
 import {
   WorkerInspectRequest,
   WorkerRenderRequest,
@@ -34,6 +35,7 @@ export const openPdfWorker = Effect.fn("openPdfWorker")(function* (config: Docum
             ...process.env,
             MOKE_PDFJS_ASSETS: config.assetsDirectory,
             NAPI_RS_NATIVE_LIBRARY_PATH: config.nativeLibraryPath,
+            NODE_PATH: join(config.assetsDirectory, "..", "modules"),
             BUN_OPTIONS: "",
           },
         }),

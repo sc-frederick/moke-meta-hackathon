@@ -36,7 +36,11 @@ Baseten's crop acceptance remains unverified.
 The desktop accepts the canonical endpoint/model pair for each provider listed
 above. The other model IDs describe the available catalog, not implemented app
 features. Template endpoint and model variables do not override the desktop's
-canonical route; individual experiment scripts may read them.
+canonical route; individual experiment scripts may read them. The workbench's
+Model menu offers Muse Spark 1.3 and Muse Wonder through Meta, plus Muse Spark
+Open through Baseten. SAM remains an evidence tool rather than a chat-model choice.
+Each inspection saves its selected model; changing the menu does not change an
+existing inspection or switch providers automatically.
 
 In the app, import and confirm sheets, create a drawn-to-schedule count check,
 then select that check and discipline in the composer. **Review with Moke** saves
@@ -50,6 +54,11 @@ Svelte components, the renderer bridge, logs, and variables prefixed with
 `PUBLIC_` or `VITE_`. Packaged builds do not load `.env`; use the desktop's File
 menu to import an encrypted credential configuration, or select a private
 session-only file as described in [deployment](deployment.md#provider-credentials-in-a-packaged-launch).
+Importing another provider adds its connection without replacing the existing
+provider. A session file can contain either one configuration or
+`{"providers": [<Meta configuration>, <Baseten configuration>]}`. Model options
+without a configured provider stay disabled. Development loads both keys when
+available, using `MOKE_PROVIDER` for the initial selection.
 
 ## Manual checks after adding keys
 
