@@ -145,7 +145,7 @@
       >
     </div>
     {#if status.state === "completed"}<p>
-        Inspection finished. Review proposed counts in Findings before accepting them.
+        Inspection finished. Open Findings to review the results.
       </p>{/if}
     {#if status.state === "failed"}<p>
         The inspection stopped. Check the evidence, configuration and call limit before starting
