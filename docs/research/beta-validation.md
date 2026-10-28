@@ -31,8 +31,9 @@ Electron retains its Node runtime boundary.
 
 GPT-6.1 Terra with xhigh reasoning and priority service drove the packaged app
 through Electron Playwright on display `:0`, using isolated authored PDF fixtures.
-The requested CUA driver was unavailable. This is Electron interaction and
-screenshot evidence, not CUA verification.
+The initial session did not expose the Windows CUA driver. This first run used
+Electron interaction and screenshot evidence; the native CUA recheck is recorded
+below.
 
 A custom Electrical request sent through the composer completed in seven Meta
 Muse calls and zero SAM calls, within the twelve-call limit. It proposed two
@@ -58,6 +59,38 @@ The final configured check made no new inference calls: before and after it,
 the isolated database held one run, seven model attempts, and zero SAM attempts.
 Temporary session credentials were private, excluded from artifacts, and removed
 after testing. Test applications were closed.
+
+## Native Windows CUA recheck
+
+After locating the Windows installation, GPT-6.1 Terra with xhigh reasoning and
+priority service drove the native Windows build through CUA 0.35.4. The checkout
+was `7d7bd5e79`; the executable came from the reviewed tree's
+`desktop-Windows-X64` artifact in CI run `40645996427`, extracted without installing.
+
+The Windows executable is under
+`%LOCALAPPDATA%\Programs\Cua\cua-driver\bin\cua-driver.exe` and can be invoked from
+WSL through `/mnt/c/Users/<user>/AppData/Local/Programs/Cua/cua-driver/bin/cua-driver.exe`.
+The existing Windows daemon could not enumerate the Linux X11 app window. A
+separate persistent `cua-driver mcp --direct` connection launched the native app
+with an explicit OS environment allowlist, `PROJECT_KIT_DATA_DIRECTORY` pointing
+at a copied synthetic fixture, and a scratch Chromium profile. The existing
+daemon and driver permission policies were unchanged.
+
+CUA verified settings open/close and each 4/8/12-call selection, accepted Room 101
+counts of two drawn and three scheduled, the supported issue, and the absence of
+superseded pending proposals. After previewing page two in Sheets, Evidence
+restored the finding's page-one source. Screenshots were inspected. Selection
+keystrokes used foreground delivery only after background delivery was refused.
+The database retained both historical proposals, passed its integrity check, and
+remained at one run, seven attempts, and zero SAM attempts. No provider was
+configured or inspection started. The app and CUA session were closed afterward.
+
+The recheck found a stale completion instruction asking reviewers to accept
+counts that were already accepted. Completion copy now directs reviewers to
+the results without asserting that acceptance is pending; the updated sentence
+was verified through Electron Playwright against the follow-up desktop build.
+Historical model messages remain unchanged. Renderer errors, conversation drafts, and mobile
+resizing were not monitored or tested in this focused native run.
 
 ## Review regressions
 
