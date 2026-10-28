@@ -54,7 +54,12 @@
   const scheduledIdentity = $derived(`${finding.scheduledSheetId}:${scheduledFact?.id ?? ""}`);
 
   const proposals = $derived(
-    facts.filter((fact) => fact.findingId === finding.id && fact.state === "proposed"),
+    facts.filter(
+      (fact) =>
+        fact.findingId === finding.id &&
+        fact.state === "proposed" &&
+        fact.version > ((fact.side === "drawn" ? drawnFact : scheduledFact)?.version ?? 0),
+    ),
   );
 
   // Unrelated snapshot refreshes must preserve drafts; accepted evidence or sheet changes reset them.

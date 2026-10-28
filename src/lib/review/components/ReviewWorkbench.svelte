@@ -1212,14 +1212,9 @@
               <section class="settings-section">
                 <h2>Inspection limit</h2>
                 <label
-                  >Maximum calls per inspection<select
-                    value={callLimit}
-                    onchange={(event) => {
-                      const limit = Number(event.currentTarget.value);
-                      if ([4, 8, 12].includes(limit)) callLimit = limit;
-                    }}
-                    ><option value="4">4 calls</option><option value="8">8 calls</option><option
-                      value="12">12 calls</option
+                  >Maximum calls per inspection<select bind:value={callLimit}
+                    ><option value={4}>4 calls</option><option value={8}>8 calls</option><option
+                      value={12}>12 calls</option
                     ></select
                   ></label
                 >

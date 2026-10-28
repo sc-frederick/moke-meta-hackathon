@@ -46,6 +46,18 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("review-workbench")).toBeVisible();
     await page.getByTestId("project-name-input").fill("Lighting coordination");
     await page.getByTestId("create-project-button").click();
+    await expect(page.getByTestId("import-pdf")).toBeEnabled();
+
+    await page.getByRole("button", { name: "Review settings" }).click();
+    const callLimit = page.getByLabel("Maximum calls per inspection");
+    await expect(callLimit).toHaveValue("12");
+
+    for (const limit of ["4", "8", "12"]) {
+      await callLimit.selectOption(limit);
+      await expect(callLimit).toHaveValue(limit);
+    }
+
+    await page.getByRole("button", { name: "Close source panel" }).click();
     await page.getByTestId("import-pdf").click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
 
@@ -130,6 +142,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await accept("drawn", 2, "Counted the two type A symbols within Room 101 on L-101.");
     await accept("scheduled", 3, "Read the Room 101 row on L-601.");
+    await expect(page.getByRole("region", { name: "Proposed observations" })).toHaveCount(0);
     await evaluate("Supported issue");
     await expect(page.getByTestId("check-history")).toContainText("2 drawn");
     await expect(page.getByTestId("check-history")).toContainText("3 scheduled");
