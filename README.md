@@ -39,8 +39,10 @@ in place. The drawing-review workflow above is not implemented yet.
   SQLite with backup and restore, schema-validated Effect RPC, and desktop tests.
 - **UI study:** project-based conversations, a findings menu, and a source panel
   using sample content. The running app still opens the notes smoke example.
-- **Planned:** PDF rendering and evidence mapping, Muse/SAM review tools,
-  corrections and revision checks, durable review execution, and cloud handoff.
+- **CLI experiments:** original-PDF crops, coordinate mapping, Muse/SAM inspection
+  tools, fixture reconciliation, and saved evidence with correction reports.
+- **Planned:** desktop integration of those tools, engineering checks and revision
+  rechecks, durable review execution, and cloud handoff.
 
 Provider configuration and manual API checks are available. The app itself does
 not call Meta or Baseten yet.
@@ -123,6 +125,24 @@ for each provider without printing keys or response bodies, then exits with code
 
 The requests follow [Meta's Chat Completions API](https://dev.meta.ai/docs/protocols/chat-completions)
 and [Baseten's Model APIs](https://docs.baseten.co/inference/model-apis/overview).
+
+## SAM drawing experiment
+
+Run `bun run test:sam` to prepare PDF crops and requests without inference.
+Run `bun run test:sam --live` to test SAM 3.1 on the local drawing fixtures.
+See [SAM drawing experiment](docs/segmentation-test.md) for Poppler setup,
+case selection, saved evidence, and coordinate conventions.
+
+The [adaptive Meta review](docs/adaptive-meta-review.md) uses Muse tool calls to
+compare independent electrical inventories, request PDF zooms and apply fresh
+SAM guidance. Prepare it with `bun run test:review-agent`; add `--live` for the
+bounded model experiment. See [the broader drawing study](docs/sam-drawing-expansion.md)
+for lighting, receptacles, HVAC, doors and observed failure cases.
+
+The [additional-set study](docs/sam-expanded-sets.md) tests the expanded D–J pack
+across electrical, fire alarm, structural and civil workflows. Recipes are in
+`experiments/sam/expanded/`; the supplied PDFs remain under
+`Moke-Hackathon-Drawings/expanded/`.
 
 ## Toolchain
 

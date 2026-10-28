@@ -1,0 +1,48 @@
+[
+  {
+    "id": "exam-gfi-click",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 54,
+          "y": 201,
+          "label": "positive"
+        },
+        {
+          "x": 44,
+          "y": 244,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Recover observed misplaced GFI mask using a fresh point on the visible left arc, with blank counter excluded."
+  },
+  {
+    "id": "exam-gfi-guided",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 48,
+        "top": 183,
+        "right": 90,
+        "bottom": 220
+      },
+      "points": [
+        {
+          "x": 54,
+          "y": 201,
+          "label": "positive"
+        },
+        {
+          "x": 44,
+          "y": 244,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Corrected source box around the partly occluded GFI symbol; source review supplies the target."
+  }
+]

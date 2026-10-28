@@ -1,0 +1,74 @@
+[
+  {
+    "id": "holdout-c-procedure-power-1",
+    "crop": "c-procedure-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Frozen wording transfer: circle. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-procedure-power-2",
+    "crop": "c-procedure-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical outlet symbol"
+    },
+    "purpose": "Frozen wording transfer: electrical outlet symbol. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-exam-power-1",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Frozen wording transfer: circle. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-exam-power-2",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical outlet symbol"
+    },
+    "purpose": "Frozen wording transfer: electrical outlet symbol. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-waiting-lighting-150-1",
+    "crop": "c-waiting-lighting-150",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Frozen wording transfer: black circle. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-waiting-lighting-150-2",
+    "crop": "c-waiting-lighting-150",
+    "prompt": {
+      "kind": "concept",
+      "text": "green circle"
+    },
+    "purpose": "Frozen wording transfer: green circle. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-pre-recovery-lighting-1",
+    "crop": "c-pre-recovery-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Frozen wording transfer: black circle. Inspect false positives and omissions, not just total count."
+  },
+  {
+    "id": "holdout-c-pre-recovery-lighting-2",
+    "crop": "c-pre-recovery-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "green circle"
+    },
+    "purpose": "Frozen wording transfer: green circle. Inspect false positives and omissions, not just total count."
+  }
+]

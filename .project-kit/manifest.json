@@ -60,6 +60,74 @@
       "https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver"
     ]
   },
+  "segmentationExperiment": {
+    "entrypoint": "scripts/test-sam.ts",
+    "cases": "experiments/sam/cases.json",
+    "documentation": "docs/segmentation-test.md",
+    "model": "sam-3.1",
+    "parser": "@meta-sam/parser@0.1.0",
+    "pdfRenderer": "Poppler pdftoppm, external test dependency",
+    "fixtureManifest": "Moke-Hackathon-Drawings/drawing-manifest.json",
+    "artifactDirectory": ".local/sam",
+    "plumbingStudy": {
+      "documentation": "docs/plumbing-segmentation.md",
+      "cropRecipe": "experiments/sam/plumbing-crops.json",
+      "candidateCases": "experiments/sam/plumbing-cases.json",
+      "refinementCases": "experiments/sam/plumbing-refinement-cases.json",
+      "reconciliationEntrypoint": "scripts/reconcile-fixtures.ts",
+      "mokeInstructions": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review"
+    },
+    "sourcesCheckedOn": "2026-10-27",
+    "sources": [
+      "https://dev.meta.ai/docs/sam/segmenting",
+      "https://dev.meta.ai/docs/sam/reading-segmentation",
+      "https://dev.meta.ai/docs/sam/client-libraries"
+    ],
+    "drawingExpansion": {
+      "documentation": "docs/sam-drawing-expansion.md",
+      "recipes": "experiments/sam/symbols",
+      "researchTools": [
+        "Executor Exa",
+        "Executor Firecrawl"
+      ],
+      "sourcesCheckedOn": "2026-10-27",
+      "sources": [
+        "https://arxiv.org/html/2511.16719v2",
+        "https://github.com/facebookresearch/sam3",
+        "https://arxiv.org/html/2508.10449v1",
+        "https://arxiv.org/html/2608.14317",
+        "https://github.com/CubiCasa/CubiCasa5k",
+        "https://floorplancad.github.io/"
+      ]
+    },
+    "adaptiveReview": {
+      "entrypoint": "scripts/test-review-agent.ts",
+      "documentation": "docs/adaptive-meta-review.md",
+      "cases": "experiments/sam/adaptive-cases.json",
+      "models": [
+        "muse-spark-1.3",
+        "sam-3.1"
+      ],
+      "protocol": "Responses function calling with independent Chat Completions vision",
+      "overlayRenderer": "@resvg/resvg-js@2.6.2",
+      "sourcesCheckedOn": "2026-10-27",
+      "sources": [
+        "https://dev.meta.ai/docs/tool-calling",
+        "https://dev.meta.ai/docs/protocols/responses",
+        "https://dev.meta.ai/docs/cookbook/tool-function-calling"
+      ]
+    },
+    "additionalDisciplineSets": {
+      "documentation": "docs/sam-expanded-sets.md",
+      "recipes": "experiments/sam/expanded",
+      "fixtureManifest": "Moke-Hackathon-Drawings/expanded/drawing-manifest.json",
+      "artifactDirectory": ".local/sam/iteration-5",
+      "caseCount": 42,
+      "cropCount": 18,
+      "sourcesCheckedOn": "2026-10-27",
+      "sourceManifestSha256": "78ea36e0fb53d5b9fe41ca2f34cf1c943baa0b67a907b33f4299bec8c9464972"
+    }
+  },
   "inference": {
     "environmentTemplate": ".env.example",
     "setupDocumentation": "docs/inference.md",

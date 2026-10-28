@@ -1,0 +1,152 @@
+[
+  {
+    "id": "j-alarm-typed",
+    "role": "SAM-discovery-plus-Muse-classification",
+    "totals": {
+      "truePositives": 8,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "f-tag-a-classified",
+    "role": "SAM-discovery-plus-Muse-classification",
+    "totals": {
+      "truePositives": 13,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "civil-complete-arrows-classified",
+    "role": "SAM-discovery-plus-Muse-classification",
+    "totals": {
+      "truePositives": 5,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "g-holes-direct",
+    "role": "SAM-geometric-discovery",
+    "totals": {
+      "truePositives": 5,
+      "falsePositives": 1,
+      "falseNegatives": 1
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "g-holes-manual-correction",
+    "role": "manual-source-guidance-control",
+    "totals": {
+      "truePositives": 6,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Source-guided correction drops giant E detail-bubble false positive and supplies the missing half-plate hole box; not autonomous discovery."
+  },
+  {
+    "id": "g-posts-guided",
+    "role": "Muse-grounding-plus-SAM",
+    "totals": {
+      "truePositives": 4,
+      "falsePositives": 1,
+      "falseNegatives": 1
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "g-posts-manual-replacement",
+    "role": "manual-source-guidance-control",
+    "totals": {
+      "truePositives": 5,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Replace misplaced west-wall C3 proposal using source-guided fresh geometry; not autonomous recovery."
+  },
+  {
+    "id": "d-fixture-grounding-sam-typed",
+    "role": "Muse-grounding-plus-SAM",
+    "totals": {
+      "truePositives": 6,
+      "falsePositives": 1,
+      "falseNegatives": 1
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "d-fixture-grounding-grounding-typed",
+    "role": "Muse-grounding-before-SAM",
+    "totals": {
+      "truePositives": 6,
+      "falsePositives": 1,
+      "falseNegatives": 1
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "e-fixture-grounding-sam-typed",
+    "role": "Muse-grounding-plus-SAM",
+    "totals": {
+      "truePositives": 6,
+      "falsePositives": 1,
+      "falseNegatives": 1
+    },
+    "notes": "Kind-preserving strict scoring prevents large fan7 rescuing highbay5. Highbay5 bottom=1654 excludes source center y=1654 exactly; report separate one-pixel annotation-tolerance sensitivity without changing truth."
+  },
+  {
+    "id": "e-fixture-grounding-grounding-typed",
+    "role": "Muse-grounding-before-SAM",
+    "totals": {
+      "truePositives": 7,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "f-power-grounding-sam-typed",
+    "role": "Muse-grounding-plus-SAM",
+    "totals": {
+      "truePositives": 8,
+      "falsePositives": 2,
+      "falseNegatives": 2
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "f-power-grounding-grounding-typed",
+    "role": "Muse-grounding-before-SAM",
+    "totals": {
+      "truePositives": 7,
+      "falsePositives": 3,
+      "falseNegatives": 3
+    },
+    "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference."
+  },
+  {
+    "id": "f-troffers-manual",
+    "role": "manual-source-guidance-control",
+    "totals": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Two manual source boxes; not independent discovery, localization only."
+  },
+  {
+    "id": "e-fan-manual",
+    "role": "manual-source-guidance-control",
+    "totals": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0
+    },
+    "notes": "Center on fan hub is hit but small returned hub box does not segment full fan sweep; not mask-fidelity success."
+  }
+]

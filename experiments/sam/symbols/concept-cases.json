@@ -1,0 +1,110 @@
+[
+  {
+    "id": "a-lighting-1",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "fluorescent light"
+    },
+    "purpose": "Discovery probe: fluorescent light; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "a-lighting-2",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangular light fixture"
+    },
+    "purpose": "Discovery probe: rectangular light fixture; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "a-lighting-3",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangle"
+    },
+    "purpose": "Discovery probe: rectangle; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "a-lighting-4",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "pendant light symbol"
+    },
+    "purpose": "Discovery probe: pendant light symbol; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "a-lighting-5",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Discovery probe: circle; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-waiting-lighting-1",
+    "crop": "c-waiting-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "recessed light symbol"
+    },
+    "purpose": "Discovery probe: recessed light symbol; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-waiting-lighting-2",
+    "crop": "c-waiting-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Discovery probe: circle; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-waiting-lighting-3",
+    "crop": "c-waiting-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "wall sconce symbol"
+    },
+    "purpose": "Discovery probe: wall sconce symbol; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-pre-recovery-power-1",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical outlet symbol"
+    },
+    "purpose": "Discovery probe: electrical outlet symbol; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-pre-recovery-power-2",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "duplex receptacle"
+    },
+    "purpose": "Discovery probe: duplex receptacle; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-pre-recovery-power-3",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Discovery probe: circle; compare every instance against independently inspected source symbols, not just total count."
+  },
+  {
+    "id": "c-pre-recovery-power-4",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "triangle"
+    },
+    "purpose": "Discovery probe: triangle; compare every instance against independently inspected source symbols, not just total count."
+  }
+]

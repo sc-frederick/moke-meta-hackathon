@@ -1,0 +1,28 @@
+[
+  {
+    "id": "staff-lav-exclude-pipe",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 175,
+        "top": 255,
+        "right": 350,
+        "bottom": 395
+      },
+      "points": [
+        {
+          "x": 262,
+          "y": 325,
+          "label": "positive"
+        },
+        {
+          "x": 225,
+          "y": 301,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council single pipe probe: keep basin while excluding the measured red-pipe pixel (225,301). Holes are not missing fixtures."
+  }
+]

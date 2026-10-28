@@ -1,0 +1,63 @@
+[
+  {
+    "id": "civil-blue-arrows",
+    "crop": "exp-i-grading",
+    "purpose": "Frozen blue-flow-arrow probe; geometric proposals require source audit.",
+    "prompt": {
+      "kind": "concept",
+      "text": "blue arrow"
+    }
+  },
+  {
+    "id": "civil-all-arrows",
+    "crop": "exp-i-grading",
+    "purpose": "Control separating grayhatch/dimensions from drainagearrows bysource.",
+    "prompt": {
+      "kind": "concept",
+      "text": "arrow"
+    }
+  },
+  {
+    "id": "civil-full-footprint-concept",
+    "crop": "exp-i-full-footprint",
+    "purpose": "Complete sourceboundary concept test; no physicalmeasurementclaim.",
+    "prompt": {
+      "kind": "concept",
+      "text": "building footprint"
+    }
+  },
+  {
+    "id": "civil-full-footprint-points",
+    "crop": "exp-i-full-footprint",
+    "purpose": "Interior point with outside negative; originaldimensionlinework retained.",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 1075,
+          "y": 620,
+          "label": "positive"
+        },
+        {
+          "x": 100,
+          "y": 100,
+          "label": "negative"
+        }
+      ]
+    }
+  },
+  {
+    "id": "civil-full-footprint-box",
+    "crop": "exp-i-full-footprint",
+    "purpose": "Known sourceoutline supplied; tests boundarygeometry notdiscovery.",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 165,
+        "top": 195,
+        "right": 1975,
+        "bottom": 1045
+      }
+    }
+  }
+]

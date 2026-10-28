@@ -1,0 +1,155 @@
+[
+  {
+    "id": "expand-a-lighting-1",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "hatched rectangle"
+    },
+    "purpose": "Discovery probe: hatched rectangle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-a-lighting-2",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "black rectangle"
+    },
+    "purpose": "Discovery probe: black rectangle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-waiting-lighting-1",
+    "crop": "c-waiting-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Discovery probe: black circle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-waiting-lighting-2",
+    "crop": "c-waiting-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "green circle"
+    },
+    "purpose": "Discovery probe: green circle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-power-1",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle with two lines"
+    },
+    "purpose": "Discovery probe: circle with two lines. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-hvac-1",
+    "crop": "c-pre-recovery-hvac",
+    "prompt": {
+      "kind": "concept",
+      "text": "air diffuser"
+    },
+    "purpose": "Discovery probe: air diffuser. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-hvac-2",
+    "crop": "c-pre-recovery-hvac",
+    "prompt": {
+      "kind": "concept",
+      "text": "blue rectangle"
+    },
+    "purpose": "Discovery probe: blue rectangle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-hvac-3",
+    "crop": "c-pre-recovery-hvac",
+    "prompt": {
+      "kind": "concept",
+      "text": "cyan rectangle"
+    },
+    "purpose": "Discovery probe: cyan rectangle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-hvac-4",
+    "crop": "c-pre-recovery-hvac",
+    "prompt": {
+      "kind": "concept",
+      "text": "magenta rectangle"
+    },
+    "purpose": "Discovery probe: magenta rectangle. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-c-pre-recovery-hvac-5",
+    "crop": "c-pre-recovery-hvac",
+    "prompt": {
+      "kind": "concept",
+      "text": "blue air duct"
+    },
+    "purpose": "Discovery probe: blue air duct. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-a-life-safety-1",
+    "crop": "a-life-safety",
+    "prompt": {
+      "kind": "concept",
+      "text": "exit sign"
+    },
+    "purpose": "Discovery probe: exit sign. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-a-life-safety-2",
+    "crop": "a-life-safety",
+    "prompt": {
+      "kind": "concept",
+      "text": "fire extinguisher symbol"
+    },
+    "purpose": "Discovery probe: fire extinguisher symbol. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-a-life-safety-3",
+    "crop": "a-life-safety",
+    "prompt": {
+      "kind": "concept",
+      "text": "smoke detector symbol"
+    },
+    "purpose": "Discovery probe: smoke detector symbol. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-b-rooms-1",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "concept",
+      "text": "door"
+    },
+    "purpose": "Discovery probe: door. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-b-rooms-2",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "concept",
+      "text": "door swing"
+    },
+    "purpose": "Discovery probe: door swing. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-b-rooms-3",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "concept",
+      "text": "room"
+    },
+    "purpose": "Discovery probe: room. Assess association, completeness and leakage rather than raw returned count."
+  },
+  {
+    "id": "expand-b-rooms-4",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "concept",
+      "text": "room interior"
+    },
+    "purpose": "Discovery probe: room interior. Assess association, completeness and leakage rather than raw returned count."
+  }
+]

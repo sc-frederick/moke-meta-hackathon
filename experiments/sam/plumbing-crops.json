@@ -1,0 +1,73 @@
+{
+  "provenance": "Sample C P-2. Selected restroom regions for WC/LAV schedule coordination. Reference hashes identify the first render; actual run hashes are saved separately.",
+  "crops": [
+    {
+      "id": "c-staff-restrooms",
+      "file": "inputs/c-staff-restrooms.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 2,
+      "sheet": "P-2",
+      "pdf_rect_points": [252, 1350, 420, 1518],
+      "dpi": 300,
+      "width_px": 700,
+      "height_px": 700,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [252, 1350]
+      },
+      "purpose": "Moke plumbing plan versus fixture schedule experiment",
+      "sha256": "cfab98a4b8a022cf6dac3cb311e6fb856a3dce45ebeb61d4925f1c5bc22e148d"
+    },
+    {
+      "id": "c-central-restrooms",
+      "file": "inputs/c-central-restrooms.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 2,
+      "sheet": "P-2",
+      "pdf_rect_points": [648, 888, 888, 1152],
+      "dpi": 300,
+      "width_px": 1000,
+      "height_px": 1100,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [648, 888]
+      },
+      "purpose": "Moke plumbing plan versus fixture schedule experiment",
+      "sha256": "16751ca1df574bfc6bbb92b9b39171e530700bd2c20e6ead0332bb12aa63417e"
+    },
+    {
+      "id": "c-private-restroom",
+      "file": "inputs/c-private-restroom.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 2,
+      "sheet": "P-2",
+      "pdf_rect_points": [1200, 540, 1332, 708],
+      "dpi": 300,
+      "width_px": 550,
+      "height_px": 700,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1200, 540]
+      },
+      "purpose": "Moke plumbing plan versus fixture schedule experiment",
+      "sha256": "879daf7338cdd7496669da89fc077176983c284e2166d22b0a711360fcccc1c0"
+    },
+    {
+      "id": "c-patient-restroom",
+      "file": "inputs/c-patient-restroom.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 2,
+      "sheet": "P-2",
+      "pdf_rect_points": [1728, 96, 1896, 276],
+      "dpi": 300,
+      "width_px": 700,
+      "height_px": 750,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1728, 96]
+      },
+      "purpose": "Moke plumbing plan versus fixture schedule experiment",
+      "sha256": "18521eca71bc2fe56caf90d1640dd3cf457dd81a3b91d9eebe27431e29f936ff"
+    }
+  ]
+}

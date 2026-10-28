@@ -1,0 +1,110 @@
+[
+  {
+    "id": "shape-d-panels",
+    "crop": "audit-d-baths-small-room",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-d-fans",
+    "crop": "audit-d-baths-small-room",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-e-lights",
+    "crop": "exp-e-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-e-fan",
+    "crop": "exp-e-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "star"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-f-lights",
+    "crop": "exp-f-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-f-troffers",
+    "crop": "exp-f-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-f-power",
+    "crop": "exp-f-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-d-power",
+    "crop": "exp-d-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-j-alarm",
+    "crop": "exp-j-alarm",
+    "prompt": {
+      "kind": "concept",
+      "text": "square"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-j-hexagons",
+    "crop": "exp-j-alarm",
+    "prompt": {
+      "kind": "concept",
+      "text": "hexagon"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-sprinkler-circles",
+    "crop": "exp-e-sprinklers",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  },
+  {
+    "id": "shape-sprinkler-dotcircles",
+    "crop": "exp-e-sprinklers",
+    "prompt": {
+      "kind": "concept",
+      "text": "small circle with a black dot"
+    },
+    "purpose": "Geometric discovery probe; classify against source legend and audit partial boundary objects separately."
+  }
+]

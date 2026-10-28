@@ -24,13 +24,16 @@
     "format": "bun fmt",
     "format:check": "bun fmt --check",
     "test": "bun test",
+    "test:sam": "bun scripts/test-sam.ts",
+    "reconcile:fixtures": "bun scripts/reconcile-fixtures.ts",
     "test:e2e": "bun --bun playwright test",
     "verify": "bun run check && bun run test && bun run build && bun run test:e2e",
     "effect:setup": "bun --bun effect-tsgo patch --typescript-package @typescript/native",
     "postinstall": "bun run effect:setup",
     "package:desktop": "bun run build && bun --bun electron-builder --publish never",
     "build:backend": "bun build ./backend/main.ts --compile --outfile ./dist/backend/app-backend --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
-    "test:packaged": "bun scripts/test-packaged.ts"
+    "test:packaged": "bun scripts/test-packaged.ts",
+    "test:review-agent": "bun scripts/test-review-agent.ts"
   },
   "dependencies": {
     "effect": "4.0.4",
@@ -39,9 +42,11 @@
   "devDependencies": {
     "@effect/sql-sqlite-bun": "4.0.4",
     "@effect/tsgo": "0.53.0",
+    "@meta-sam/parser": "0.1.0",
     "@opentelemetry/api": "1.9.1",
     "@oxlint/plugins": "1.88.0",
     "@playwright/test": "1.64.1",
+    "@resvg/resvg-js": "2.6.2",
     "@sveltejs/adapter-static": "4.0.0",
     "@sveltejs/kit": "3.0.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",

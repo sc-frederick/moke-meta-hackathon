@@ -7,7 +7,17 @@
   and hackathon eligibility and scoring priorities.
 - [Hackathon bonuses](hackathon-bonuses.md): award fit, required evidence, and launch
   priorities while protecting the main-track entry.
+- [SAM drawing experiment](segmentation-test.md): PDF crop rendering, live segmentation,
+  saved overlays, coordinate mapping, and experiment limits.
 - [Data and recovery](data.md): SQLite, migrations, backups, and restores.
+- [SAM plumbing coordination](plumbing-segmentation.md): fixture-count experiments,
+  captured grounding recipes, correction probes, and the offline reconciliation worksheet.
+- [SAM beyond plumbing](sam-drawing-expansion.md): electrical and lighting counts,
+  HVAC, doors, correction experiments, scaling limits, and Exa/Firecrawl research.
+- [Adaptive Meta review](adaptive-meta-review.md): Muse tool calls that compare
+  independent inventories, request PDF zooms, and test fresh SAM guidance.
+- [Additional discipline sets](sam-expanded-sets.md): new D–J electrical, alarm,
+  structural and civil probes, source-frozen observations, corrections and limits.
 - [Deployment](deployment.md): builds, packaging, CI, and runtime boundaries.
 - [Agent SDK comparison](research/agent-harness-comparison.md): Effect AI, Pi Durable,
   persistent execution alternatives, and the Grok critique.

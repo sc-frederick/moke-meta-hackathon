@@ -1,0 +1,190 @@
+[
+  {
+    "id": "guided-c-procedure-power-0",
+    "crop": "c-procedure-power",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 0,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 183,
+              "top": 110,
+              "right": 233,
+              "bottom": 156
+            }
+          }
+        },
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 307,
+              "top": 106,
+              "right": 365,
+              "bottom": 155
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1235,
+              "top": 84,
+              "right": 1291,
+              "bottom": 132
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 307,
+              "top": 218,
+              "right": 365,
+              "bottom": 267
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 305,
+              "top": 324,
+              "right": 364,
+              "bottom": 375
+            }
+          }
+        },
+        {
+          "id": 5,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1235,
+              "top": 386,
+              "right": 1291,
+              "bottom": 435
+            }
+          }
+        },
+        {
+          "id": 6,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 183,
+              "top": 412,
+              "right": 241,
+              "bottom": 460
+            }
+          }
+        },
+        {
+          "id": 7,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 307,
+              "top": 573,
+              "right": 365,
+              "bottom": 622
+            }
+          }
+        },
+        {
+          "id": 8,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1235,
+              "top": 782,
+              "right": 1291,
+              "bottom": 831
+            }
+          }
+        },
+        {
+          "id": 9,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 575,
+              "top": 1117,
+              "right": 615,
+              "bottom": 1168
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "One-image normalized Muse proposals, up to16 per SAM request. Count/class comes from Muse; returned mask does not validate semantics."
+  },
+  {
+    "id": "guided-c-exam-power-0",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 0,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 475,
+              "top": 74,
+              "right": 510,
+              "bottom": 121
+            }
+          }
+        },
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 23,
+              "top": 219,
+              "right": 65,
+              "bottom": 268
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 23,
+              "top": 394,
+              "right": 65,
+              "bottom": 446
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 556,
+              "top": 523,
+              "right": 597,
+              "bottom": 570
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "One-image normalized Muse proposals, up to16 per SAM request. Count/class comes from Muse; returned mask does not validate semantics."
+  }
+]

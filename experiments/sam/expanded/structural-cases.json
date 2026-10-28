@@ -1,0 +1,38 @@
+[
+  {
+    "id": "g-support-concept",
+    "crop": "audit-g-porch-supports",
+    "prompt": {
+      "kind": "concept",
+      "text": "aluminum post symbol"
+    },
+    "purpose": "Blind discovery baseline; source annotations are offline evaluation only."
+  },
+  {
+    "id": "g-hole-concept",
+    "crop": "audit-g-baseplate-holes",
+    "prompt": {
+      "kind": "concept",
+      "text": "bolt hole"
+    },
+    "purpose": "Drawn hole circles across alternative connection details; do not infer installed quantity."
+  },
+  {
+    "id": "g-hole-circle",
+    "crop": "audit-g-baseplate-holes",
+    "prompt": {
+      "kind": "concept",
+      "text": "small outlined circle"
+    },
+    "purpose": "Geometric alternative; distinguish actual hole marks from text and detail bubbles."
+  },
+  {
+    "id": "h-diagonal-concept",
+    "crop": "audit-h-diagonal-braces",
+    "prompt": {
+      "kind": "concept",
+      "text": "diagonal bracing board"
+    },
+    "purpose": "Visible diagonal plan bars; no inference of required or installed bracing quantities."
+  }
+]

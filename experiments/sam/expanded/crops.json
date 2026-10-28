@@ -1,0 +1,310 @@
+{
+  "crops": [
+    {
+      "id": "exp-d-lighting",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-d-lighting.png",
+      "pdf": "pdfs/sample-d.pdf",
+      "page": 11,
+      "sheet": "E-2",
+      "pdf_rect_points": [744, 600, 1176, 1032],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [744, 600]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "e2223da5f57ee50bfc427be4b3b4f6cf9f3996a36dbd418744cf1d696e873e66"
+    },
+    {
+      "id": "exp-d-power",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-d-power.png",
+      "pdf": "pdfs/sample-d.pdf",
+      "page": 12,
+      "sheet": "E-3",
+      "pdf_rect_points": [756, 648, 1188, 1080],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [756, 648]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "af16bd68f0b7e4a06a1d2d9fc1cb8fa7389d43fd133bd5867c81b7f792bf40bb"
+    },
+    {
+      "id": "exp-e-lighting",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-lighting.png",
+      "pdf": "pdfs/sample-e.pdf",
+      "page": 5,
+      "sheet": "E-2",
+      "pdf_rect_points": [864, 714, 1296, 1146],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [864, 714]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+    },
+    {
+      "id": "exp-e-power",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-power.png",
+      "pdf": "pdfs/sample-e.pdf",
+      "page": 6,
+      "sheet": "E-3",
+      "pdf_rect_points": [588, 1116, 1020, 1548],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [588, 1116]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "4e13daaa76eb260a7a2e92deddbf36c95f2b641012c3c9f3105aa8d138f963b6"
+    },
+    {
+      "id": "exp-f-power",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-f-power.png",
+      "pdf": "pdfs/sample-f.pdf",
+      "page": 2,
+      "sheet": "E100",
+      "pdf_rect_points": [756, 204, 1188, 636],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [756, 204]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "ec333cf8d377eb3eab8d5c8d15914c254d7d3afab8018c69c4ad9f71056fa984"
+    },
+    {
+      "id": "exp-f-lighting",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-f-lighting.png",
+      "pdf": "pdfs/sample-f.pdf",
+      "page": 2,
+      "sheet": "E100",
+      "pdf_rect_points": [756, 900, 1188, 1332],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [756, 900]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+    },
+    {
+      "id": "exp-g-foundation",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-g-foundation.png",
+      "pdf": "pdfs/sample-g.pdf",
+      "page": 2,
+      "sheet": "S-2",
+      "pdf_rect_points": [504, 324, 936, 756],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [504, 324]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "b16d437f19f46677c77c3737d401844471632c981432ddf6e266721df0805595"
+    },
+    {
+      "id": "exp-g-footing-detail",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-g-footing-detail.png",
+      "pdf": "pdfs/sample-g.pdf",
+      "page": 3,
+      "sheet": "S-3",
+      "pdf_rect_points": [36, 828, 468, 1260],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [36, 828]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "b75fd430baa092ad527a9d6f6325cc8092e41f28a275c81af1b152454febbdf3"
+    },
+    {
+      "id": "exp-h-trusses",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-h-trusses.png",
+      "pdf": "pdfs/sample-h.pdf",
+      "page": 1,
+      "sheet": "S-1",
+      "pdf_rect_points": [1116, 684, 1548, 1116],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1116, 684]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "eabcf2d0318c863589a147985c2900b433c31f1690406c86b2909a8ec016f886"
+    },
+    {
+      "id": "exp-i-grading",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-i-grading.png",
+      "pdf": "pdfs/sample-i.pdf",
+      "page": 3,
+      "sheet": "C-3",
+      "pdf_rect_points": [630, 504, 1062, 936],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [630, 504]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "5233689a0b476b84b9709aa59869e025c97c68264ce860d62b11825dca6d8539"
+    },
+    {
+      "id": "exp-j-alarm",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-j-alarm.png",
+      "pdf": "pdfs/sample-j.pdf",
+      "page": 2,
+      "sheet": "FA-2",
+      "pdf_rect_points": [1344, 924, 1776, 1356],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1344, 924]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "e6f706dd49088ac83f1454c6bff606816fe1270490833eb7ab0bb7a15e4836d4"
+    },
+    {
+      "id": "exp-e-sprinklers",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-sprinklers.png",
+      "pdf": "pdfs/sample-e.pdf",
+      "page": 8,
+      "sheet": "SP-2",
+      "pdf_rect_points": [1404, 324, 1836, 756],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1404, 324]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "8553ff4d97e2e32659bf67d370b5e5798caf4c17596920177e8e42e942abc55e"
+    },
+    {
+      "id": "exp-e-riser",
+      "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-riser.png",
+      "pdf": "pdfs/sample-e.pdf",
+      "page": 9,
+      "sheet": "SP-3",
+      "pdf_rect_points": [564, 624, 996, 1056],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [564, 624]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "6c19d8c3fb71c1ed7fab420e02ebe2254762eeb3ddc9460bfef144a7a966cc79"
+    },
+    {
+      "id": "exp-i-full-footprint",
+      "file": ".local/sam/iteration-5/civil-audit/i-full-footprint.png",
+      "pdf": "pdfs/sample-i.pdf",
+      "page": 3,
+      "sheet": "C-3",
+      "pdf_rect_points": [594, 552, 1110, 858],
+      "dpi": 300,
+      "width_px": 2150,
+      "height_px": 1275,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [594, 552]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538"
+    },
+    {
+      "id": "audit-d-baths-small-room",
+      "file": ".local/sam/iteration-5/electrical-audit/d-baths-small-room.png",
+      "pdf": "pdfs/sample-d.pdf",
+      "page": 11,
+      "sheet": "E-2",
+      "pdf_rect_points": [744, 600, 1008, 912],
+      "dpi": 300,
+      "width_px": 1100,
+      "height_px": 1300,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [744, 600]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3"
+    },
+    {
+      "id": "audit-g-porch-supports",
+      "file": ".local/sam/iteration-5/structural-audit/g-porch-supports.png",
+      "pdf": "pdfs/sample-g.pdf",
+      "page": 2,
+      "sheet": "S-2",
+      "pdf_rect_points": [432, 324, 960, 624],
+      "dpi": 300,
+      "width_px": 2200,
+      "height_px": 1250,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [432, 324]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112"
+    },
+    {
+      "id": "audit-g-baseplate-holes",
+      "file": ".local/sam/iteration-5/structural-audit/g-baseplate-context.png",
+      "pdf": "pdfs/sample-g.pdf",
+      "page": 3,
+      "sheet": "S-3",
+      "pdf_rect_points": [72, 1248.12, 576, 1650.24],
+      "dpi": 200,
+      "width_px": 1400,
+      "height_px": 1117,
+      "pixel_to_pdf": {
+        "scale": 0.36,
+        "offset_points": [72, 1248.12]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f"
+    },
+    {
+      "id": "audit-h-diagonal-braces",
+      "file": ".local/sam/iteration-5/structural-audit/h-roof-braces.png",
+      "pdf": "pdfs/sample-h.pdf",
+      "page": 1,
+      "sheet": "S-1",
+      "pdf_rect_points": [1080, 540, 1800, 1248],
+      "dpi": 150,
+      "width_px": 1500,
+      "height_px": 1475,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1080, 540]
+      },
+      "purpose": "Original drawing source region for bounded cross-discipline experiments.",
+      "sha256": "286301651203f5b21f5e828b148c7d65ba2d9947de4f310e10381c07027591c3"
+    }
+  ]
+}

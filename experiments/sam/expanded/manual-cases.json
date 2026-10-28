@@ -1,0 +1,70 @@
+[
+  {
+    "id": "manual-g-wall-post",
+    "crop": "audit-g-porch-supports",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 355,
+        "top": 948,
+        "right": 405,
+        "bottom": 1000
+      }
+    },
+    "purpose": "Source-reviewed correction of misplaced west-wallpost proposal; manualguidance branch."
+  },
+  {
+    "id": "manual-f-troffers",
+    "crop": "exp-f-lighting",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 214,
+              "top": 1228,
+              "right": 534,
+              "bottom": 1388
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1114,
+              "top": 1320,
+              "right": 1434,
+              "bottom": 1480
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Manually located drawn troffers after geometrypromptselectedequipment; source-guidance branch, notdiscovery."
+  },
+  {
+    "id": "manual-e-fan",
+    "crop": "exp-e-lighting",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 480,
+          "y": 1464,
+          "label": "positive"
+        },
+        {
+          "x": 680,
+          "y": 1634,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Source-reviewed actualblackfan hub withnegativeonfurniture/floor. Manualpointguidance, notindependentdiscovery."
+  }
+]

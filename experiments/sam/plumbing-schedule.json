@@ -1,0 +1,11 @@
+{
+  "rows": [
+    { "description": "LAVATORY", "mark": "LAV", "quantity": 6 },
+    { "description": "WATER CLOSET", "mark": "WC", "quantity": 6 },
+    { "description": "REFRIGERATOR", "mark": "REF", "quantity": 1 },
+    { "description": "DRINKING FOUNTAIN", "mark": "DF", "quantity": 2 },
+    { "description": "BASIN SINK", "mark": "BS", "quantity": 8 },
+    { "description": "KITCHEN SINK", "mark": "KS", "quantity": 3 },
+    { "description": "SERVICE SINK", "mark": "SS", "quantity": 1 }
+  ]
+}
