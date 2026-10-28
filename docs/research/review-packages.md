@@ -117,3 +117,21 @@ This module does not edit `application.ts`, the RPC contracts, or migrations. A 
 - The retained pre-restore directories are not pruned.
 - Windows and macOS package behavior was not run.
 - Full `bun run verify`, packaged E2E, and the desktop shell wiring are left to the parent.
+
+## Council recovery corrections
+
+A replacement journal now blocks public review mutations, note operations, and
+package/database maintenance until startup recovery completes. The barrier is
+checked inside the SQL permit for legacy notes, so queued writes cannot land in
+a database that is about to be rolled back. A failed replacement requires reopen;
+the UI says so. A waiting maintenance request cannot clear another request's
+admission flag when cancelled.
+
+Rollback persists a `reverting` intent and the saved original's SHA-256/size before
+renaming any file. If interrupted after the original returns to its live path,
+the next recovery verifies that identity and finishes rather than treating a
+missing saved file as corruption. Directory sync precedes the reverted receipt.
+Tests cut before discard, after discard and after the original returns; a wrong
+identity stays blocked without changing the original. Another test leaves the
+incoming database installed, verifies application writes are refused, then
+reopens and confirms post-recovery writes survive another restart.

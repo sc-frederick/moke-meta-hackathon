@@ -1,8 +1,27 @@
 import { constants, Database } from "bun:sqlite";
-import { Deferred, Effect, Fiber, Schema, Semaphore } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  ManagedRuntime,
+  Redacted,
+  Result,
+  Schema,
+  Semaphore,
+} from "effect";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -16,7 +35,15 @@ import {
   restoreReviewPackage,
   type PackagesConfig,
 } from "../backend/review/packages.ts";
-import { Artifact, Project, Revision } from "../src/lib/review/contracts.ts";
+import { BackendConfig } from "#lib/backend-rpc.ts";
+import { Application } from "../backend/application.ts";
+import {
+  Artifact,
+  CommandId,
+  Project,
+  ReviewCommand,
+  Revision,
+} from "../src/lib/review/contracts.ts";
 import { PackageError, packageEngineFormat } from "../src/lib/review/packages.ts";
 
 const migrations = resolve("migrations");
@@ -696,3 +723,206 @@ test("export does not replace an existing destination or exceed a file limit", a
 });
 
 const defaultBytes = () => 2_147_483_648;
+
+const seedNote = (directory: string, text: string) => {
+  const database = new DatabaseSync(join(directory, "app.sqlite"));
+  database.prepare("INSERT INTO notes(text) VALUES (?)").run(text);
+  database.close();
+};
+
+const RollbackJournal = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.Literal(1),
+    phase: Schema.Literal("swapping"),
+    preRestoreRelative: Schema.NullOr(Schema.String),
+    entries: Schema.Array(
+      Schema.Struct({
+        relativePath: Schema.String,
+        hadOriginal: Schema.Boolean,
+        status: Schema.String,
+        originalIdentity: Schema.optionalKey(
+          Schema.Struct({ sha256: Schema.String, bytes: Schema.Int }),
+        ),
+      }),
+    ),
+  }),
+);
+
+for (const boundary of [
+  "before-discard",
+  "after-discard",
+  "after-original-return",
+  "after-original-return-invalid-identity",
+] as const) {
+  test(`rollback can restart at ${boundary} with the original database intact`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "moke-rollback-cut-"));
+    const source = join(root, "source");
+    const current = join(root, "current");
+    const destination = join(root, "package");
+
+    try {
+      await migrate(source);
+      await migrate(current);
+      seedNote(source, "incoming-note");
+      seedNote(current, "original-note");
+      await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
+
+      const stopped = await failureOf(
+        restoreReviewPackage(
+          configFor(current, Semaphore.makeUnsafe(1), { interruptAfter: "database-replaced" }),
+          destination,
+        ),
+      );
+
+      expect(stopped.reason).toBe("interrupted");
+      expect(noteTexts(current)).toEqual([{ text: "incoming-note" }]);
+      const journalFile = join(current, ".package-restore", "journal.json");
+
+      const journal = Schema.decodeUnknownSync(RollbackJournal)(
+        await readFile(journalFile, "utf8"),
+      );
+
+      const saved = join(current, ".package-restore", "saved", "app.sqlite");
+      const original = await readFile(saved);
+      await writeFile(
+        journalFile,
+        JSON.stringify({
+          ...journal,
+          entries: journal.entries.map((entry) => ({
+            ...entry,
+            status: "reverting",
+            originalIdentity: { sha256: hashBytes(original), bytes: original.byteLength },
+          })),
+        }),
+      );
+
+      if (boundary !== "before-discard")
+        await rename(
+          join(current, "app.sqlite"),
+          join(current, ".package-restore", "discarded-test.sqlite"),
+        );
+
+      if (boundary.startsWith("after-original-return"))
+        await rename(saved, join(current, "app.sqlite"));
+
+      if (boundary === "after-original-return-invalid-identity") {
+        const validJournal = await readFile(journalFile, "utf8");
+        const invalid = Schema.decodeUnknownSync(RollbackJournal)(validJournal);
+        await writeFile(
+          journalFile,
+          JSON.stringify({
+            ...invalid,
+            entries: invalid.entries.map((entry) => ({
+              ...entry,
+              originalIdentity: { sha256: "0".repeat(64), bytes: original.byteLength },
+            })),
+          }),
+        );
+        expect((await failureOf(recoverInterruptedRestore(current))).reason).toBe("corrupt");
+        expect(noteTexts(current)).toEqual([{ text: "original-note" }]);
+        await writeFile(journalFile, validJournal);
+      }
+
+      const recovered = await run(recoverInterruptedRestore(current));
+      expect(recovered.status).toBe("rolled-back");
+      expect(noteTexts(current)).toEqual([{ text: "original-note" }]);
+      expect((await run(recoverInterruptedRestore(current))).status).toBe("idle");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("pending replacement blocks application writes until restart recovery completes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "moke-admission-after-restore-"));
+  const source = join(root, "source");
+  const current = join(root, "current");
+  const destination = join(root, "package");
+
+  const openApplication = () => {
+    const runtime: ManagedRuntime.ManagedRuntime<Application, unknown> = ManagedRuntime.make(
+      Application.layer(
+        new BackendConfig({
+          dataDirectory: current,
+          migrationDirectory: migrations,
+          token: Redacted.make("t".repeat(32)),
+        }),
+        { runPromise: (effect, options) => runtime.runPromise(effect, options) },
+      ),
+    );
+
+    return runtime;
+  };
+
+  let runtime = openApplication();
+
+  try {
+    await migrate(source);
+    seedNote(source, "incoming-note");
+    await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
+    const application = await runtime.runPromise(Application);
+    await runtime.runPromise(application.add("original-note"));
+    await failureOf(
+      restoreReviewPackage(
+        configFor(current, Semaphore.makeUnsafe(1), { interruptAfter: "database-replaced" }),
+        destination,
+      ),
+    );
+
+    const blockedProject = await runtime.runPromise(
+      application.review
+        .command(
+          ReviewCommand.cases.CreateProject.make({
+            commandId: Schema.decodeUnknownSync(CommandId)(randomUUID()),
+            name: "Must not commit",
+          }),
+        )
+        .pipe(Effect.result),
+    );
+
+    expect(Result.isFailure(blockedProject)).toBe(true);
+
+    const blockedNote = await runtime.runPromise(
+      application.add("must-not-commit").pipe(Effect.result),
+    );
+
+    expect(Result.isFailure(blockedNote)).toBe(true);
+
+    if (process.platform !== "win32" && process.getuid?.() !== 0) {
+      const restoreDirectory = join(current, ".package-restore");
+      await chmod(restoreDirectory, 0);
+
+      try {
+        const denied = await runtime.runPromise(
+          application.add("must-not-commit-with-unreadable-journal").pipe(Effect.result),
+        );
+
+        expect(Result.isFailure(denied)).toBe(true);
+        expect((await failureOf(recoverInterruptedRestore(current))).reason).toBe("corrupt");
+      } finally {
+        await chmod(restoreDirectory, 0o700);
+      }
+    }
+
+    expect(noteTexts(current)).toEqual([{ text: "incoming-note" }]);
+    await runtime.dispose();
+    runtime = openApplication();
+    const recovered = await runtime.runPromise(Application);
+    expect((await runtime.runPromise(recovered.list)).map((note) => note.text)).toEqual([
+      "original-note",
+    ]);
+    const snapshot = await runtime.runPromise(recovered.review.snapshot(null, 0));
+    expect(snapshot.projects).toHaveLength(0);
+    await runtime.runPromise(recovered.add("after-recovery"));
+    await runtime.dispose();
+    runtime = openApplication();
+    const reopened = await runtime.runPromise(Application);
+    expect((await runtime.runPromise(reopened.list)).map((note) => note.text).toSorted()).toEqual([
+      "after-recovery",
+      "original-note",
+    ]);
+  } finally {
+    await runtime.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});

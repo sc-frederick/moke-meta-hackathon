@@ -1,6 +1,7 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 import { join } from "node:path";
+import { lstatSync } from "node:fs";
 import { BackendConfig, BackendRpc, DatabaseFileError } from "../src/lib/backend-rpc.ts";
 import { Note, StorageError } from "../src/lib/notes.ts";
 import { exportDatabase, migrateDatabase, restoreDatabase } from "./database-files.ts";
@@ -66,12 +67,27 @@ export class Application extends Context.Service<
         const workSlots = yield* Semaphore.make(16);
         let maintaining = false;
 
+        const pendingRestore = () => {
+          try {
+            lstatSync(join(owner.canonicalDirectory, ".package-restore", "journal.json"));
+
+            return true;
+          } catch (cause) {
+            return !Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))(cause);
+          }
+        };
+
+        const restoreMessage =
+          "A restore requires recovery. Reopen the application before continuing; pending data must not be edited.";
+
         const admit = <A, E>(operation: Effect.Effect<A, E>) =>
           Effect.suspend((): Effect.Effect<A, E | ReviewConflict> =>
-            maintaining
+            maintaining || pendingRestore()
               ? Effect.fail(
                   new ReviewConflict({
-                    message: "Review maintenance is in progress. Wait for it to finish.",
+                    message: pendingRestore()
+                      ? restoreMessage
+                      : "Review maintenance is in progress. Wait for it to finish.",
                   }),
                 )
               : operation,
@@ -221,8 +237,22 @@ export class Application extends Context.Service<
         });
 
         const query = <A>(operation: Effect.Effect<A, StorageError, NotesStore>) =>
-          Effect.scoped(operation.pipe(Effect.provide(store))).pipe(
-            Effect.mapError(() => new StorageError({ message: "The database operation failed." })),
+          Effect.suspend(() =>
+            maintaining || pendingRestore()
+              ? Effect.fail(
+                  new StorageError({
+                    message: pendingRestore()
+                      ? restoreMessage
+                      : "Review maintenance is in progress.",
+                  }),
+                )
+              : Effect.scoped(operation.pipe(Effect.provide(store))),
+          ).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof StorageError
+                ? cause
+                : new StorageError({ message: "The database operation failed." }),
+            ),
             Semaphore.withPermit(operations),
           );
 
@@ -230,24 +260,30 @@ export class Application extends Context.Service<
           review: publicReview,
           execution: publicExecution,
           exportPackage: (destination) =>
-            exportReviewPackage(packages, destination).pipe(
-              Semaphore.withPermit(maintenance),
-              Effect.ensuring(finishMaintenance),
-            ),
+            Effect.suspend(() =>
+              pendingRestore()
+                ? Effect.fail(new PackageError({ reason: "interrupted", message: restoreMessage }))
+                : exportReviewPackage(packages, destination),
+            ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
           restorePackage: (source) =>
-            restoreReviewPackage(packages, source).pipe(
-              Semaphore.withPermit(maintenance),
-              Effect.ensuring(finishMaintenance),
-            ),
+            Effect.suspend(() =>
+              pendingRestore()
+                ? Effect.fail(new PackageError({ reason: "interrupted", message: restoreMessage }))
+                : restoreReviewPackage(packages, source),
+            ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
           list: query(Effect.flatMap(NotesStore, (notes) => notes.list)),
           add: (text) => query(Effect.flatMap(NotesStore, (notes) => notes.add(text))),
           export: (destination) =>
-            Effect.scoped(exportDatabase(filename, destination)).pipe(
-              Semaphore.withPermit(operations),
-            ),
+            Effect.suspend(() =>
+              maintaining || pendingRestore()
+                ? Effect.fail(new DatabaseFileError({ message: restoreMessage }))
+                : Effect.scoped(exportDatabase(filename, destination)),
+            ).pipe(Semaphore.withPermit(operations)),
           restore: (source) =>
             Effect.scoped(
               Effect.gen(function* () {
+                if (maintaining || pendingRestore())
+                  return yield* new DatabaseFileError({ message: restoreMessage });
                 const currentReviews = yield* hasReviewBearingRows(filename);
                 const incomingReviews = yield* hasReviewBearingRows(source);
 

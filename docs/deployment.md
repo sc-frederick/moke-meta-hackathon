@@ -99,7 +99,8 @@ have no publisher signature.
 Use File > Import provider credential to encrypt a configuration with Electron
 safeStorage. Linux `basic_text` storage is refused. Without secure OS storage,
 set `MOKE_SESSION_CREDENTIAL_FILE` to an explicitly selected private JSON file
-for that launch. It contains `provider`, `apiKey`, canonical `baseUrl`, and `model`.
+for that launch. On Unix it must have owner-only permissions (for example `chmod 600`).
+It contains `provider`, `apiKey`, canonical `baseUrl`, and `model`.
 Meta uses `https://api.meta.ai/v1` and `muse-spark-1.3`; Baseten uses
 `https://inference.baseten.co/v1` and `meta-models/muse-spark-open-1026`. No fallback
 is selected. Packaged builds do not auto-load `.env`. The shell sends the key

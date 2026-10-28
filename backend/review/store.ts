@@ -74,11 +74,18 @@ export const reviewCommandFingerprint = (command: typeof ReviewCommand.Type) =>
   fingerprint(Schema.encodeSync(ReviewCommand)(command));
 
 /** Artifact publication does not change the identity of its requested render. */
-export const agentCommandFingerprint = (fence: ExecutionFence, mutation: typeof AgentInput.Type) =>
-  fingerprint({
-    fence,
+export const agentCommandFingerprint = (
+  fence: ExecutionFence,
+  mutation: typeof AgentInput.Type,
+) => {
+  // Ownership authorizes a new mutation; it is not part of a committed command's semantic identity.
+  const { ownerGeneration: _generation, ...identity } = Schema.encodeSync(ExecutionFence)(fence);
+
+  return fingerprint({
+    fence: identity,
     mutation: Schema.encodeSync(AgentInput)(Schema.decodeUnknownSync(AgentInput)(mutation)),
   });
+};
 
 const now = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -490,14 +497,17 @@ export class ReviewStore extends Context.Service<
                   while (cursor !== current && !visited.has(cursor)) {
                     visited.add(cursor);
 
-                    const link = links.find(
-                      (item) =>
-                        item.old_sheet_id === cursor &&
-                        item.confirmed === 1 &&
-                        item.content === "unchanged",
-                    );
+                    const successors = links.filter((item) => item.old_sheet_id === cursor);
+                    const link = successors[0];
 
-                    if (link === undefined) return false;
+                    if (
+                      successors.length !== 1 ||
+                      link === undefined ||
+                      link.confirmed !== 1 ||
+                      link.content !== "unchanged" ||
+                      links.filter((item) => item.new_sheet_id === link.new_sheet_id).length !== 1
+                    )
+                      return false;
                     cursor = link.new_sheet_id;
                   }
 
@@ -518,33 +528,46 @@ export class ReviewStore extends Context.Service<
                     fact.state === "accepted",
                 );
 
-                const result = evaluateCoordination(
-                  finding,
+                const currentDrawn =
                   drawn !== undefined && currentSource(drawn.evidence.sheetId, finding.drawnSheetId)
                     ? drawn
-                    : undefined,
+                    : undefined;
+
+                const currentScheduled =
                   scheduled !== undefined &&
-                    currentSource(scheduled.evidence.sheetId, finding.scheduledSheetId)
+                  currentSource(scheduled.evidence.sheetId, finding.scheduledSheetId)
                     ? scheduled
-                    : undefined,
-                );
+                    : undefined;
+
+                const result = evaluateCoordination(finding, currentDrawn, currentScheduled);
+
+                const rejected = [
+                  drawn !== undefined && currentDrawn === undefined ? "drawn" : null,
+                  scheduled !== undefined && currentScheduled === undefined ? "scheduled" : null,
+                ].filter((side) => side !== null);
+
+                const explanation =
+                  result.outcome === "needs_evidence" && rejected.length > 0
+                    ? `Accepted ${rejected.join(" and ")} input belongs to a changed or unconfirmed sheet correspondence. Confirm the sources and accept fresh evidence before evaluating.`
+                    : result.explanation;
 
                 const check = new CheckRun({
                   id: Schema.decodeUnknownSync(CheckId)(randomUUID()),
                   projectId: project.id,
                   findingId: finding.id,
                   ruleVersion: "schedule-count-v1",
-                  drawnFactId: drawn?.id ?? null,
-                  scheduledFactId: scheduled?.id ?? null,
-                  drawnCount: drawn?.value ?? null,
-                  scheduledCount: scheduled?.value ?? null,
+                  drawnFactId: currentDrawn?.id ?? null,
+                  scheduledFactId: currentScheduled?.id ?? null,
+                  drawnCount: currentDrawn?.value ?? null,
+                  scheduledCount: currentScheduled?.value ?? null,
                   ...result,
+                  explanation,
                   createdAt,
                 });
 
                 yield* save("check", check);
 
-                for (const fact of [drawn, scheduled])
+                for (const fact of [currentDrawn, currentScheduled])
                   if (fact !== undefined) {
                     yield* sql`INSERT INTO review_dependencies (project_id,input_id,dependent_id) VALUES (${project.id},${fact.id},${check.id})`;
                     yield* sql`INSERT OR IGNORE INTO review_dependencies (project_id,input_id,dependent_id) VALUES (${project.id},${fact.evidence.sheetId},${finding.id})`;
@@ -582,6 +605,16 @@ export class ReviewStore extends Context.Service<
                 const oldIds = new Set<string>();
                 const newIds = new Set<string>();
 
+                const existingLinks = yield* Schema.decodeUnknownEffect(Schema.Array(Link))(
+                  yield* sql`SELECT old_sheet_id,new_sheet_id,confirmed,content FROM review_sheet_links WHERE project_id=${project.id}`,
+                );
+
+                const confirmedDestinations = new Set(
+                  command.correspondence
+                    .filter((pair) => pair.confirmed)
+                    .map((pair) => pair.newSheetId),
+                );
+
                 for (const pair of command.correspondence) {
                   const old = findSheet(pair.oldSheetId);
                   const next = findSheet(pair.newSheetId);
@@ -597,11 +630,43 @@ export class ReviewStore extends Context.Service<
                     return yield* failure(
                       "Revision correspondence must be one-to-one between different revisions of this project.",
                     );
+
+                  if (
+                    existingLinks.some(
+                      (link) => link.old_sheet_id === old.id || link.new_sheet_id === next.id,
+                    )
+                  )
+                    return yield* failure(
+                      "Sheet correspondence is immutable. A source or destination already has an association.",
+                    );
+                  const visited = new Set<string>([old.id]);
+                  let cursor: string = next.id;
+
+                  while (!visited.has(cursor)) {
+                    visited.add(cursor);
+
+                    const successor = [
+                      ...existingLinks.map((link) => ({
+                        oldSheetId: link.old_sheet_id,
+                        newSheetId: link.new_sheet_id,
+                      })),
+                      ...command.correspondence,
+                    ].find((link) => link.oldSheetId === cursor);
+
+                    if (successor === undefined) break;
+                    cursor = successor.newSheetId;
+                  }
+
+                  if (cursor === old.id)
+                    return yield* failure("Revision correspondence cannot form a cycle.");
                   oldIds.add(old.id);
                   newIds.add(next.id);
-                  yield* sql`INSERT INTO review_sheet_links (project_id,old_sheet_id,new_sheet_id,confirmed,content) VALUES (${project.id},${old.id},${next.id},${Number(pair.confirmed)},${pair.content}) ON CONFLICT(project_id,old_sheet_id,new_sheet_id) DO UPDATE SET confirmed=excluded.confirmed,content=excluded.content`;
 
-                  if (pair.confirmed) yield* save("sheet", new Sheet({ ...next, confirmed: true }));
+                  if (pair.confirmed) {
+                    yield* sql`INSERT INTO review_sheet_links (project_id,old_sheet_id,new_sheet_id,confirmed,content) VALUES (${project.id},${old.id},${next.id},1,${pair.content})`;
+                    yield* save("sheet", new Sheet({ ...next, confirmed: true }));
+                  } else
+                    yield* sql`INSERT INTO review_sheet_link_proposals(project_id,old_sheet_id,new_sheet_id,content,command_id) VALUES (${project.id},${old.id},${next.id},${pair.content},${command.commandId})`;
                 }
 
                 for (const finding of state.findings) {
@@ -643,7 +708,7 @@ export class ReviewStore extends Context.Service<
                   for (const id of [finding.drawnSheetId, finding.scheduledSheetId]) {
                     const pair = mapSide(id);
 
-                    if (pair === undefined || !pair.confirmed) {
+                    if ((pair === undefined || !pair.confirmed) && !confirmedDestinations.has(id)) {
                       const old = findSheet(id);
 
                       if (old !== undefined)

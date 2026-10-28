@@ -203,3 +203,8 @@ be requested again. No image is silently resized or cropped at this boundary.
 The deterministic bounded transcript participates in the dispatch fingerprint.
 The wire cap remains 3 MiB. This prevents repeated detail/SAM turns from filling
 the request with every earlier raster. Image tokens and billing remain unknown.
+
+Tool receipt fingerprints exclude owner generation. A new owner can replay a
+committed tool command after a crash before Pi's tool receipt; the stable
+journal/tool-task command ID and semantic payload still have to match. Owner
+generation remains mandatory for every new mutation and paid admission.

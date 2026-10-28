@@ -1,5 +1,6 @@
 # Project documentation
 
+- [Core council](research/core-council.md): findings, fixes and review scores.
 - [Core validation](research/core-validation.md): packaged Meta/SAM acceptance, actual receipts, recovery tests and limits.
 - [Core implementation plan](core-implementation-plan.md): Bun/Effect architecture,
   evidence contracts, implementation sequence, recovery gates and evaluation.

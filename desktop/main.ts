@@ -205,7 +205,7 @@ if (!app.requestSingleInstanceLock()) {
                           () =>
                             new ReviewStorageError({
                               message:
-                                "The review package could not be restored. Existing data was preserved; reopen the app if recovery is required.",
+                                "The package restore did not finish. Reopen the application to recover before continuing.",
                             }),
                         ),
                       ),

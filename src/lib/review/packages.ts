@@ -147,7 +147,11 @@ export class PackageRecovery extends Schema.Class<PackageRecovery>("PackageRecov
 }) {}
 
 /** Durable points where a test can stop a restore and leave the replacement journal. */
-export const PackageInterrupt = Schema.Literals(["prepared", "first-replaced"]);
+export const PackageInterrupt = Schema.Literals([
+  "prepared",
+  "first-replaced",
+  "database-replaced",
+]);
 
 /** One crash seam. Production callers omit this. */
 export type PackageInterrupt = typeof PackageInterrupt.Type;

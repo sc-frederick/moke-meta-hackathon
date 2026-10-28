@@ -109,6 +109,7 @@ const SwapStatus = Schema.Literals([
   "moved-aside",
   "moving-in",
   "replaced",
+  "reverting",
   "reverted",
 ]);
 
@@ -116,6 +117,12 @@ const SwapEntry = Schema.Struct({
   relativePath: Schema.String,
   hadOriginal: Schema.Boolean,
   status: SwapStatus,
+  originalIdentity: Schema.optionalKey(
+    Schema.Struct({
+      sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
 });
 
 const RestoreJournal = Schema.Struct({
@@ -934,13 +941,20 @@ const readJournal = (dataDirectory: string) =>
   Effect.gen(function* () {
     const path = journalFile(dataDirectory);
 
-    if (!existsSync(path)) return null;
-
     const text = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
+      try: async () => {
+        try {
+          return await readFile(path, "utf8");
+        } catch (cause) {
+          if (Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))(cause)) return null;
+          throw cause;
+        }
+      },
       catch: () =>
         fail("corrupt", "The restore journal could not be read. Live files were not changed."),
     });
+
+    if (text === null) return null;
 
     const parsed = yield* Effect.try({
       try: () => JSON.parse(text),
@@ -1547,6 +1561,33 @@ const rollbackEntry = (dataDirectory: string, entry: SwapEntry) =>
   Effect.gen(function* () {
     const live = safeJoin(dataDirectory, entry.relativePath);
     const saved = safeJoin(dataDirectory, join(".package-restore", "saved", entry.relativePath));
+
+    if (
+      live !== undefined &&
+      saved !== undefined &&
+      entry.status === "reverting" &&
+      entry.hadOriginal &&
+      !existsSync(saved) &&
+      existsSync(live)
+    ) {
+      const identity = yield* hashFile(live, 8_589_934_592);
+
+      if (
+        entry.originalIdentity === undefined ||
+        identity.sha256 !== entry.originalIdentity.sha256 ||
+        identity.bytes !== entry.originalIdentity.bytes
+      )
+        return yield* fail(
+          "corrupt",
+          "The recovered original does not match the rollback journal identity.",
+        );
+
+      yield* fsyncDirectory(dirname(saved));
+      yield* fsyncDirectory(dirname(live));
+
+      return { ...entry, status: "reverted" as const };
+    }
+
     const place = placeOf(entry, dataDirectory);
 
     if (live === undefined || saved === undefined || place === "corrupt") {
@@ -1577,6 +1618,8 @@ const rollbackEntry = (dataDirectory: string, entry: SwapEntry) =>
     if (entry.hadOriginal) {
       yield* makeDirectory(dirname(live), "A restored directory could not be created.");
       yield* io(() => rename(saved, live), "An original file could not be restored.");
+      yield* fsyncDirectory(dirname(saved));
+      yield* fsyncDirectory(dirname(live));
     }
 
     return { ...entry, status: "reverted" as const };
@@ -1639,7 +1682,25 @@ const recoverJournal = (dataDirectory: string, journal: RestoreJournal) =>
         );
       }
 
-      const reverted = yield* rollbackEntry(dataDirectory, entry);
+      let reverting = entry;
+
+      if (entry.status !== "reverting" && placeOf(entry, dataDirectory) !== "untouched") {
+        if (entry.hadOriginal) {
+          const saved = safeJoin(
+            dataDirectory,
+            join(".package-restore", "saved", entry.relativePath),
+          );
+
+          if (saved === undefined)
+            return yield* fail("corrupt", "An original rollback path escapes the data directory.");
+          const originalIdentity = yield* hashFile(saved, 8_589_934_592);
+          reverting = { ...entry, status: "reverting", originalIdentity };
+        } else reverting = { ...entry, status: "reverting" };
+        entries[index] = reverting;
+        yield* writeJournal(dataDirectory, { ...journal, entries });
+      }
+
+      const reverted = yield* rollbackEntry(dataDirectory, reverting);
 
       entries[index] = reverted;
       yield* writeJournal(dataDirectory, { ...journal, entries });
@@ -1923,10 +1984,14 @@ const restorePrepared = (
       journal = yield* swapEntry(dataDirectory, journal, index);
       replaced += 1;
 
-      if (config.interruptAfter === "first-replaced" && replaced === 1) {
+      if (
+        (config.interruptAfter === "first-replaced" && replaced === 1) ||
+        (config.interruptAfter === "database-replaced" &&
+          journal.entries[index]?.relativePath === "app.sqlite")
+      ) {
         return yield* fail(
           "interrupted",
-          "Restore stopped after the first replacement. Run recovery before opening the data directory.",
+          "Restore stopped after replacement. Run recovery before opening the data directory.",
         );
       }
     }

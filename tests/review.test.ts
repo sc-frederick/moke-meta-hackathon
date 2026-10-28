@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "bun:test";
 import { Effect, Exit, Schema } from "effect";
 import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
@@ -260,6 +261,31 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
 
           if (newRevision === undefined || newPlan === undefined || newSchedule === undefined)
             return yield* Effect.die("Revision B was not imported.");
+          // A legal finding may already point at the confirmed destination before association.
+          yield* api.ReviewCommand({
+            command: ReviewCommand.cases.ConfirmSheet.make({
+              commandId: commandId(),
+              projectId,
+              expectedVersion: version(),
+              sheetId: newPlan.id,
+              label: "L-101 B",
+              coverage: "reviewer_complete",
+            }),
+          });
+          state = yield* refresh;
+          yield* api.ReviewCommand({
+            command: ReviewCommand.cases.CreateFinding.make({
+              commandId: commandId(),
+              projectId,
+              expectedVersion: version(),
+              title: "Already on revision B",
+              objectClass: "Type A",
+              drawnSheetId: newPlan.id,
+              scheduledSheetId: schedule.id,
+              applicabilityConfirmed: true,
+            }),
+          });
+          state = yield* refresh;
           yield* api.ReviewCommand({
             command: ReviewCommand.cases.AssociateRevision.make({
               commandId: commandId(),
@@ -290,7 +316,62 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
           expect(state.findings.find((finding) => finding.id === control)?.outcome).toBe(
             "checked_no_issue",
           );
-          expect((yield* evaluate(supported)).outcome).toBe("needs_evidence");
+          expect(state.sheets.find((sheet) => sheet.id === newPlan.id)?.confirmed).toBe(true);
+          const rejected = yield* evaluate(supported);
+          expect(rejected.outcome).toBe("needs_evidence");
+          expect(rejected.drawnFactId).toBeNull();
+          expect(rejected.drawnCount).toBeNull();
+          expect(rejected.scheduledFactId).not.toBeNull();
+          expect(rejected.explanation).toContain("changed or unconfirmed");
+          const dependencies = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
+          expect(
+            dependencies
+              .prepare("SELECT input_id FROM review_dependencies WHERE dependent_id=?")
+              .all(rejected.id),
+          ).toEqual([{ input_id: rejected.scheduledFactId }]);
+          dependencies.close();
+
+          const rewritten = yield* Effect.exit(
+            api.ReviewCommand({
+              command: ReviewCommand.cases.AssociateRevision.make({
+                commandId: commandId(),
+                projectId,
+                expectedVersion: version(),
+                revisionId: newRevision.id,
+                correspondence: [
+                  {
+                    oldSheetId: plan.id,
+                    newSheetId: newPlan.id,
+                    confirmed: true,
+                    content: "unchanged",
+                  },
+                ],
+              }),
+            }),
+          );
+
+          expect(Exit.isFailure(rewritten)).toBe(true);
+
+          const ambiguous = yield* Effect.exit(
+            api.ReviewCommand({
+              command: ReviewCommand.cases.AssociateRevision.make({
+                commandId: commandId(),
+                projectId,
+                expectedVersion: version(),
+                revisionId: newRevision.id,
+                correspondence: [
+                  {
+                    oldSheetId: plan.id,
+                    newSheetId: newSchedule.id,
+                    confirmed: true,
+                    content: "unchanged",
+                  },
+                ],
+              }),
+            }),
+          );
+
+          expect(Exit.isFailure(ambiguous)).toBe(true);
           yield* accept(supported, "drawn", 3, newPlan);
           const revised = yield* evaluate(supported);
           expect(revised.outcome).toBe("checked_no_issue");

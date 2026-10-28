@@ -183,7 +183,19 @@ test("parent port commits correction while an admitted response waits, rejects s
               rationale: "Reviewer corrected the proposed interpretation",
             }),
           );
-          expect(yield* operations.port.propose(fence, proposal)).toEqual(receipt);
+
+          const reopenedFence = Schema.decodeUnknownSync(ExecutionFence)({
+            ...Schema.encodeSync(ExecutionFence)(fence),
+            ownerGeneration: crypto.randomUUID(),
+          });
+
+          expect(yield* operations.port.propose(reopenedFence, proposal)).toEqual(receipt);
+
+          const changedReplay = yield* Effect.result(
+            operations.port.propose(reopenedFence, { ...proposal, value: 9 }),
+          );
+
+          expect(Result.isFailure(changedReplay)).toBe(true);
           release.resolve();
           const result = yield* Fiber.join(late);
           expect(Result.isFailure(result)).toBe(true);
@@ -198,6 +210,68 @@ test("parent port commits correction while an admitted response waits, rejects s
             final.facts.filter((fact) => fact.state === "accepted").map((fact) => fact.value),
           ).toEqual([2]);
           expect(final.findings[0]?.outcome).toBe("stale");
+          yield* query(
+            Effect.flatMap(ReviewStore, (store) =>
+              store.importPdf(
+                {
+                  commandId: id(),
+                  projectId: project.projectId,
+                  expectedVersion: final.project?.version ?? -1,
+                  name: "Revision B",
+                },
+                new ImportedPdf({
+                  sha256: "b".repeat(64),
+                  byteLength: 100,
+                  pages: [
+                    { pageIndex: 0, label: "Scope B", box: sheet.box, rotation: 0, userUnit: 1 },
+                  ],
+                }),
+              ),
+            ),
+          );
+          const imported = yield* operations.snapshot(project.projectId, 0);
+          const next = imported.sheets.find((candidate) => candidate.id !== sheet.id);
+
+          if (next === undefined) return yield* Effect.die("Missing revision B");
+          yield* operations.command(
+            ReviewCommand.cases.AssociateRevision.make({
+              commandId: id(),
+              projectId: project.projectId,
+              expectedVersion: imported.project?.version ?? -1,
+              revisionId: next.revisionId,
+              correspondence: [
+                { oldSheetId: sheet.id, newSheetId: next.id, content: "changed", confirmed: false },
+              ],
+            }),
+          );
+          const pending = yield* operations.snapshot(project.projectId, 0);
+          expect(pending.findings[0]?.drawnSheetId).toBe(sheet.id);
+          yield* operations.command(
+            ReviewCommand.cases.AssociateRevision.make({
+              commandId: id(),
+              projectId: project.projectId,
+              expectedVersion: pending.project?.version ?? -1,
+              revisionId: next.revisionId,
+              correspondence: [
+                { oldSheetId: sheet.id, newSheetId: next.id, content: "changed", confirmed: true },
+              ],
+            }),
+          );
+          const associated = yield* operations.snapshot(project.projectId, 0);
+          expect(associated.findings[0]?.drawnSheetId).toBe(next.id);
+          expect(associated.sheets.find((candidate) => candidate.id === next.id)?.confirmed).toBe(
+            true,
+          );
+
+          const counts = yield* Effect.scoped(
+            Effect.flatMap(
+              SqlClient.SqlClient,
+              (sql) =>
+                sql`SELECT (SELECT count(*) FROM review_sheet_link_proposals) AS proposals,(SELECT count(*) FROM review_sheet_links) AS links`,
+            ).pipe(Effect.provide(connection)),
+          );
+
+          expect(counts).toEqual([{ proposals: 1, links: 1 }]);
         }),
       ),
     );

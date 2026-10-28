@@ -1,7 +1,8 @@
+import { executionPersistence } from "../backend/review/execution-store.ts";
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createCanvas } from "@napi-rs/canvas";
-import { Effect, Layer, ManagedRuntime, Redacted, Schema, Semaphore, Stream } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted, Result, Schema, Semaphore, Stream } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -1239,4 +1240,44 @@ test("recent image window keeps six actual images and metadata without growing a
   expect(replay.content).toEqual(first.content);
   expect(fingerprints[1]).toBe(fingerprints[0]);
   expect(sends).toBe(1);
+});
+
+test("a missed execution transition rolls its transaction back without a phantom event", async () => {
+  const path = await directory();
+  const fixture = open(path, async () => response());
+
+  try {
+    const started = await fixture.start();
+    await until(() => fixture.status(started), "completed");
+    const store = executionPersistence(join(path, "app.sqlite"), Semaphore.makeUnsafe(1));
+
+    const original = await fixture.runtime.runPromise(
+      store.query(store.load(started.runId, started.projectId)),
+    );
+
+    const before = await fixture.runtime.runPromise(
+      store.query(store.events(started.projectId, 0)),
+    );
+
+    const failed = await fixture.runtime.runPromise(
+      store
+        .query(
+          Effect.gen(function* () {
+            yield* store.transition(original, "paused");
+            yield* store.transition(original, "cancelled");
+          }),
+        )
+        .pipe(Effect.result),
+    );
+
+    expect(failed).toSatisfy(Result.isFailure);
+    expect((await fixture.status(started)).version).toBe(original.version);
+    expect((await fixture.status(started)).state).toBe("completed");
+    expect(
+      await fixture.runtime.runPromise(store.query(store.events(started.projectId, 0))),
+    ).toEqual(before);
+  } finally {
+    await fixture.runtime.dispose();
+    await rm(path, { recursive: true, force: true });
+  }
 });

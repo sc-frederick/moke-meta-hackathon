@@ -8,13 +8,13 @@ The primary route is Meta Responses, `muse-spark-1.3`. SAM uses its separate
 
 `MOKE_E2E_LIVE=1 MOKE_SESSION_CREDENTIAL_FILE=/private/session.json DISPLAY=:0
 bun run test:packaged` passed both desktop tests. The production flow took
-41.9 seconds. Electron loaded the explicit session credential and passed it to
+41.8 seconds. Electron loaded the explicit session credential and passed it to
 the compiled Bun backend through its private stdin channel. The installed app
 used its bundled PDF worker, native canvas addon, PDF.js assets and migrations.
 
 The fresh project imported the original two-sheet fixture, confirmed sheets,
-and started one explicitly budgeted inspection. Nine Muse calls and one SAM
-call completed within the 12-call limit. Muse requested five original-PDF
+and started one explicitly budgeted inspection. Six Muse calls and one SAM
+call completed within the 12-call limit. Muse requested two original-PDF
 regions, used SAM geometry, and proposed drawn **2** and scheduled **3** with
 source regions and committed response provenance. The engineer then accepted
 the inputs; the deterministic check returned **2 − 3 = −1**, supported issue.
@@ -35,16 +35,18 @@ separately through real SQLite and the backend RPC.
 [Machine-readable evidence](core-validation-result.json) contains actual
 response IDs, provider-reported usage, source hashes, package hashes, proposal
 provenance and six immutable calculation outcomes. Aggregate reported usage was
-128,034 tokens across the nine Muse receipts: 104,827 input, 2,606 output and
-20,601 cache-read tokens. These are provider categories, without a separate
+74,326 tokens across the 6 Muse receipts: 57,333 input, 2,619 output and
+14,374 cache-read tokens. These are provider categories, without a separate
 image-token allocation. **Image tokens and verified cost remain unknown.** SDK
 catalog price estimates are excluded from the evidence summary and public status.
 SAM usage and cost are also unknown.
 
-The retained local evidence is under `.local/core-validation/packaged-2026-10-28/`:
-`screenshots`, the exported package, receipts and the closed test data. The actual
+The retained local evidence is under `.local/core-validation/packaged-2026-10-28-r2/`:
+the exported package, receipts and the closed test data. The actual
 image files are `packaged-live-muse.png` and `review-workbench.png`. They contain
 only the authored schematic. This directory and credentials are excluded from git.
+
+![Packaged Meta/SAM review with completed live status](screenshots/packaged-live-review.png)
 
 ## Repeatable checks
 
@@ -108,3 +110,8 @@ Masks are geometry proposals, never physical dimensions or proof of coverage.
 Provider retrieval and guaranteed remote cancellation are unavailable here;
 unknown outcomes remain explicit, with no automatic resend. A recorded possible-
 charge acknowledgement permits only a separate new run and budget.
+
+The council-fix rerun also passed all four hero outcomes. Its revision needs-evidence
+row cites only the still-current schedule operand; the rejected baseline plan
+operand is null. Full verification passed 198 tests and 1,309 assertions before
+that live rerun. See [the council ledger](core-council.md) for recovery and history fixes.

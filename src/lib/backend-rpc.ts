@@ -70,7 +70,7 @@ export class DatabaseRpc extends RpcGroup.make(
   }),
 ) {}
 
-/** Shared application API served by Bun; Electron exposes only NotesRpc to the renderer. */
+/** Application API served by Bun; Electron exposes restricted review and chooser contracts to its trusted renderer. */
 export class BackendRpc extends NotesRpc.merge(DatabaseRpc)
   .merge(ReviewRpc)
   .merge(ReviewFilesRpc)

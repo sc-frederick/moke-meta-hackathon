@@ -84,3 +84,10 @@ Cloud connectivity is optional. Decide the source of truth, offline writes,
 conflict rules, idempotency keys, deletions, and compatibility with older desktop
 clients for the particular application. RPC provides transport and contracts;
 it does not supply synchronization semantics.
+
+Confirmed sheet correspondence is one-to-one and immutable. Migration 0006 adds
+unique predecessor/successor indexes and rejects updates/deletes. Unconfirmed
+proposals retain separate append-only history; later confirmation inserts a new
+confirmed association. They never authorize reuse of baseline facts. Evaluation
+records only current operands and their dependencies; excluded revision inputs
+remain in earlier fact/check history and get an explicit unresolved explanation.

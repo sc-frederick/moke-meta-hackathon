@@ -107,6 +107,24 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
   ) {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`UPDATE review_execution_runs SET state=${state},version=version+1 WHERE run_id=${run.run_id} AND version=${run.version}`;
+
+    const changed = yield* Schema.decodeUnknownEffect(
+      Schema.Array(Schema.Struct({ n: Schema.Literal(1) })),
+    )(yield* sql`SELECT changes() AS n`).pipe(
+      Effect.mapError(
+        () =>
+          new ExecutionError({
+            reason: "conflict",
+            message: "Execution changed before its transition could commit.",
+          }),
+      ),
+    );
+
+    if (changed.length !== 1)
+      return yield* new ExecutionError({
+        reason: "conflict",
+        message: "Execution transition did not commit.",
+      });
     const updated = yield* load(run.run_id, run.project_id);
     yield* event(updated);
 
