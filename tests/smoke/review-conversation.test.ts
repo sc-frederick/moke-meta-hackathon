@@ -92,7 +92,10 @@ test("model choice uses its provider credential, freezes on replay, and records 
           projectId: session.projectId,
           expectedVersion: state.project?.version ?? -1,
           conversationId: conversation.id,
-          text: "Inspect the electrical lighting count in Room 101.",
+          text:
+            model.id === "muse-spark-1.3"
+              ? "Check the product quantities in Room 101."
+              : "Inspect the electrical lighting count in Room 101.",
         }),
         executionCommandId: id(),
         findingId: session.findingId,
@@ -352,7 +355,7 @@ async function fixture(transport?: ProviderTransport, includeBaseten = false) {
       projectId: project.projectId,
       expectedVersion: current.project?.version ?? -1,
       title: "Room 101 count",
-      objectClass: "Room 101 type A only",
+      objectClass: "Room 101 type A luminaires only",
       drawnSheetId: sheet.id,
       scheduledSheetId: sheet.id,
       applicabilityConfirmed: true,

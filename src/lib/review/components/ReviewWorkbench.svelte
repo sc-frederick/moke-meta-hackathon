@@ -642,6 +642,8 @@
 
   async function chooseConversation(id: string | null, remember = true) {
     if (remember) rememberConversation();
+
+    if (id !== selectedConversationId) executionStatus = null;
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
@@ -1349,8 +1351,10 @@
                 what to compare using the Check menu above.{:else if !setup?.configured}Provider not
                 configured. <button class="text-button" onclick={() => openSetup("settings")}
                   >Open review settings</button
-                >{:else if executionBlocked}Resolve the current inspection before sending another
-                request.{:else}You approve the results. Moke never accepts counts for you.{/if}
+                >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
+                review settings.{:else if executionBlocked}Resolve the current inspection before
+                sending another request.{:else}You approve the results. Moke never accepts counts
+                for you.{/if}
             </div>
           </div>
         {/if}

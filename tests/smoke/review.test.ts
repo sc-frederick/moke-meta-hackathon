@@ -110,6 +110,7 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
             side: "drawn" | "scheduled",
             value: number,
             sheet = side === "drawn" ? plan : schedule,
+            rationale = "Reviewed the original schematic and confirmed the selected scope.",
           ) {
             const request = ReviewCommand.cases.AcceptCount.make({
               commandId: commandId(),
@@ -125,7 +126,7 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
                 region: sheet.box,
                 statement: `${value} source-reviewed ${side} fixtures in the explicitly selected scope.`,
               },
-              rationale: "Reviewed the original schematic and confirmed the selected scope.",
+              rationale,
             });
 
             const receipt = yield* api.ReviewCommand({ command: request });
@@ -154,7 +155,10 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
           });
 
           const supported = yield* createFinding("Room 101 type A");
-          yield* accept(supported, "drawn", 2);
+          const blankNote = yield* accept(supported, "drawn", 2, plan, "");
+          expect(
+            state.facts.find((fact) => fact.id === blankNote.receipt.entityId)?.rationale,
+          ).toBe("");
           yield* accept(supported, "scheduled", 3);
           const issue = yield* evaluate(supported);
           expect(issue.outcome).toBe("supported_issue");
@@ -401,6 +405,7 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
 
           return {
             projectId,
+            blankNoteFactId: blankNote.receipt.entityId,
             hashes: state.revisions.map((revision) => revision.sha256),
             checkIds: state.checks.map((check) => check.id),
           };
@@ -420,6 +425,9 @@ test("real backend reviews, corrects, revisions, chunks evidence, and reopens wi
 
           expect(state.revisions.map((revision) => revision.sha256)).toEqual(evidence.hashes);
           expect(state.checks.map((check) => check.id)).toEqual(evidence.checkIds);
+          expect(state.facts.find((fact) => fact.id === evidence.blankNoteFactId)?.rationale).toBe(
+            "",
+          );
           expect(
             state.events.every(
               (event, index, events) =>

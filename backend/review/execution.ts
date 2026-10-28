@@ -861,11 +861,10 @@ export class ReviewExecution extends Context.Service<
                     ...request.reviewRequest,
                     discipline:
                       request.reviewRequest.discipline === "auto"
-                        ? routeReviewDiscipline(instruction) !== "general"
-                          ? routeReviewDiscipline(instruction)
-                          : routeReviewDiscipline(
-                              `${evidence.finding.objectClass} ${evidence.finding.title} ${evidence.sheets.map((sheet) => sheet.label).join(" ")}`,
-                            )
+                        ? routeReviewDiscipline(instruction, [
+                            `${evidence.finding.objectClass} ${evidence.finding.title}`,
+                            evidence.sheets.map((sheet) => sheet.label).join(" "),
+                          ])
                         : request.reviewRequest.discipline,
                   },
                   instruction,

@@ -35,6 +35,7 @@ export const OperationId = Identifier.pipe(Schema.brand("OperationId"));
 
 const Label = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(160));
 const Reason = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(2000));
+const ReviewNote = Schema.Trim.check(Schema.isMaxLength(2000));
 const Version = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const Count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100000 }));
 const Coordinate = Schema.Finite;
@@ -152,7 +153,7 @@ export class CountFact extends Schema.Class<CountFact>("CountFact")({
       factVersion: Schema.Int,
     }),
   ),
-  rationale: Reason,
+  rationale: ReviewNote,
   supersedes: Schema.NullOr(FactId),
   createdAt: Schema.String,
 }) {}
@@ -297,7 +298,7 @@ export const ReviewCommand = Schema.Union([
     unit: Schema.Literal("count"),
     coverageConfirmed: Schema.Boolean,
     evidence: Evidence,
-    rationale: Reason,
+    rationale: ReviewNote,
   }),
   Schema.TaggedStruct("EvaluateFinding", { ...ScopedCommand, findingId: FindingId }),
   Schema.TaggedStruct("SetFindingStatus", {

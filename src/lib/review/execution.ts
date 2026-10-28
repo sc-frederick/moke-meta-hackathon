@@ -36,24 +36,38 @@ export const reviewDisciplines = [
 /** Auto chooses a discipline from the request and selected drawing scope before admission. */
 export const ReviewDisciplineSelection = Schema.Union([Schema.Literal("auto"), ReviewDiscipline]);
 
-/** Route familiar drawing terms and sheet identifiers, keeping ambiguous scopes general. */
-export function routeReviewDiscipline(text: string): typeof ReviewDiscipline.Type {
+/** Resolve request, object scope, and sheet hints in order; ambiguous matches stay general. */
+export function routeReviewDiscipline(
+  text: string,
+  fallbackScopes: ReadonlyArray<string> = [],
+): typeof ReviewDiscipline.Type {
   const scopes: ReadonlyArray<readonly [typeof ReviewDiscipline.Type, RegExp]> = [
-    ["fire_alarm", /fire alarm|smoke detector|\bfa[-\d]/i],
-    ["fire_sprinkler", /sprinkler|\bfp[-\d]/i],
-    ["fire_protection", /fire protection|fire pump|standpipe/i],
-    ["life_safety", /egress|life safety|exit width|occupant load/i],
-    ["structural", /structural|foundation|rebar|beam|column|\bs[-\d]/i],
-    ["mechanical", /mechanical|hvac|duct|air handling|\bm[-\d]/i],
-    ["plumbing", /plumbing|sanitary|domestic water|lavator|\bp[-\d]/i],
-    ["electrical", /electrical|lighting|luminaire|voltage|circuit|\b[el][-\d]/i],
-    ["civil", /civil|grading|stormwater|site drainage|\bc[-\d]/i],
-    ["building_design", /architectur|building design|floor plan|\ba[-\d]/i],
+    ["fire_alarm", /\b(?:fire alarms?|smoke detectors?)\b|\bfa[-\d]/i],
+    ["fire_sprinkler", /\bsprinklers?\b|\bfp[-\d]/i],
+    ["fire_protection", /\b(?:fire protection|fire pumps?|standpipes?)\b/i],
+    ["life_safety", /\b(?:egress|life safety|exit widths?|occupant loads?)\b/i],
+    ["structural", /\b(?:structural|foundations?|rebar|beams?|columns?)\b|\bs[-\d]/i],
+    ["mechanical", /\b(?:mechanical|hvac|ducts?|ductwork|air handling)\b|\bm[-\d]/i],
+    ["plumbing", /\b(?:plumbing|sanitary|domestic water|lavatory|lavatories)\b|\bp[-\d]/i],
+    [
+      "electrical",
+      /\b(?:electrical|lighting|lights?|luminaires?|voltage|circuits?|conductors?)\b|\b[el][-\d]/i,
+    ],
+    ["civil", /\b(?:civil|grading|stormwater|site drainage)\b|\bc[-\d]/i],
+    [
+      "building_design",
+      /\b(?:architecture|architectural|building design|floor plans?)\b|\ba[-\d]/i,
+    ],
   ];
 
-  const matches = scopes.filter(([, pattern]) => pattern.test(text));
+  for (const candidate of [text, ...fallbackScopes]) {
+    const matches = scopes.filter(([, pattern]) => pattern.test(candidate));
 
-  return matches.length === 1 ? (matches[0]?.[0] ?? "general") : "general";
+    if (matches.length > 0)
+      return matches.length === 1 ? (matches[0]?.[0] ?? "general") : "general";
+  }
+
+  return "general";
 }
 
 /** A review send names an already persisted reviewer message. */

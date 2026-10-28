@@ -2,6 +2,10 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { Schema } from "effect";
+import { Finding, ReviewMessage } from "#lib/review/contracts.ts";
+import { ExecutionReviewContext } from "#lib/review/execution.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 test("project dialogs, selectors, settings, visual evidence selection, and chat work together", async () => {
@@ -127,23 +131,31 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await page.getByTestId("create-finding-submit").click();
     await expect(page.getByTestId("finding-inspector")).toBeVisible();
     await expect(page.getByTestId("drawn-region-x")).not.toBeVisible();
-    await page.getByRole("button", { name: "Select area on drawing", exact: true }).first().click();
-    await expect(page.getByText("Drag a box around the area to count.")).toBeVisible();
-    const image = page.getByRole("region", { name: "Original source render" }).locator("img");
-    await expect(image).toBeVisible();
-    const imageBounds = await image.boundingBox();
 
-    if (!imageBounds) throw new Error("Source image has no bounds");
-    await page.mouse.move(
-      imageBounds.x + imageBounds.width * 0.2,
-      imageBounds.y + imageBounds.height * 0.25,
-    );
-    await page.mouse.down();
-    await page.mouse.move(
-      imageBounds.x + imageBounds.width * 0.4,
-      imageBounds.y + imageBounds.height * 0.5,
-    );
-    await page.mouse.up();
+    const pickArea = async (side: "drawn" | "scheduled", left = 0.2, right = 0.4) => {
+      await page
+        .getByRole("region", { name: `${side} operand`, exact: true })
+        .getByRole("button", { name: "Select area on drawing", exact: true })
+        .click();
+      await expect(page.getByText("Drag a box around the area to count.")).toBeVisible();
+      const image = page.getByRole("region", { name: "Original source render" }).locator("img");
+      await expect(image).toBeVisible();
+      const imageBounds = await image.boundingBox();
+
+      if (!imageBounds) throw new Error("Source image has no bounds");
+      await page.mouse.move(
+        imageBounds.x + imageBounds.width * left,
+        imageBounds.y + imageBounds.height * 0.25,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        imageBounds.x + imageBounds.width * right,
+        imageBounds.y + imageBounds.height * 0.5,
+      );
+      await page.mouse.up();
+    };
+
+    await pickArea("drawn");
     const selectedWidth = Number(await page.getByTestId("drawn-region-width").inputValue());
     const selectedHeight = Number(await page.getByTestId("drawn-region-height").inputValue());
     expect(selectedWidth).toBeCloseTo(612 * 0.2, 0);
@@ -155,6 +167,26 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await page.getByTestId("drawn-coverage-checkbox").check();
     await page.getByTestId("accept-drawn-count").click();
     await expect(page.getByTestId("evaluate-finding")).toBeEnabled();
+    const drawnDetails = page.getByTestId("drawn-advanced");
+    await drawnDetails.locator("summary").click();
+    await expect(page.getByTestId("drawn-rationale-input")).toHaveValue("");
+    await expect(drawnDetails.locator(".fact-id")).toBeVisible();
+    await drawnDetails.locator("summary").click();
+    await pickArea("drawn", 0.25, 0.5);
+    await expect(page.getByTestId("drawn-coverage-checkbox")).not.toBeChecked();
+    await page.getByTestId("scheduled-count-input").fill("3");
+    await page
+      .getByTestId("scheduled-statement-input")
+      .fill("Three type A fixtures in the schedule.");
+    await page.getByTestId("scheduled-coverage-checkbox").check();
+    await page.getByTestId("accept-scheduled-count").click();
+    await pickArea("scheduled", 0.25, 0.5);
+    await expect(page.getByTestId("scheduled-coverage-checkbox")).not.toBeChecked();
+    await page.getByTestId("scheduled-coverage-checkbox").check();
+    await page.getByTestId("scheduled-advanced").locator("summary").click();
+    const previousX = Number(await page.getByTestId("scheduled-region-x").inputValue());
+    await page.getByTestId("scheduled-region-x").fill(String(previousX + 1));
+    await expect(page.getByTestId("scheduled-coverage-checkbox")).not.toBeChecked();
     await page.getByRole("button", { name: "Close source panel" }).click();
     await page.getByRole("button", { name: "Save as note", exact: true }).click();
     await page
@@ -169,6 +201,18 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
         .locator(".reviewer-message")
         .evaluate((element) => parseFloat(getComputedStyle(element).borderTopLeftRadius)),
     ).toBeGreaterThan(10);
+    const paused = seedPausedReview(directory);
+    const checkMenu = page.getByRole("button", { name: /^Check:/ });
+    await checkMenu.click();
+    await page.getByRole("option", { name: "Choose a check…", exact: true }).click();
+    await checkMenu.click();
+    await page.getByRole("option", { name: paused.title, exact: true }).click();
+    await expect(page.getByTestId("execution-controls")).toContainText("Review paused");
+    await page.getByTestId("new-conversation").click();
+    await expect(page.getByTestId("execution-controls")).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Save as note", exact: true })).toBeEnabled();
+    await page.getByTestId(`conversation-${paused.conversationId}`).click();
+    await expect(page.getByTestId("execution-controls")).toContainText("Review paused");
     await page.setViewportSize({ width: 760, height: 900 });
     await page.getByRole("button", { name: "Review settings", exact: true }).click();
     await expect(settings).toBeVisible();
@@ -184,3 +228,61 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// Exercise the real persisted-status observer without a provider call or production test hook.
+function seedPausedReview(directory: string) {
+  const database = new DatabaseSync(join(directory, "app.sqlite"));
+
+  try {
+    const finding = Schema.decodeUnknownSync(Schema.fromJsonString(Finding))(
+      database.prepare("SELECT payload FROM review_records WHERE kind='finding'").get()?.payload,
+    );
+
+    const message = Schema.decodeUnknownSync(Schema.fromJsonString(ReviewMessage))(
+      database.prepare("SELECT payload FROM review_records WHERE kind='message'").get()?.payload,
+    );
+
+    const context = Schema.decodeUnknownSync(ExecutionReviewContext)({
+      request: {
+        conversationId: message.conversationId,
+        messageId: message.id,
+        discipline: "electrical",
+      },
+      instruction: message.text,
+      instructionRevision: "fixture-only",
+    });
+
+    const runId = crypto.randomUUID();
+    const now = Date.now();
+    database
+      .prepare(
+        `INSERT INTO review_execution_runs
+      (run_id,project_id,finding_id,journal_id,engine,owner_generation,source_version,fact_version,
+       state,version,route,provider,model,max_calls,max_input_tokens,max_output_tokens,
+       prompt_version,review_context_json,started_at,state_changed_at)
+      VALUES (?,?,?,?,?,?,0,0,'paused',0,'offline','meta','muse-spark-1.3',4,64000,4096,?,?,?,?)`,
+      )
+      .run(
+        runId,
+        finding.projectId,
+        finding.id,
+        crypto.randomUUID(),
+        "fixture-only-never-resumed",
+        crypto.randomUUID(),
+        "fixture-only",
+        JSON.stringify(context),
+        now - 3000,
+        now - 1000,
+      );
+    database
+      .prepare(
+        `INSERT INTO review_execution_events (run_id,project_id,state,version)
+      VALUES (?,?,'paused',0)`,
+      )
+      .run(runId, finding.projectId);
+
+    return { conversationId: message.conversationId, title: finding.title };
+  } finally {
+    database.close();
+  }
+}

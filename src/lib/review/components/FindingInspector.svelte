@@ -222,11 +222,17 @@
       onclick={() =>
         onChooseRegion("drawn", (region) => {
           drawnRegion = editableRegion(region);
+          drawnCoverage = false;
         })}>Select area on drawing</button
     >
     <details class="technical-details" data-testid="drawn-advanced">
-      <summary>Area coordinates and review note</summary>
-      <fieldset class="region-fields">
+      <summary>Source details and optional note</summary>
+      <fieldset
+        class="region-fields"
+        oninput={() => {
+          drawnCoverage = false;
+        }}
+      >
         <legend>Source region in PDF points</legend>
         <label
           >X<input
@@ -269,6 +275,9 @@
           bind:value={drawnRationale}
           data-testid="drawn-rationale-input"></textarea></label
       >
+      {#if drawnFact}<p class="fact-id">
+          Fact {drawnFact.id.slice(0, 8)} · v{drawnFact.version}
+        </p>{/if}
     </details>
     <label class="checkbox"
       ><input type="checkbox" bind:checked={drawnCoverage} data-testid="drawn-coverage-checkbox" />I
@@ -290,8 +299,7 @@
           onAccept("drawn", {
             value: drawnValue,
             statement: drawnStatement.trim(),
-            rationale:
-              drawnRationale.trim() || "Reviewer accepted this count against the selected source.",
+            rationale: drawnRationale.trim(),
             coverageConfirmed: drawnCoverage,
             region: drawnRegion,
           })}>Accept drawn count</button
@@ -312,9 +320,6 @@
           }}>Correct drawn</button
         >{/if}
     </div>
-    {#if drawnFact}<p class="fact-id" hidden>
-        Fact {drawnFact.id.slice(0, 8)} · v{drawnFact.version}
-      </p>{/if}
   </section>
 
   <section class="operand" aria-label="scheduled operand">
@@ -355,11 +360,17 @@
       onclick={() =>
         onChooseRegion("scheduled", (region) => {
           scheduledRegion = editableRegion(region);
+          scheduledCoverage = false;
         })}>Select area on drawing</button
     >
     <details class="technical-details" data-testid="scheduled-advanced">
-      <summary>Area coordinates and review note</summary>
-      <fieldset class="region-fields">
+      <summary>Source details and optional note</summary>
+      <fieldset
+        class="region-fields"
+        oninput={() => {
+          scheduledCoverage = false;
+        }}
+      >
         <legend>Source region in PDF points</legend>
         <label
           >X<input
@@ -402,6 +413,9 @@
           bind:value={scheduledRationale}
           data-testid="scheduled-rationale-input"></textarea></label
       >
+      {#if scheduledFact}<p class="fact-id">
+          Fact {scheduledFact.id.slice(0, 8)} · v{scheduledFact.version}
+        </p>{/if}
     </details>
     <label class="checkbox"
       ><input
@@ -426,9 +440,7 @@
           onAccept("scheduled", {
             value: scheduledValue,
             statement: scheduledStatement.trim(),
-            rationale:
-              scheduledRationale.trim() ||
-              "Reviewer accepted this count against the selected source.",
+            rationale: scheduledRationale.trim(),
             coverageConfirmed: scheduledCoverage,
             region: scheduledRegion,
           })}>Accept scheduled count</button
@@ -449,9 +461,6 @@
           }}>Correct scheduled</button
         >{/if}
     </div>
-    {#if scheduledFact}<p class="fact-id" hidden>
-        Fact {scheduledFact.id.slice(0, 8)} · v{scheduledFact.version}
-      </p>{/if}
   </section>
 
   <div class="evaluate-row">
