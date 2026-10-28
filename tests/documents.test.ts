@@ -3,7 +3,7 @@ import { Effect, Exit, Fiber } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Documents, roundTripPdfPoint } from "../backend/documents/documents.ts";
+import { Documents } from "../backend/documents/documents.ts";
 import { createHeroPdf } from "./fixtures/hero-case.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { transformPoint } from "#lib/review/geometry.ts";
@@ -22,7 +22,6 @@ const fixtureDirectory = await mkdtemp(join(tmpdir(), "moke-pdf-fixtures-"));
 
 beforeAll(async () => {
   await writeFile(join(fixtureDirectory, "original.pdf"), buildMinimalPdf());
-  await writeFile(join(fixtureDirectory, "rotated-90.pdf"), buildMinimalPdf(90));
   await writeFile(join(fixtureDirectory, "malformed.pdf"), "not a pdf");
 });
 
@@ -97,7 +96,9 @@ test("direct crops contain the source mark through every rotation, nonzero page 
       for (let index = 0; index < pixels.length; index += 4)
         darkest = Math.min(darkest, pixels[index] ?? 255);
       expect(darkest).toBeLessThan(180);
-      expect(roundTripPdfPoint(render, 120, 540).delta).toBeLessThan(1e-6);
+      const restored = transformPoint(render.pixelsToPdf, location.x, location.y);
+      expect(restored.x).toBeCloseTo(120, 6);
+      expect(restored.y).toBeCloseTo(540, 6);
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -136,53 +137,6 @@ test("import stores the original hash and inventories pages", async () => {
 
     const onDisk = await readFile(join(dataDirectory, "artifacts", `${imported.sha256}.pdf`));
     expect(onDisk.byteLength).toBe(imported.byteLength);
-  } finally {
-    await rm(dataDirectory, { recursive: true, force: true });
-  }
-});
-
-test("render round-trips PDF coordinates through rotation", async () => {
-  const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-render-"));
-  const source = join(fixtureDirectory, "rotated-90.pdf");
-
-  try {
-    const rendered = await Effect.runPromise(
-      Effect.gen(function* () {
-        const documents = yield* Documents;
-        const imported = yield* documents.importPdf(source);
-        const page = imported.pages[0];
-
-        if (!page) {
-          return yield* Effect.die("missing page");
-        }
-
-        const sheet = new Sheet({
-          id: sheetId(crypto.randomUUID()),
-          projectId: projectId(crypto.randomUUID()),
-          revisionId: revisionId(crypto.randomUUID()),
-          pageIndex: page.pageIndex,
-          label: page.label,
-          confirmed: false,
-          box: page.box,
-          rotation: page.rotation,
-          userUnit: page.userUnit,
-          coverage: "unreviewed",
-        });
-
-        const region = new Region({
-          x: page.box.x + 24,
-          y: page.box.y + 24,
-          width: 200,
-          height: 160,
-        });
-
-        return yield* documents.render(imported.sha256, sheet, region, 120);
-      }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
-    );
-
-    const corner = roundTripPdfPoint(rendered, rendered.region.x + 10, rendered.region.y + 10);
-    expect(corner.delta).toBeLessThanOrEqual(1);
-    expect(rendered.byteLength).toBeGreaterThan(100);
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }

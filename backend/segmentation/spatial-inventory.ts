@@ -35,7 +35,7 @@ export class InventoryGeometryError extends Schema.TaggedError<InventoryGeometry
 ) {}
 
 /** Mutually unique geometric correspondences; ambiguous IDs also remain unmatched. */
-export type InventoryComparison = {
+type InventoryComparison = {
   readonly matches: ReadonlyArray<{
     readonly leftId: string;
     readonly rightId: string;
@@ -48,7 +48,7 @@ export type InventoryComparison = {
 };
 
 /** Localization-only center-hit counts; neither semantic correctness nor mask accuracy. */
-export type CenterEvaluation = {
+type CenterEvaluation = {
   readonly truePositives: number;
   readonly falsePositives: number;
   readonly falseNegatives: number;

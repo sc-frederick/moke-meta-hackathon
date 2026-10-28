@@ -3,10 +3,8 @@ import { RpcClient, type RpcClientError } from "effect/rpc";
 import { RendererRpcClient } from "electron-effect-rpc/renderer";
 import {
   type Artifact,
-  type ArtifactChunk,
   type ArtifactId,
   CommandId,
-  type CommandReceipt,
   type OperationId,
   type ProjectId,
   type Region,
@@ -30,15 +28,14 @@ class ReviewDesktopApi extends Context.Service<
   RpcClient.FromGroup<typeof ReviewDesktopRpc, RpcClientError.RpcClientError>
 >()("app/ReviewDesktopApi") {}
 
-/** Map RPC failures to stable review errors for the workbench. */
-export function mapClientError(cause: unknown, fallback: string): typeof ClientError.Type {
+function mapClientError(cause: unknown, fallback: string): typeof ClientError.Type {
   return Option.match(Schema.decodeUnknownOption(ClientError)(cause), {
     onNone: () => new ReviewStorageError({ message: fallback }),
     onSome: (value) => value,
   });
 }
 
-export type ReviewClientResult<T> =
+type ReviewClientResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: typeof ClientError.Type };
 
@@ -145,22 +142,16 @@ export function createReviewClient() {
       signal?: AbortSignal,
     ) =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ReviewSnapshot({ projectId, afterSequence });
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) =>
+          client.ReviewSnapshot({ projectId, afterSequence }),
+        ),
         "The review workbench could not load.",
         signal,
       ),
 
     command: (command: typeof ReviewCommand.Type) =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ReviewCommand({ command });
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) => client.ReviewCommand({ command })),
         "The review command could not be applied.",
       ),
 
@@ -172,11 +163,7 @@ export function createReviewClient() {
       dpi: number;
     }) =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.RenderSource(payload);
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) => client.RenderSource(payload)),
         "The source region could not be rendered.",
       ),
 
@@ -187,11 +174,9 @@ export function createReviewClient() {
       limit: number,
     ) =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ReadArtifactChunk({ projectId, artifactId, offset, limit });
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) =>
+          client.ReadArtifactChunk({ projectId, artifactId, offset, limit }),
+        ),
         "The artifact could not be read.",
       ),
 
@@ -201,31 +186,19 @@ export function createReviewClient() {
       commandId: typeof CommandId.Type;
     }) =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ChooseReviewPdf(payload);
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewPdf(payload)),
         "The PDF could not be imported.",
       ),
 
     chooseReviewExport: () =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ChooseReviewExport({});
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewExport({})),
         "The review package could not be exported.",
       ),
 
     chooseReviewRestore: () =>
       run(
-        Effect.gen(function* () {
-          const client = yield* ReviewDesktopApi;
-
-          return yield* client.ChooseReviewRestore({});
-        }),
+        Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewRestore({})),
         "The review package could not be restored.",
       ),
 
@@ -242,22 +215,19 @@ export function createReviewClient() {
         const limit = Math.min(256 * 1024, totalBytes - offset);
 
         const chunk = await run(
-          Effect.gen(function* () {
-            const client = yield* ReviewDesktopApi;
-
-            return yield* client.ReadArtifactChunk({
+          Effect.flatMap(ReviewDesktopApi, (client) =>
+            client.ReadArtifactChunk({
               projectId,
               artifactId: artifact.id,
               offset,
               limit,
-            });
-          }),
+            }),
+          ),
           "The source image could not be loaded.",
         );
 
         if (!chunk.ok) return chunk;
-        // SAFETY: ReadArtifactChunk success schema is ArtifactChunk.
-        const part = chunk.value as ArtifactChunk;
+        const part = chunk.value;
         totalBytes = part.totalBytes;
         chunks.push(Uint8Array.from(atob(part.base64), (c) => c.charCodeAt(0)));
         offset += limit;
@@ -272,6 +242,7 @@ export function createReviewClient() {
   };
 }
 
+/** Scoped workbench operations and resource disposal owned by the mounted page. */
 export type ReviewClient = ReturnType<typeof createReviewClient>;
 
 /** Build a validated review command for renderer-initiated mutations. */
@@ -282,9 +253,4 @@ export function reviewCommand(input: typeof ReviewCommand.Type): typeof ReviewCo
 /** Allocate a fresh command id for idempotent writes. */
 export function newCommandId(): typeof CommandId.Type {
   return Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
-}
-
-/** Convenience helper after a successful command. */
-export function receiptProjectVersion(receipt: CommandReceipt): number {
-  return receipt.version;
 }

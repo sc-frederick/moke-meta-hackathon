@@ -3,13 +3,10 @@ import { ReviewError, ReviewRpc, ReviewStorageError } from "../src/lib/review/co
 import { BackendApi } from "./backend.ts";
 import { ExecutionError, ExecutionRpc } from "../src/lib/review/execution.ts";
 
-const fallback = (message: string) => new ReviewStorageError({ message });
-
-/** Map Bun review failures to the shared schema; hide RPC transport details. */
 const mapError = (message: string) =>
   Effect.mapError((cause: unknown) =>
     Option.match(Schema.decodeUnknownOption(ReviewError)(cause), {
-      onNone: () => fallback(message),
+      onNone: () => new ReviewStorageError({ message }),
       onSome: (value) => value,
     }),
   );
@@ -18,24 +15,21 @@ const mapError = (message: string) =>
 export const ReviewProxy = ReviewRpc.toLayer(
   Effect.gen(function* () {
     const { api } = yield* BackendApi;
-    const review = api;
 
     return {
       ReviewSnapshot: ({ projectId, afterSequence }) =>
-        review
+        api
           .ReviewSnapshot({ projectId, afterSequence })
           .pipe(mapError("The review workbench could not load.")),
 
       ReviewCommand: ({ command }) =>
-        review
-          .ReviewCommand({ command })
-          .pipe(mapError("The review command could not be applied.")),
+        api.ReviewCommand({ command }).pipe(mapError("The review command could not be applied.")),
 
       RenderSource: (payload) =>
-        review.RenderSource(payload).pipe(mapError("The source region could not be rendered.")),
+        api.RenderSource(payload).pipe(mapError("The source region could not be rendered.")),
 
       ReadArtifactChunk: (payload) =>
-        review.ReadArtifactChunk(payload).pipe(mapError("The artifact could not be read.")),
+        api.ReadArtifactChunk(payload).pipe(mapError("The artifact could not be read.")),
     };
   }),
 );

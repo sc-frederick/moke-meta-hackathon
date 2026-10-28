@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Semaphore } from "effect";
 import { DocumentError, Region, ReviewStorageError, Sheet } from "#lib/review/contracts.ts";
-import { transformPoint } from "#lib/review/geometry.ts";
 import { artifactPath, readArtifactChunk, storeBytes, storeFile } from "./artifact-store.ts";
 import type { DocumentsConfig } from "./config.ts";
 import { validatePdfSource } from "./pdf-validation.ts";
@@ -145,13 +144,4 @@ export class Documents extends Context.Service<
       }),
     );
   }
-}
-
-/** Round-trip a PDF point through a render's affine maps within one pixel tolerance. */
-export function roundTripPdfPoint(rendered: RenderedPdf, pdfX: number, pdfY: number) {
-  const pixel = transformPoint(rendered.pdfToPixels, pdfX, pdfY);
-  const restored = transformPoint(rendered.pixelsToPdf, pixel.x, pixel.y);
-  const delta = Math.hypot(restored.x - pdfX, restored.y - pdfY);
-
-  return { x: restored.x, y: restored.y, delta };
 }

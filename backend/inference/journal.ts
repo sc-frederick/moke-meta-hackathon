@@ -25,9 +25,9 @@ export async function openReviewJournal(directory: string, journalId: string, ex
   try {
     await database.exec("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;");
 
-    const foreignKeys = Schema.decodeUnknownSync(
-      Schema.Struct({ foreign_keys: Schema.Literal(1) }),
-    )(await database.get("PRAGMA foreign_keys"));
+    Schema.decodeUnknownSync(Schema.Struct({ foreign_keys: Schema.Literal(1) }))(
+      await database.get("PRAGMA foreign_keys"),
+    );
 
     Schema.decodeUnknownSync(Schema.Struct({ synchronous: Schema.Literal(2) }))(
       await database.get("PRAGMA synchronous"),
@@ -51,8 +51,7 @@ export async function openReviewJournal(directory: string, journalId: string, ex
       await database.get("SELECT journal_id, format FROM review_journal_identity WHERE id=1"),
     );
 
-    if (identity.journal_id !== journalId || foreignKeys.foreign_keys !== 1)
-      throw new Error("Journal identity mismatch");
+    if (identity.journal_id !== journalId) throw new Error("Journal identity mismatch");
 
     return await SqliteStorage.open(database);
   } catch (cause) {

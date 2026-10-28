@@ -16,7 +16,7 @@ export const VisionBox = Schema.Struct({
 });
 
 /** A source assertion; unknown is explicit and must not become a protection finding. */
-export const VisualAssertion = Schema.Struct({
+const VisualAssertion = Schema.Struct({
   value: Schema.NullOr(Schema.NonEmptyString),
   quote: Schema.String,
   box: Schema.NullOr(VisionBox),
@@ -44,7 +44,7 @@ export const VisualDevice = Schema.Struct({
 });
 
 /** Parsed independent inventory or zoom inspection. */
-export const VisualInventory = Schema.Struct({ objects: Schema.Array(VisualDevice) });
+const VisualInventory = Schema.Struct({ objects: Schema.Array(VisualDevice) });
 
 /** One semantic decision about an existing SAM proposal. It cannot invent an instance. */
 export const ProposalDecision = Schema.Struct({

@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { Artifact, CommandId, type ProjectId } from "../../src/lib/review/contracts.ts";
 import {
   ExecutionError,
-  ExecutionRpc,
   ExecutionStatus,
   RunId,
   StartExecution,
@@ -538,11 +537,12 @@ export class ReviewExecution extends Context.Service<
 
                   if (artifact === undefined)
                     return yield* failure("input", "The segmented source is outside this finding.");
+                  const { instances, ...receipt } = observation;
 
                   return {
                     text: JSON.stringify({
-                      ...observation,
-                      instances: observation.instances.map((instance) => ({
+                      ...receipt,
+                      instances: instances.map((instance) => ({
                         id: instance.id,
                         confidence: instance.confidence,
                         sourcePixelsInclusive: instance.sourcePixelsInclusive,
@@ -1114,22 +1114,3 @@ export class ReviewExecution extends Context.Service<
     );
   }
 }
-
-/** Bind renderer-safe controls to the parent-owned service. */
-export const ExecutionHandlers = ExecutionRpc.toLayer(
-  Effect.gen(function* () {
-    const execution = yield* ReviewExecution;
-
-    return {
-      StartExecution: (request) => execution.start(request),
-      ExecutionStatus: ({ projectId, runId }) => execution.status(projectId, runId),
-      ControlExecution: ({ projectId, runId, expectedVersion, action, commandId }) =>
-        execution.control(projectId, runId, expectedVersion, action, commandId),
-      AcknowledgeUncertainExecution: ({ projectId, runId, expectedVersion, commandId }) =>
-        execution.acknowledge(projectId, runId, expectedVersion, commandId),
-      ExecutionEvents: ({ projectId, afterSequence }) => execution.events(projectId, afterSequence),
-      ObserveExecution: ({ projectId, afterSequence }) =>
-        execution.observe(projectId, afterSequence),
-    };
-  }),
-);

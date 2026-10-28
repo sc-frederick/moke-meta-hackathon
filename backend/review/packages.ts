@@ -484,11 +484,9 @@ const inspectDatabase = (filename: string) =>
     Effect.gen(function* () {
       const database = yield* openSqlite(filename, true);
 
-      const integrity = yield* Schema.decodeUnknownEffect(
-        Schema.Struct({ quick_check: Schema.Literal("ok") }),
-      )(database.prepare("PRAGMA quick_check").get()).pipe(
-        Effect.mapError(() => fail("corrupt", "The database failed its integrity check.")),
-      );
+      yield* Schema.decodeUnknownEffect(Schema.Struct({ quick_check: Schema.Literal("ok") }))(
+        database.prepare("PRAGMA quick_check").get(),
+      ).pipe(Effect.mapError(() => fail("corrupt", "The database failed its integrity check.")));
 
       const migrations = yield* Schema.decodeUnknownEffect(
         Schema.Array(Schema.Struct({ name: Schema.String, sha256: Schema.String })),
@@ -496,7 +494,7 @@ const inspectDatabase = (filename: string) =>
         database.prepare("SELECT name, sha256 FROM __project_kit_migrations ORDER BY name").all(),
       ).pipe(Effect.mapError(() => fail("incompatible", "Migration history could not be read.")));
 
-      return { integrity, migrations };
+      return { migrations };
     }),
   );
 
@@ -1062,19 +1060,14 @@ const writeApplicationPackage = (
       return yield* fail("incompatible", "Applied migrations do not match this build.");
     }
 
-    const files: Array<{
-      readonly relativePath: string;
-      readonly sha256: string;
-      readonly bytes: number;
-    }> = [];
-
+    let fileCount = 0;
     let totalBytes = 0;
 
     const reserve = (bytes: number) =>
       Effect.gen(function* () {
         totalBytes += bytes;
 
-        if (files.length + 1 > limits.maxFiles || totalBytes > limits.maxBytes) {
+        if (fileCount + 1 > limits.maxFiles || totalBytes > limits.maxBytes) {
           return yield* fail("limit", "The package exceeds the file or byte limit.");
         }
       });
@@ -1089,7 +1082,7 @@ const writeApplicationPackage = (
           const databaseIdentity = yield* hashFile(databaseDestination, limits.maxBytes);
 
           yield* reserve(databaseIdentity.bytes);
-          files.push({ relativePath: "app.sqlite", ...databaseIdentity });
+          fileCount += 1;
 
           const artifacts: Array<PackageFile> = [];
 
@@ -1115,7 +1108,7 @@ const writeApplicationPackage = (
             artifacts.push(
               new PackageFile({ path: relativePath, sha256: stored.sha256, bytes: stored.bytes }),
             );
-            files.push({ relativePath, sha256: stored.sha256, bytes: stored.bytes });
+            fileCount += 1;
           }
 
           const journals: Array<PackageJournalFile> = [];
@@ -1143,10 +1136,7 @@ const writeApplicationPackage = (
 
             const identity = yield* journalIdentity(stored.path);
 
-            if (
-              identity.journal_id.toLowerCase() !== run.journalId ||
-              identity.format !== packageEngineFormat
-            ) {
+            if (identity.journal_id.toLowerCase() !== run.journalId) {
               return yield* fail(
                 "incomplete",
                 "A Pi journal does not match the run that references it.",
@@ -1168,7 +1158,7 @@ const writeApplicationPackage = (
                 format: packageEngineFormat,
               }),
             );
-            files.push({ relativePath: packagePath, sha256: copied.sha256, bytes: copied.bytes });
+            fileCount += 1;
             runs.push(
               new PackageRunSnapshot({
                 runId: run.runId,
@@ -1216,7 +1206,7 @@ const writeApplicationPackage = (
 
           totalBytes += manifestIdentity.bytes;
 
-          if (files.length + 1 > limits.maxFiles || totalBytes > limits.maxBytes) {
+          if (fileCount + 1 > limits.maxFiles || totalBytes > limits.maxBytes) {
             return yield* fail("limit", "The package exceeds the file or byte limit.");
           }
 
@@ -1228,7 +1218,7 @@ const writeApplicationPackage = (
             destination: target,
             scope: "application",
             scopeLabel: "whole-application",
-            files: files.length + 1,
+            files: fileCount + 1,
             bytes: totalBytes,
           });
         }),
@@ -1629,7 +1619,7 @@ const absoluteRetained = (dataDirectory: string, relativePath: string | null) =>
 
   if (!retainedRelativeAllowed(relativePath)) return undefined;
 
-  return safeJoin(dataDirectory, relativePath) ?? undefined;
+  return safeJoin(dataDirectory, relativePath);
 };
 
 const recoverJournal = (dataDirectory: string, journal: RestoreJournal) =>
@@ -1736,8 +1726,6 @@ const swapEntry = (dataDirectory: string, journal: RestoreJournal, index: number
     }
 
     const existed = yield* fileExists(live);
-
-    if (Schema.is(PackageError)(existed)) return yield* existed;
 
     let next: RestoreJournal = {
       ...journal,
@@ -1884,17 +1872,6 @@ const restorePrepared = (
     yield* assertNoJournal(dataDirectory);
     const validated = yield* validatePackage(sourcePath, limits, config.migrationDirectory);
 
-    if (existsSync(join(dataDirectory, "app.sqlite"))) {
-      const current = yield* readDomain(join(dataDirectory, "app.sqlite"));
-
-      if (validated.manifest.scope === "database-only" && current.reviewBearing) {
-        return yield* fail(
-          "incomplete",
-          "Current review data cannot be replaced by a database-only package.",
-        );
-      }
-    }
-
     yield* conflictingArtifact(dataDirectory, validated.snapshot, limits.maxBytes);
     const entries = yield* replacementEntries(dataDirectory, validated.manifest);
 
@@ -1906,19 +1883,6 @@ const restorePrepared = (
 
     yield* finalizeDelete(join(dataDirectory, ".package-restore", "incoming", "app.sqlite"));
     const admission = admissionFrom(before.runs, ownerGeneration);
-
-    if (
-      before.runs.some(
-        (run) =>
-          nextState(run.state, run.uncertainAttempts) === "running" ||
-          nextState(run.state, run.uncertainAttempts) === "pausing",
-      )
-    ) {
-      return yield* fail(
-        "conflict",
-        "A restored run was still executing. Current data was left in place.",
-      );
-    }
 
     let preRestoreRelative: string | null = null;
 
@@ -2018,7 +1982,6 @@ export const exportReviewPackage = Effect.fn("exportReviewPackage")(function* (
   const limits = yield* parseLimits(config.limits);
 
   yield* assertEngine;
-  yield* dataRealPath(config.dataDirectory);
   yield* prepareExternalDestination(destination, yield* dataRealPath(config.dataDirectory));
   yield* config.quiesce;
 

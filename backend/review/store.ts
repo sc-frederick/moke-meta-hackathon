@@ -1,4 +1,4 @@
-import { Context, DateTime, Effect, Layer, Match, Schema } from "effect";
+import { Context, DateTime, Effect, Layer, Match, Schema, Struct } from "effect";
 import { SqlClient } from "effect/sql";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -205,7 +205,9 @@ export class ReviewStore extends Context.Service<
         kind: string,
         message: string,
       ) {
-        const updated = new Project({ ...project, version: project.version + 1 });
+        const updated = new Project(
+          Struct.assign(project, { version: project.version + 1 } as const),
+        );
 
         const receipt = new CommandReceipt({
           commandId,
@@ -284,7 +286,7 @@ export class ReviewStore extends Context.Service<
 
       const staleFinding = Effect.fn("ReviewStore.staleFinding")(function* (finding: Finding) {
         // Check runs are immutable. Only the current finding pointer is marked stale.
-        yield* save("finding", new Finding({ ...finding, outcome: "stale" }));
+        yield* save("finding", new Finding(Struct.assign(finding, { outcome: "stale" } as const)));
       });
 
       const execute = Effect.fn("ReviewStore.execute")(function* (
@@ -388,12 +390,13 @@ export class ReviewStore extends Context.Service<
                   return yield* failure("The sheet does not belong to this project.");
                 yield* save(
                   "sheet",
-                  new Sheet({
-                    ...sheet,
-                    label: command.label,
-                    confirmed: true,
-                    coverage: command.coverage,
-                  }),
+                  new Sheet(
+                    Struct.assign(sheet, {
+                      label: command.label,
+                      confirmed: true,
+                      coverage: command.coverage,
+                    } as const),
+                  ),
                 );
                 entityId = sheet.id;
                 message = "Sheet identity and coverage confirmed.";
@@ -470,7 +473,9 @@ export class ReviewStore extends Context.Service<
                 yield* save("fact", fact);
                 yield* sql`INSERT INTO review_fact_versions (project_id,fact_id,finding_id,side,version) VALUES (${project.id},${fact.id},${finding.id},${fact.side},${fact.version})`;
                 yield* staleFinding(finding);
-                project = new Project({ ...project, factVersion: project.factVersion + 1 });
+                project = new Project(
+                  Struct.assign(project, { factVersion: project.factVersion + 1 } as const),
+                );
                 entityId = fact.id;
                 message =
                   "Accepted input saved. Only its dependent finding is stale; earlier calculations remain in history.";
@@ -575,7 +580,12 @@ export class ReviewStore extends Context.Service<
 
                 yield* save(
                   "finding",
-                  new Finding({ ...finding, latestCheckId: check.id, outcome: check.outcome }),
+                  new Finding(
+                    Struct.assign(finding, {
+                      latestCheckId: check.id,
+                      outcome: check.outcome,
+                    } as const),
+                  ),
                 );
                 entityId = check.id;
                 message = check.explanation;
@@ -588,11 +598,12 @@ export class ReviewStore extends Context.Service<
                   return yield* failure("The finding does not belong to this project.");
                 yield* save(
                   "finding",
-                  new Finding({
-                    ...finding,
-                    closed: command.closed,
-                    taskCompleted: command.taskCompleted,
-                  }),
+                  new Finding(
+                    Struct.assign(finding, {
+                      closed: command.closed,
+                      taskCompleted: command.taskCompleted,
+                    } as const),
+                  ),
                 );
                 entityId = finding.id;
                 message =
@@ -664,7 +675,10 @@ export class ReviewStore extends Context.Service<
 
                   if (pair.confirmed) {
                     yield* sql`INSERT INTO review_sheet_links (project_id,old_sheet_id,new_sheet_id,confirmed,content) VALUES (${project.id},${old.id},${next.id},1,${pair.content})`;
-                    yield* save("sheet", new Sheet({ ...next, confirmed: true }));
+                    yield* save(
+                      "sheet",
+                      new Sheet(Struct.assign(next, { confirmed: true } as const)),
+                    );
                   } else
                     yield* sql`INSERT INTO review_sheet_link_proposals(project_id,old_sheet_id,new_sheet_id,content,command_id) VALUES (${project.id},${old.id},${next.id},${pair.content},${command.commandId})`;
                 }
@@ -695,14 +709,15 @@ export class ReviewStore extends Context.Service<
 
                   yield* save(
                     "finding",
-                    new Finding({
-                      ...finding,
-                      drawnSheetId: drawn?.confirmed ? drawn.newSheetId : finding.drawnSheetId,
-                      scheduledSheetId: scheduled?.confirmed
-                        ? scheduled.newSheetId
-                        : finding.scheduledSheetId,
-                      outcome: unchanged ? finding.outcome : "stale",
-                    }),
+                    new Finding(
+                      Struct.assign(finding, {
+                        drawnSheetId: drawn?.confirmed ? drawn.newSheetId : finding.drawnSheetId,
+                        scheduledSheetId: scheduled?.confirmed
+                          ? scheduled.newSheetId
+                          : finding.scheduledSheetId,
+                        outcome: unchanged ? finding.outcome : "stale",
+                      } as const),
+                    ),
                   );
 
                   for (const id of [finding.drawnSheetId, finding.scheduledSheetId]) {
@@ -712,12 +727,17 @@ export class ReviewStore extends Context.Service<
                       const old = findSheet(id);
 
                       if (old !== undefined)
-                        yield* save("sheet", new Sheet({ ...old, confirmed: false }));
+                        yield* save(
+                          "sheet",
+                          new Sheet(Struct.assign(old, { confirmed: false } as const)),
+                        );
                     }
                   }
                 }
 
-                project = new Project({ ...project, sourceVersion: project.sourceVersion + 1 });
+                project = new Project(
+                  Struct.assign(project, { sourceVersion: project.sourceVersion + 1 } as const),
+                );
                 entityId = command.revisionId;
                 message =
                   "Revision correspondence recorded. Changed and unconfirmed dependencies require new evidence; history is retained.";
@@ -846,19 +866,17 @@ export class ReviewStore extends Context.Service<
         return yield* Match.value(mutation).pipe(
           Match.tagsExhaustive({
             Evaluate: () =>
-              Effect.gen(function* () {
-                return yield* execute(
-                  Schema.decodeUnknownSync(ReviewCommand)(
-                    ReviewCommand.cases.EvaluateFinding.make({
-                      commandId: fence.commandId,
-                      projectId: project.id,
-                      expectedVersion: project.version,
-                      findingId: finding.id,
-                    }),
-                  ),
-                  hash,
-                );
-              }),
+              execute(
+                Schema.decodeUnknownSync(ReviewCommand)(
+                  ReviewCommand.cases.EvaluateFinding.make({
+                    commandId: fence.commandId,
+                    projectId: project.id,
+                    expectedVersion: project.version,
+                    findingId: finding.id,
+                  }),
+                ),
+                hash,
+              ),
             Propose: (mutation) =>
               Effect.gen(function* () {
                 const proposal = mutation.proposal;
@@ -1060,7 +1078,7 @@ export class ReviewStore extends Context.Service<
 }
 
 /** The shell supplies a selected path only to processing; receipts retain source hashes. */
-export interface ImportPdfCommand {
+interface ImportPdfCommand {
   readonly commandId: CommandReceipt["commandId"];
   readonly projectId: typeof ProjectId.Type;
   readonly expectedVersion: number;

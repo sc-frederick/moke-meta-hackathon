@@ -2,7 +2,17 @@ import { executionPersistence } from "../backend/review/execution-store.ts";
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createCanvas } from "@napi-rs/canvas";
-import { Effect, Layer, ManagedRuntime, Redacted, Result, Schema, Semaphore, Stream } from "effect";
+import {
+  Effect,
+  Layer,
+  ManagedRuntime,
+  Redacted,
+  Result,
+  Schema,
+  Semaphore,
+  Stream,
+  Struct,
+} from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -1072,7 +1082,10 @@ test("lifecycle commands replay before freshness checks and reject changed input
 
     const changed = await fixture.runtime.runPromise(
       execution
-        .start({ ...request, budget: new ExecutionBudget({ ...budget, maxCalls: 1 }) })
+        .start({
+          ...request,
+          budget: new ExecutionBudget(Struct.assign(budget, { maxCalls: 1 } as const)),
+        })
         .pipe(Effect.flip),
     );
 

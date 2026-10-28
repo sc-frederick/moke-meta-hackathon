@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { DocumentError } from "#lib/review/contracts.ts";
 import { DocumentsLimits } from "./config.ts";
 
@@ -37,13 +37,11 @@ export const validatePdfSource = Effect.fnUntraced(function* (sourcePath: string
     });
   }
 
-  const prefix = yield* Effect.try({
-    try: () => readFileSync(sourcePath).subarray(0, 5),
+  const header = yield* Effect.tryPromise({
+    try: () => Bun.file(sourcePath).slice(0, pdfHeader.length).text(),
     catch: () =>
       new DocumentError({ reason: "unavailable", message: "The source file could not be read." }),
   });
-
-  const header = new TextDecoder().decode(prefix);
 
   if (!header.startsWith(pdfHeader)) {
     return yield* new DocumentError({
@@ -51,6 +49,4 @@ export const validatePdfSource = Effect.fnUntraced(function* (sourcePath: string
       message: "The source does not begin with a PDF header.",
     });
   }
-
-  return stats.size;
 });

@@ -224,9 +224,9 @@ export const restoreDatabase = Effect.fn("restoreDatabase")(function* (
   const incoming = yield* open(source, true);
 
   const valid = yield* sqlite(() => {
-    const integrity = Schema.decodeUnknownSync(
-      Schema.Struct({ quick_check: Schema.Literal("ok") }),
-    )(incoming.prepare("PRAGMA quick_check").get());
+    Schema.decodeUnknownSync(Schema.Struct({ quick_check: Schema.Literal("ok") }))(
+      incoming.prepare("PRAGMA quick_check").get(),
+    );
 
     const history = parseHistory(
       incoming.prepare("SELECT name, sha256 FROM __project_kit_migrations ORDER BY name").all(),
@@ -234,9 +234,7 @@ export const restoreDatabase = Effect.fn("restoreDatabase")(function* (
 
     incoming.prepare("SELECT id, text, created_at FROM notes LIMIT 0").all();
 
-    return (
-      integrity.quick_check === "ok" && history.length > 0 && validateHistory(history, migrations)
-    );
+    return history.length > 0 && validateHistory(history, migrations);
   }, "The selected file is not a compatible application backup.");
 
   if (!valid)

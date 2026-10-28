@@ -87,7 +87,7 @@ const ResponseBody = Schema.fromJsonString(
 );
 
 /** The transport result retains the exact body for local evidence and replay. */
-export type SamResponse = { readonly body: string; readonly status: number };
+type SamResponse = { readonly body: string; readonly status: number };
 
 /** Hosted inference port; the renderer and Electron never receive its credentials. */
 export class SamClient extends Context.Service<

@@ -304,14 +304,13 @@ async function handleRequest(line: string) {
   );
 }
 
-const buffer: string[] = [];
+let pending = "";
 
 process.stdin.setEncoding("utf8");
 
 process.stdin.on("data", (chunk: string) => {
-  buffer.push(chunk);
-  let index = buffer.join("").indexOf("\n");
-  let pending = buffer.join("");
+  pending += chunk;
+  let index = pending.indexOf("\n");
 
   while (index >= 0) {
     const line = pending.slice(0, index).trim();
@@ -330,14 +329,4 @@ process.stdin.on("data", (chunk: string) => {
 
     index = pending.indexOf("\n");
   }
-
-  buffer.length = 0;
-
-  if (pending.length > 0) {
-    buffer.push(pending);
-  }
-});
-
-process.stdin.on("end", () => {
-  /* keep the worker alive until the parent scope closes the process */
 });

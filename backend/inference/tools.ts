@@ -9,7 +9,7 @@ import {
 } from "../review/execution-port.ts";
 
 /** Tools use durable task IDs rather than model-supplied tool-call IDs for command identity. */
-export interface ExecutionTools {
+interface ExecutionTools {
   readonly inspect: (taskId: number) => Promise<ExecutionToolEvidence>;
   readonly render: (
     taskId: number,

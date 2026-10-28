@@ -88,7 +88,7 @@ export interface ExecutionToolEvidence {
 }
 
 /** Application capability for an optional, separately admitted segmentation integration. */
-export interface SegmentationCapability {
+interface SegmentationCapability {
   readonly segment: (
     fence: ExecutionFence,
     request: SamInspectionRequest,

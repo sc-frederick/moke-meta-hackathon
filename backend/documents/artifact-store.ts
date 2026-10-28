@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -10,7 +9,7 @@ import {
   renameSync,
   writeSync,
 } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DocumentError, ReviewStorageError } from "#lib/review/contracts.ts";
 import { DocumentsLimits } from "./config.ts";
@@ -28,14 +27,8 @@ export function artifactPath(
   return join(dataDirectory, "artifacts", `${sha256}.${extension}`);
 }
 
-/** Hash file bytes with SHA-256. */
-export function hashBytes(bytes: Uint8Array) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-/** Hash on-disk bytes with SHA-256. */
-export function hashFile(path: string) {
-  return hashBytes(readFileSync(path));
+function hashFile(path: string) {
+  return Bun.SHA256.hash(readFileSync(path), "hex");
 }
 
 /** Publish bytes to a content-addressed artifact using stage, fsync, verify, and rename. */
@@ -44,7 +37,7 @@ export const storeBytes = Effect.fnUntraced(function* (
   bytes: Uint8Array,
   mediaType: "application/pdf" | "image/png",
 ) {
-  const sha256 = hashBytes(bytes);
+  const sha256 = Bun.SHA256.hash(bytes, "hex");
   const destination = artifactPath(dataDirectory, sha256, mediaType);
   const artifactsRoot = join(dataDirectory, "artifacts");
   const stagingRoot = join(artifactsRoot, ".staging");
@@ -131,7 +124,7 @@ export const readArtifactChunk = Effect.fnUntraced(function* (
       if (size > DocumentsLimits.maxSourceBytes) throw new Error("Artifact exceeds limit");
       const content = readFileSync(path);
 
-      if (hashBytes(content) !== sha256) throw new Error("Artifact hash mismatch");
+      if (Bun.SHA256.hash(content, "hex") !== sha256) throw new Error("Artifact hash mismatch");
 
       return content;
     },
@@ -155,13 +148,6 @@ export const readArtifactChunk = Effect.fnUntraced(function* (
     totalBytes,
   };
 });
-
-/** Remove a staged part file after a failed store attempt. */
-export const discardStagingFile = (path: string) =>
-  Effect.tryPromise({
-    try: () => rm(path, { force: true }),
-    catch: () => undefined,
-  }).pipe(Effect.ignore);
 
 /** Copy an on-disk source file into content-addressed storage. */
 export const storeFile = Effect.fnUntraced(function* (

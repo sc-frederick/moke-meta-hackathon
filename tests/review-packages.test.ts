@@ -861,7 +861,15 @@ test("pending replacement blocks application writes until restart recovery compl
     seedNote(source, "incoming-note");
     await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
     const application = await runtime.runPromise(Application);
-    await runtime.runPromise(application.add("original-note"));
+    seedNote(current, "original-note");
+
+    const createProject = (name: string) =>
+      ReviewCommand.cases.CreateProject.make({
+        commandId: Schema.decodeUnknownSync(CommandId)(randomUUID()),
+        name,
+      });
+
+    await runtime.runPromise(application.review.command(createProject("Original project")));
     await failureOf(
       restoreReviewPackage(
         configFor(current, Semaphore.makeUnsafe(1), { interruptAfter: "database-replaced" }),
@@ -870,23 +878,10 @@ test("pending replacement blocks application writes until restart recovery compl
     );
 
     const blockedProject = await runtime.runPromise(
-      application.review
-        .command(
-          ReviewCommand.cases.CreateProject.make({
-            commandId: Schema.decodeUnknownSync(CommandId)(randomUUID()),
-            name: "Must not commit",
-          }),
-        )
-        .pipe(Effect.result),
+      application.review.command(createProject("Must not commit")).pipe(Effect.result),
     );
 
     expect(Result.isFailure(blockedProject)).toBe(true);
-
-    const blockedNote = await runtime.runPromise(
-      application.add("must-not-commit").pipe(Effect.result),
-    );
-
-    expect(Result.isFailure(blockedNote)).toBe(true);
 
     if (process.platform !== "win32" && process.getuid?.() !== 0) {
       const restoreDirectory = join(current, ".package-restore");
@@ -894,7 +889,9 @@ test("pending replacement blocks application writes until restart recovery compl
 
       try {
         const denied = await runtime.runPromise(
-          application.add("must-not-commit-with-unreadable-journal").pipe(Effect.result),
+          application.review
+            .command(createProject("Must not commit with unreadable journal"))
+            .pipe(Effect.result),
         );
 
         expect(Result.isFailure(denied)).toBe(true);
@@ -908,19 +905,19 @@ test("pending replacement blocks application writes until restart recovery compl
     await runtime.dispose();
     runtime = openApplication();
     const recovered = await runtime.runPromise(Application);
-    expect((await runtime.runPromise(recovered.list)).map((note) => note.text)).toEqual([
-      "original-note",
-    ]);
+    expect(noteTexts(current)).toEqual([{ text: "original-note" }]);
     const snapshot = await runtime.runPromise(recovered.review.snapshot(null, 0));
-    expect(snapshot.projects).toHaveLength(0);
-    await runtime.runPromise(recovered.add("after-recovery"));
+    expect(snapshot.projects.map((project) => project.name)).toEqual(["Original project"]);
+    await runtime.runPromise(recovered.review.command(createProject("After recovery")));
     await runtime.dispose();
     runtime = openApplication();
     const reopened = await runtime.runPromise(Application);
-    expect((await runtime.runPromise(reopened.list)).map((note) => note.text).toSorted()).toEqual([
-      "after-recovery",
-      "original-note",
-    ]);
+    expect(
+      (await runtime.runPromise(reopened.review.snapshot(null, 0))).projects.map(
+        (project) => project.name,
+      ),
+    ).toEqual(["Original project", "After recovery"]);
+    expect(noteTexts(current)).toEqual([{ text: "original-note" }]);
   } finally {
     await runtime.dispose();
     await rm(root, { recursive: true, force: true });

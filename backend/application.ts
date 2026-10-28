@@ -3,9 +3,7 @@ import { Context, Effect, Layer, Schema, Semaphore } from "effect";
 import { join } from "node:path";
 import { lstatSync } from "node:fs";
 import { BackendConfig, BackendRpc, DatabaseFileError } from "../src/lib/backend-rpc.ts";
-import { Note, StorageError } from "../src/lib/notes.ts";
 import { exportDatabase, migrateDatabase, restoreDatabase } from "./database-files.ts";
-import { NotesStore } from "./notes-store.ts";
 import { SqlClient } from "effect/sql";
 import { ReviewSegmentation } from "./inference/segmentation.ts";
 import { Documents } from "./documents/documents.ts";
@@ -14,14 +12,6 @@ import { ReviewStore } from "./review/store.ts";
 import { createReviewOperations } from "./review/operations.ts";
 import { ReviewExecution } from "./review/execution.ts";
 import { ReviewError, ReviewConflict, ReviewStorageError } from "#lib/review/contracts.ts";
-
-/** The single managed application runtime is also the entrypoint for Pi callbacks. */
-export interface ApplicationEntry {
-  readonly runPromise: <A, E>(
-    effect: Effect.Effect<A, E>,
-    options?: Effect.RunOptions,
-  ) => Promise<A>;
-}
 
 import {
   exportReviewPackage,
@@ -36,12 +26,18 @@ import {
 } from "#lib/review/packages.ts";
 import { ExecutionError } from "#lib/review/execution.ts";
 
+/** The single managed application runtime is also the entrypoint for Pi callbacks. */
+export interface ApplicationEntry {
+  readonly runPromise: <A, E>(
+    effect: Effect.Effect<A, E>,
+    options?: Effect.RunOptions,
+  ) => Promise<A>;
+}
+
 /** Application operations; the Bun process exclusively owns database connections and recovery. */
 export class Application extends Context.Service<
   Application,
   {
-    readonly list: Effect.Effect<ReadonlyArray<Note>, StorageError>;
-    readonly add: (text: string) => Effect.Effect<Note, StorageError>;
     readonly export: (destination: string) => Effect.Effect<string, DatabaseFileError>;
     readonly restore: (source: string) => Effect.Effect<void, DatabaseFileError>;
     readonly review: ReturnType<typeof createReviewOperations>;
@@ -94,7 +90,6 @@ export class Application extends Context.Service<
           ).pipe(Semaphore.withPermit(workSlots));
 
         const database = SqliteClient.layer({ filename });
-        const store = NotesStore.layer.pipe(Layer.provide(database));
 
         const reviewQuery = <A>(
           operation: Effect.Effect<A, typeof ReviewError.Type, ReviewStore>,
@@ -236,26 +231,6 @@ export class Application extends Context.Service<
           acknowledge: (...args) => executePublic(execution.acknowledge(...args)),
         });
 
-        const query = <A>(operation: Effect.Effect<A, StorageError, NotesStore>) =>
-          Effect.suspend(() =>
-            maintaining || pendingRestore()
-              ? Effect.fail(
-                  new StorageError({
-                    message: pendingRestore()
-                      ? restoreMessage
-                      : "Review maintenance is in progress.",
-                  }),
-                )
-              : Effect.scoped(operation.pipe(Effect.provide(store))),
-          ).pipe(
-            Effect.mapError((cause) =>
-              cause instanceof StorageError
-                ? cause
-                : new StorageError({ message: "The database operation failed." }),
-            ),
-            Semaphore.withPermit(operations),
-          );
-
         return Application.of({
           review: publicReview,
           execution: publicExecution,
@@ -271,8 +246,6 @@ export class Application extends Context.Service<
                 ? Effect.fail(new PackageError({ reason: "interrupted", message: restoreMessage }))
                 : restoreReviewPackage(packages, source),
             ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
-          list: query(Effect.flatMap(NotesStore, (notes) => notes.list)),
-          add: (text) => query(Effect.flatMap(NotesStore, (notes) => notes.add(text))),
           export: (destination) =>
             Effect.suspend(() =>
               maintaining || pendingRestore()
@@ -317,8 +290,6 @@ export const BackendHandlers = BackendRpc.toLayer(
     const application = yield* Application;
 
     return {
-      ListNotes: () => application.list,
-      AddNote: ({ text }) => application.add(text),
       ExportDatabase: ({ destination }) => application.export(destination),
       RestoreDatabase: ({ source }) => application.restore(source),
       ReviewSnapshot: ({ projectId, afterSequence }) =>

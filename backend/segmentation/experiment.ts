@@ -6,7 +6,7 @@ import { reportHtml, overlaySvg, type CaseResult } from "./report.ts";
 import { casePrompt, readSegmentation, SamClient, SegmentationCase } from "./sam.ts";
 
 /** An artifact write failure that stops the experiment before more paid requests. */
-export class ExperimentOutputError extends Schema.TaggedError<ExperimentOutputError>()(
+class ExperimentOutputError extends Schema.TaggedError<ExperimentOutputError>()(
   "ExperimentOutputError",
   {
     message: Schema.String,
@@ -22,7 +22,7 @@ const save = Effect.fn("saveExperimentArtifact")(function* (path: string, conten
 });
 
 /** Local experiment options. A run directory must be new to preserve prior evidence. */
-export type ExperimentOptions = {
+type ExperimentOptions = {
   readonly fixtures: string;
   readonly casesFile: string;
   readonly manifestFile?: string;

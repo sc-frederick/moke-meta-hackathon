@@ -93,7 +93,8 @@ install Bun or Node.
 
 Open [the interactive study](design/concepts/index.html) directly in a browser.
 It previews the approved project-based chat navigation, findings menu, and source
-panel using sample content. The current app entry remains the notes smoke example.
+panel using sample content. The production workbench uses the same selected design
+with real project data and review services.
 See [the design notes](design/concepts/DESIGN.md) for the interaction and reference.
 Screenshots show the [findings menu](design/concepts/preview.png) and
 [source panel](design/concepts/preview-source.png).

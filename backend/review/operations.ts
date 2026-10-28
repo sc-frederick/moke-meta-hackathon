@@ -5,6 +5,7 @@ import {
   ArtifactChunk,
   ArtifactId,
   CommandId,
+  type FindingId,
   OperationId,
   Affine,
   RenderSource,
@@ -26,7 +27,7 @@ import {
 } from "./store.ts";
 
 /** Domain SQL is scoped by the application, while processing stays outside its query permit. */
-export interface ReviewOperationsConfiguration {
+interface ReviewOperationsConfiguration {
   readonly query: <A>(
     operation: Effect.Effect<A, typeof ReviewError.Type, ReviewStore>,
   ) => Effect.Effect<A, typeof ReviewError.Type>;
@@ -80,8 +81,15 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
       request.dpi,
     );
 
-    const artifact = new Artifact({
-      ...result,
+    return new Artifact({
+      sha256: result.sha256,
+      byteLength: result.byteLength,
+      width: result.width,
+      height: result.height,
+      region: result.region,
+      dpi: result.dpi,
+      pdfToPixels: result.pdfToPixels,
+      pixelsToPdf: result.pixelsToPdf,
       id: Schema.decodeUnknownSync(ArtifactId)(randomUUID()),
       projectId: request.projectId,
       revisionId: original.id,
@@ -89,8 +97,6 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
       mediaType: "image/png",
       operationId: request.operationId,
     });
-
-    return artifact;
   });
 
   const source = (request: typeof RenderSource.Type) =>
@@ -181,7 +187,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
 
   const verifyEvidence = Effect.fn("Review.verifyEvidence")(function* (
     projectId: Artifact["projectId"],
-    findingId: Artifact["id"] | string,
+    findingId: typeof FindingId.Type,
   ) {
     if (config.documents === undefined) return yield* unavailable();
     const state = yield* snapshot(projectId, 0);
