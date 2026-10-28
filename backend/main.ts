@@ -1,4 +1,4 @@
-import { Effect, Layer, Logger, Redacted, Schema } from "effect";
+import { Effect, Layer, Logger, ManagedRuntime, Redacted, Schema } from "effect";
 import { HttpEffect } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 import { appendFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import {
   BackendRpc,
   BackendUnavailable,
 } from "../src/lib/backend-rpc.ts";
-import { Application, BackendHandlers } from "./application.ts";
+import { Application, BackendHandlers, type ApplicationEntry } from "./application.ts";
 
 const program = Effect.gen(function* () {
   const input = yield* Effect.acquireRelease(
@@ -44,13 +44,35 @@ const program = Effect.gen(function* () {
     appendFileSync(logFile, Logger.formatJson.log(options) + "\n"),
   );
 
-  const services = yield* Layer.build(
-    Layer.mergeAll(
-      BackendHandlers.pipe(Layer.provide(Application.layer(config))),
-      RpcSerialization.layerJson,
-      Logger.layer([logger]),
+  let callbackEntry: ApplicationEntry | undefined;
+
+  const entry: ApplicationEntry = {
+    runPromise: (effect, options) => {
+      if (callbackEntry === undefined)
+        return Promise.reject(
+          new BackendUnavailable({ message: "The application runtime is not ready." }),
+        );
+
+      return callbackEntry.runPromise(effect, options);
+    },
+  };
+
+  const applicationRuntime = yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      ManagedRuntime.make(
+        Layer.mergeAll(
+          BackendHandlers.pipe(Layer.provide(Application.layer(config, entry))),
+          RpcSerialization.layerNdjson,
+          Logger.layer([logger]),
+        ),
+      ),
     ),
-  ).pipe(
+    (runtime) => Effect.promise(() => runtime.dispose()),
+  );
+
+  callbackEntry = applicationRuntime;
+
+  const services = yield* applicationRuntime.contextEffect.pipe(
     Effect.tapError((error) =>
       Effect.sync(() =>
         appendFileSync(
@@ -80,6 +102,7 @@ const program = Effect.gen(function* () {
           hostname: "127.0.0.1",
           port: 0,
           maxRequestBodySize: 64 * 1024,
+          idleTimeout: 0, // Authenticated progress streams can be quiet during bounded provider operations.
           fetch(request) {
             if (request.headers.get("origin") !== null) return new Response(null, { status: 403 });
 

@@ -1,3 +1,6 @@
+import { ProjectId } from "#lib/review/contracts.ts";
+import { Database } from "bun:sqlite";
+import { Schema, Stream } from "effect";
 import { expect, test } from "bun:test";
 import { Effect, Exit } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -151,5 +154,55 @@ test("an unavailable backend executable returns a typed startup failure", async 
     expect(failure._tag).toBe("BackendUnavailable");
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("HTTP progress delivers a persisted event before an open subscription completes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-http-progress-"));
+
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { api } = yield* BackendApi;
+          const db = new Database(join(directory, "app.sqlite"));
+          const runId = crypto.randomUUID();
+          const projectId = crypto.randomUUID();
+          db.query(
+            "INSERT INTO review_execution_runs(run_id,project_id,finding_id,journal_id,engine,owner_generation,source_version,fact_version,state,version,route,provider,model,max_calls,max_input_tokens,max_output_tokens) VALUES (?,?,?,?,?,?,0,0,'completed',1,'recorded','meta','muse-spark-1.3',3,64000,256)",
+          ).run(
+            runId,
+            projectId,
+            crypto.randomUUID(),
+            crypto.randomUUID(),
+            "review-pi-1.4.0-v1",
+            crypto.randomUUID(),
+          );
+          db.query(
+            "INSERT INTO review_execution_events(run_id,project_id,state,version) VALUES (?,?,'completed',1)",
+          ).run(runId, projectId);
+          db.close();
+
+          const event = yield* api
+            .ObserveExecution({
+              projectId: Schema.decodeUnknownSync(ProjectId)(projectId),
+              afterSequence: 0,
+            })
+            .pipe(Stream.take(1), Stream.runCollect, Effect.timeout("3 seconds"));
+
+          expect(event.map((item) => String(item.runId))).toEqual([runId]);
+        }).pipe(
+          Effect.provide(
+            BackendApi.layer({
+              command: [process.execPath, "--no-orphans", resolve("backend/main.ts")],
+              dataDirectory: directory,
+              migrationDirectory: resolve("migrations"),
+            }),
+          ),
+        ),
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

@@ -1,11 +1,20 @@
 {
   "appId": "com.scfrederick.moke-meta-hackathon",
   "productName": "moke-meta-hackathon",
-  "directories": { "output": "release" },
+  "directories": {
+    "output": "release"
+  },
   "files": ["build/**/*", "dist/electron/**/*", "dist/preload/**/*", "package.json"],
   "extraResources": [
-    { "from": "migrations", "to": "migrations" },
-    { "from": "dist/backend", "to": "backend" }
+    {
+      "from": "migrations",
+      "to": "migrations"
+    },
+    {
+      "from": "dist/backend",
+      "to": "backend",
+      "filter": ["app-backend*", "pdf-worker*", "pdf-assets/**/*"]
+    }
   ],
   "asar": true,
   "forceCodeSigning": false,
@@ -15,12 +24,18 @@
     "hardenedRuntime": false,
     "category": "public.app-category.productivity"
   },
-  "win": { "target": ["nsis"], "signAndEditExecutable": false },
+  "win": {
+    "target": ["nsis"],
+    "signAndEditExecutable": false
+  },
   "linux": {
     "target": ["AppImage", "deb"],
     "category": "Utility",
     "syncDesktopName": true,
     "maintainer": "Stephen Frederick"
   },
-  "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
 }

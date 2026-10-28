@@ -31,9 +31,13 @@
     "effect:setup": "bun --bun effect-tsgo patch --typescript-package @typescript/native",
     "postinstall": "bun run effect:setup",
     "package:desktop": "bun run build && bun --bun electron-builder --publish never",
-    "build:backend": "bun build ./backend/main.ts --compile --outfile ./dist/backend/app-backend --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
+    "build:backend": "bun run build:backend:main && bun run build:backend:pdf-worker && bun run prepare:pdf-assets",
     "test:packaged": "bun scripts/test-packaged.ts",
-    "test:review-agent": "bun scripts/test-review-agent.ts"
+    "test:review-agent": "bun scripts/test-review-agent.ts",
+    "build:backend:main": "bun build ./backend/main.ts --compile --outfile ./dist/backend/app-backend --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
+    "build:backend:pdf-worker": "bun build ./backend/documents/pdf-worker-main.ts --compile --outfile ./dist/backend/pdf-worker --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json && bun build ./backend/documents/pdf-packaging-probe-worker.mjs --compile --outfile ./dist/backend/pdf-packaging-probe --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
+    "prepare:pdf-assets": "bun scripts/prepare-pdf-assets.ts",
+    "probe:pdf-packaging": "bun scripts/pdf-packaging-probe.ts"
   },
   "dependencies": {
     "effect": "4.0.4",
@@ -60,7 +64,20 @@
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-telemetry": "1.4.0",
+    "typebox": "1.3.27",
+    "@napi-rs/canvas": "1.0.13",
+    "@napi-rs/canvas-darwin-arm64": "1.0.13",
+    "@napi-rs/canvas-darwin-x64": "1.0.13",
+    "@napi-rs/canvas-linux-arm64-gnu": "1.0.13",
+    "@napi-rs/canvas-linux-x64-gnu": "1.0.13",
+    "@napi-rs/canvas-win32-arm64-msvc": "1.0.13",
+    "@napi-rs/canvas-win32-x64-msvc": "1.0.13",
+    "pdfjs-dist": "6.4.299"
   },
   "engines": {
     "bun": ">=1.4.4"
