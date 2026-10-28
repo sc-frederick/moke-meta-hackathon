@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Artifact, Revision } from "#lib/review/contracts.ts";
 import { ExecutionState } from "#lib/review/execution.ts";
+import { PacketReview } from "#lib/review/packet.ts";
 import {
   defaultPackageLimits,
   PackageAdmission,
@@ -101,6 +102,42 @@ const attemptColumns = [
 
 const eventColumns = ["sequence", "run_id", "project_id", "state", "version"] as const;
 
+const packetColumns = [
+  "id",
+  "project_id",
+  "conversation_id",
+  "command_id",
+  "fingerprint",
+  "source_version",
+  "owner_generation",
+  "journal_id",
+  "engine",
+  "payload",
+] as const;
+
+const packetAttemptColumns = [
+  "review_id",
+  "task_id",
+  "attempt",
+  "kind",
+  "fingerprint",
+  "status",
+  "sent",
+  "response_json",
+] as const;
+
+const packetToolColumns = ["review_id", "task_id", "operation", "result_json"] as const;
+
+const PacketRow = Schema.Struct({
+  id: Schema.String.check(Schema.isUUID()),
+  project_id: Schema.String.check(Schema.isUUID()),
+  conversation_id: Schema.String.check(Schema.isUUID()),
+  owner_generation: Schema.String.check(Schema.isUUID()),
+  journal_id: Schema.String.check(Schema.isUUID()),
+  engine: Schema.String,
+  payload: Schema.fromJsonString(PacketReview),
+});
+
 const blockAdmission =
   "Before admitting review work, retire every resumeBlocked run. Do not call ControlExecution resume and do not open a Pi harness for those journals. Migration 0003 has no historical state: running and pausing runs were saved as paused, and runs with uncertain attempts were saved as uncertain. Those rows do not start work by themselves, and paused rows can still be resumed by the current execution service. Block that resume. Uncertain attempts must not be dispatched. A run whose ownerGeneration is not this process is foreign and must not resume. Start later work with a new run id.";
 
@@ -149,6 +186,7 @@ type ArtifactRef = {
 };
 
 type RunRef = {
+  readonly kind: "count" | "packet";
   readonly runId: string;
   readonly projectId: string;
   readonly journalId: string;
@@ -630,6 +668,7 @@ const readDomain = (filename: string) =>
       );
 
       const artifacts = new Map<string, ArtifactRef>();
+      const artifactRecords = new Map<string, Artifact>();
 
       if (tables.has("review_records")) {
         const artifactRows = yield* Schema.decodeUnknownEffect(PayloadRows)(
@@ -644,6 +683,8 @@ const readDomain = (filename: string) =>
               fail("incomplete", "An artifact record does not match the current schema."),
             ),
           );
+
+          artifactRecords.set(artifact.id, artifact);
 
           const disagreement = addArtifact(
             artifacts,
@@ -761,6 +802,7 @@ const readDomain = (filename: string) =>
 
         for (const run of decoded) {
           runs.push({
+            kind: "count",
             runId: run.run_id,
             projectId: run.project_id,
             journalId: run.journal_id.toLowerCase(),
@@ -772,6 +814,128 @@ const readDomain = (filename: string) =>
           });
         }
       }
+
+      if (
+        !tables.has("packet_reviews") &&
+        (tables.has("packet_review_attempts") || tables.has("packet_review_tools"))
+      )
+        return yield* fail("incompatible", "Packet review tables are incomplete.");
+
+      if (tables.has("packet_reviews")) {
+        const columns = yield* Schema.decodeUnknownEffect(Names)(
+          yield* sql`PRAGMA table_info(packet_reviews)`,
+        );
+
+        const attempts = tables.has("packet_review_attempts")
+          ? yield* Schema.decodeUnknownEffect(Names)(
+              yield* sql`PRAGMA table_info(packet_review_attempts)`,
+            )
+          : [];
+
+        const tools = tables.has("packet_review_tools")
+          ? yield* Schema.decodeUnknownEffect(Names)(
+              yield* sql`PRAGMA table_info(packet_review_tools)`,
+            )
+          : [];
+
+        if (
+          !sameColumns(
+            columns.map((column) => column.name),
+            packetColumns,
+          ) ||
+          !sameColumns(
+            attempts.map((column) => column.name),
+            packetAttemptColumns,
+          ) ||
+          !sameColumns(
+            tools.map((column) => column.name),
+            packetToolColumns,
+          )
+        )
+          return yield* fail(
+            "incompatible",
+            "Packet review tables do not match a supported migration.",
+          );
+
+        const decoded = yield* Schema.decodeUnknownEffect(Schema.Array(PacketRow))(
+          yield* sql`SELECT * FROM packet_reviews`,
+        ).pipe(
+          Effect.mapError(() =>
+            fail(
+              "incompatible",
+              "Packet review rows could not be read without losing their saved report data.",
+            ),
+          ),
+        );
+
+        const counts = yield* Schema.decodeUnknownEffect(
+          Schema.Array(Schema.Struct({ review_id: Schema.String, n: Schema.Int })),
+        )(
+          yield* sql`SELECT review_id,count(*) AS n FROM packet_review_attempts WHERE status='uncertain' GROUP BY review_id`,
+        );
+
+        const uncertain = new Map(counts.map((row) => [row.review_id, row.n]));
+        runRows += decoded.length;
+
+        for (const row of decoded) {
+          const review = row.payload;
+
+          if (
+            review.id !== row.id ||
+            review.projectId !== row.project_id ||
+            review.conversationId !== row.conversation_id
+          )
+            return yield* fail(
+              "corrupt",
+              "A packet review payload does not match its stored identity.",
+            );
+
+          for (const sheet of review.sheets) {
+            if (!artifacts.has(artifactName(sheet.sha256, "application/pdf")))
+              return yield* fail(
+                "incomplete",
+                "A packet review references a missing original drawing.",
+              );
+          }
+
+          const evidenceIds = new Set([
+            ...review.evidenceIds,
+            ...review.findings.flatMap((finding) => finding.evidenceIds),
+            ...review.priorComments.flatMap((comment) => comment.evidenceIds),
+          ]);
+
+          for (const evidenceId of evidenceIds) {
+            const artifact = artifactRecords.get(evidenceId);
+
+            if (artifact === undefined || artifact.projectId !== row.project_id)
+              return yield* fail(
+                "incomplete",
+                "A packet review references missing or foreign source evidence.",
+              );
+          }
+
+          runs.push({
+            kind: "packet",
+            runId: row.id,
+            projectId: row.project_id,
+            journalId: row.journal_id.toLowerCase(),
+            state: review.state,
+            ownerGeneration: row.owner_generation.toLowerCase(),
+            version: review.version,
+            uncertainAttempts: uncertain.get(row.id) ?? 0,
+            engine: row.engine,
+          });
+        }
+      }
+
+      if (
+        new Set(runs.map((run) => run.runId.toLowerCase())).size !== runs.length ||
+        new Set(runs.map((run) => run.journalId)).size !== runs.length
+      )
+        return yield* fail(
+          "incomplete",
+          "Review runs do not have distinct run and journal identities.",
+        );
 
       const snapshot: DomainSnapshot = {
         reviewBearing: projects + records + commands + events + runRows > 0,
@@ -869,6 +1033,50 @@ const markHistorical = (filename: string) =>
 
               if (state === run.state && run.engine === `restored-history:${packageEngineFormat}`)
                 continue;
+
+              if (run.kind === "packet") {
+                const rows = yield* Schema.decodeUnknownEffect(Schema.Array(PacketRow))(
+                  yield* transaction`SELECT * FROM packet_reviews WHERE id=${run.runId}`,
+                );
+
+                const previous = rows[0];
+
+                if (previous === undefined || previous.payload.version !== run.version)
+                  return yield* fail(
+                    "conflict",
+                    "A restored packet review changed before it could be marked historical.",
+                  );
+
+                const payload = yield* Schema.decodeUnknownEffect(PacketReview)({
+                  ...Schema.encodeSync(PacketReview)(previous.payload),
+                  state,
+                  version: previous.payload.version + 1,
+                }).pipe(
+                  Effect.mapError(() =>
+                    fail("conflict", "A packet review has an unsupported restored state."),
+                  ),
+                );
+
+                yield* transaction`UPDATE packet_reviews SET payload=${JSON.stringify(payload)}, engine=${`restored-history:${packageEngineFormat}`} WHERE id=${run.runId} AND json_extract(payload,'$.version')=${run.version}`;
+
+                const updated = yield* Schema.decodeUnknownEffect(Schema.Array(PacketRow))(
+                  yield* transaction`SELECT * FROM packet_reviews WHERE id=${run.runId}`,
+                );
+
+                const current = updated[0];
+
+                if (
+                  current === undefined ||
+                  current.payload.state !== state ||
+                  current.payload.version !== payload.version ||
+                  current.engine !== `restored-history:${packageEngineFormat}`
+                )
+                  return yield* fail(
+                    "conflict",
+                    "A restored packet review could not be marked non-executing.",
+                  );
+                continue;
+              }
 
               yield* transaction`UPDATE review_execution_runs SET state = ${state}, engine = ${`restored-history:${packageEngineFormat}`}, version = version + 1 WHERE run_id = ${run.runId} AND version = ${run.version}`;
 

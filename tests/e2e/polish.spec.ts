@@ -204,7 +204,7 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     const paused = seedPausedReview(directory);
     const checkMenu = page.getByRole("button", { name: /^Check:/ });
     await checkMenu.click();
-    await page.getByRole("option", { name: "Choose a check…", exact: true }).click();
+    await page.getByRole("option", { name: "Optional count comparison", exact: true }).click();
     await checkMenu.click();
     await page.getByRole("option", { name: paused.title, exact: true }).click();
     await expect(page.getByTestId("execution-controls")).toContainText("Review paused");

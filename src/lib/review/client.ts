@@ -13,6 +13,7 @@ import {
   type SheetId,
 } from "#lib/review/contracts.ts";
 import { ReviewDesktopRpc } from "#lib/review/shell.ts";
+import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
 import {
   ExecutionError,
   type ExecutionEvent,
@@ -66,6 +67,84 @@ export function createReviewClient() {
   };
 
   return {
+    startPacketReview: (request: typeof StartPacketReview.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.StartPacketReview(request)),
+        "The document review could not start.",
+      ),
+    listPacketReviews: (projectId: typeof ProjectId.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.ListPacketReviews({ projectId })),
+        "The document reviews could not load.",
+      ),
+    getPacketReview: (projectId: typeof ProjectId.Type, reviewId: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.GetPacketReview({ projectId, reviewId })),
+        "The document review could not load.",
+      ),
+    observePacketReviews: (
+      projectId: typeof ProjectId.Type,
+      onReview: (review: PacketReview) => Promise<void>,
+      signal: AbortSignal,
+    ) =>
+      runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const api = yield* ReviewDesktopApi;
+            yield* Stream.runForEach(api.ObservePacketReviews({ projectId }), (review) =>
+              Effect.promise(() => onReview(review)),
+            );
+          }),
+          { signal },
+        )
+        .catch(() => undefined),
+    controlPacketReview: (
+      projectId: typeof ProjectId.Type,
+      reviewId: string,
+      expectedVersion: number,
+      action: "pause" | "resume" | "cancel",
+      maxCalls?: number | null,
+    ) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => {
+          const request = {
+            projectId,
+            reviewId,
+            expectedVersion,
+            action,
+            commandId: newCommandId(),
+          };
+
+          return api.ControlPacketReview(
+            maxCalls === undefined ? request : { ...request, maxCalls },
+          );
+        }),
+        "The review control could not be applied.",
+      ),
+    completePacketFinding: (
+      projectId: typeof ProjectId.Type,
+      reviewId: string,
+      findingId: string,
+      completed: boolean,
+      expectedVersion: number,
+    ) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.CompletePacketFinding({
+            projectId,
+            reviewId,
+            findingId,
+            completed,
+            expectedVersion,
+          }),
+        ),
+        "The finding completion could not be saved.",
+      ),
+    choosePacketReport: (projectId: typeof ProjectId.Type, reviewId: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.ChoosePacketReport({ projectId, reviewId })),
+        "The HTML review report could not be exported.",
+      ),
     executionSetup: () =>
       run(
         Effect.flatMap(ReviewDesktopApi, (api) => api.ExecutionSetup({})),

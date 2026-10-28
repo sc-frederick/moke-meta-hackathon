@@ -1,3 +1,4 @@
+import { PacketReviewRpc } from "../src/lib/review/packet.ts";
 import { Effect, Option, Schema, Stream } from "effect";
 import { ReviewError, ReviewRpc, ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi } from "./backend.ts";
@@ -64,6 +65,41 @@ export const ExecutionProxy = ExecutionRpc.toLayer(
               : new ExecutionError({
                   reason: "unavailable",
                   message: "Progress disconnected. Reopen the finding to reconnect.",
+                }),
+          ),
+        ),
+    };
+  }),
+);
+
+/** Packet review work remains in Bun and uses the same trusted top-level desktop frame. */
+export const PacketProxy = PacketReviewRpc.toLayer(
+  Effect.gen(function* () {
+    const { api } = yield* BackendApi;
+
+    const safe = Effect.mapError((cause) =>
+      cause instanceof ExecutionError
+        ? cause
+        : new ExecutionError({
+            reason: "unavailable",
+            message: "The packet review operation is unavailable.",
+          }),
+    );
+
+    return {
+      StartPacketReview: (request) => api.StartPacketReview(request).pipe(safe),
+      ListPacketReviews: (request) => api.ListPacketReviews(request).pipe(safe),
+      GetPacketReview: (request) => api.GetPacketReview(request).pipe(safe),
+      ControlPacketReview: (request) => api.ControlPacketReview(request).pipe(safe),
+      CompletePacketFinding: (request) => api.CompletePacketFinding(request).pipe(safe),
+      ObservePacketReviews: (request) =>
+        api.ObservePacketReviews(request).pipe(
+          Stream.mapError((cause) =>
+            cause instanceof ExecutionError
+              ? cause
+              : new ExecutionError({
+                  reason: "unavailable",
+                  message: "Review progress disconnected.",
                 }),
           ),
         ),

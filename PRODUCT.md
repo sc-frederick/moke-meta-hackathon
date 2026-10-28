@@ -11,52 +11,75 @@ The project packages its Svelte interface in Electron for desktop use.
 ## Capabilities and Constraints
 
 Use SvelteKit 3 and Svelte 5 from the project kit. The production workbench imports
-PDFs, runs bounded selected-count inspections, and preserves evidence and execution
-history locally. Bun and Effect own APIs, SQLite, migrations, and the Pi Durable
-journal. Electron owns the trusted bridge, file dialogs, and credential storage.
+PDF packets and starts whole-set or selected-discipline reviews from a project
+conversation. A review does not require an existing finding or count check.
+Bun and Effect own APIs, SQLite, migrations, PDF processing and Pi Durable
+execution. Electron owns the trusted bridge, file dialogs and credential storage.
 
-Reviewer messages start inspections using the selected finding, discipline, and
-versioned Moke instructions. Models propose counts against original drawing crops;
-reviewers accept inputs and confirm coverage. Deterministic checks compare drawn
-and scheduled quantities. Code citations remain unverified, and the beta does not
-perform complete permit reviews or generate complete permit reports.
+The full Moke AGENTS.md, shared review method and applicable discipline files
+supply Pi's system instructions. Whole-set review includes the general and all
+discipline instructions; a discipline review includes general context and its
+selected instructions. The review inventories the supplied documents, reads
+source images and details, retrieves public governing text, performs repeatable
+calculations, and records findings, coverage, citations and prior comments.
+Fire Alarm, Fire Sprinkler, Life Safety and Fire Protection remain distinct.
+
+Source access and review coverage stay explicit. Inaccessible official text,
+unknown governing editions and absent project inputs remain Needs input. A
+successful download does not establish applicability of a code requirement.
+Calculations retain formulas, input values and declared units; units are not
+automatically reconciled. Model findings are review results, not professional
+approval. Sequential discipline passes are supported; the app does not claim to
+launch parallel reviewers.
+
+The report is self-contained HTML with focused evidence, project configuration,
+coverage, source status, findings, calculations and prior-comment follow-up.
+Completed checkboxes track user corrections separately from finding status and
+reviewer-verified closure. Unreviewed sheets and unresolved inputs remain visible
+even when execution finishes. Complete packages retain original documents,
+evidence, review records and execution journals.
+
+Packet reviews default to no application call ceiling. Users can choose an
+operational call budget, pause or cancel work, and explicitly extend an exhausted
+budget to resume. Model context comes from provider metadata, with automatic Pi
+compaction for long conversations. SAM is an optional geometric evidence tool;
+it shares the review's durable request ledger and optional call budget.
+
+Drawn-to-schedule count checks remain available as a specialized workflow.
+Reviewers accept count inputs and confirm their coverage before deterministic
+comparison. Earlier counts, corrections, checks and source correspondences retain
+their history. These controls do not constrain ordinary packet review.
 
 ## Operating Context
 
-The primary users are AEC engineers, contractors, and project managers reviewing
-coordination issues while working with drawings. Assume little interest in AI
-configuration and little patience for unfamiliar computer workflows. Lead with
-the drawing, the count, the comparison, and the next action. Keep coordinates,
-model provenance, record identifiers, and token accounting behind disclosures.
-Use familiar labels and short explanations; keep reviewer approval explicit.
+The primary users are AEC engineers, contractors and project managers reviewing
+drawings before submittal, during coordination or after revisions. Assume little
+interest in model configuration and little patience for unfamiliar computer
+workflows. Lead with the imported packet, the requested review, the findings and
+the next action. Keep coordinates, model provenance, record identifiers and token
+accounting behind disclosures. Use familiar labels and specific explanations.
 
 Both project entry points open the same centered creation dialog. Settings use a
-separate centered dialog. The composer names its Model, Reviewer, and Check
-selectors; Auto routes from the request and selected drawing scope. User requests
-appear as chat bubbles, followed by elapsed review progress and Moke's response.
-Reviewers can select source areas visually and expand technical controls when
-needed. Earlier checks and exact evidence remain available.
+separate centered dialog. The composer names its model and reviewer; Auto routes
+a request to whole-set or a named discipline review. User requests appear as chat
+bubbles, followed by elapsed progress and Moke's saved response. A note is saved
+without starting inference. Findings open their source evidence beside the
+conversation. Reviewers can select source areas visually and expand technical
+controls when needed.
 
-The original interactive desktop UI study established chat as the main work
-surface. Project information and findings live in a rounded popover at the top
-right, using T3 Code's information menu as the reference. Selecting a finding
-opens its source in a right-hand pane while preserving the conversation.
-Closing that pane restores the chat's width. The user referenced the existing
-result-to-evidence behavior in the `aec_pgrep` codebase.
-
-For AEC industry users, projects are the primary navigation groups. Each project's
-conversations remain nested beneath it. Selecting a conversation updates both the
-project and conversation in the breadcrumb.
+The original desktop UI study established chat as the main work surface.
+Projects group their conversations in navigation, and selecting a conversation
+updates the project and conversation breadcrumb. Closing the source pane restores
+the chat's width. The user referenced T3 Code's information menu and the existing
+result-to-evidence behavior in the aec_pgrep codebase.
 
 The separate design study contains sample content. The application uses persisted
-projects, conversations, findings, and source evidence. Sheet confirmation and
-revision correspondence stay explicit. Exported review packages retain the source
-artifacts and execution journals needed to recover the work.
+projects, conversations, review requests, findings and source evidence. Sheet
+confirmation and revision correspondence remain explicit for count checks.
 
 ## Brand Commitments
 
-The user named OpenCode, T3 Code, and Cloudflare OS as visual references, with
-particular emphasis on T3 Code's desktop polish. The latest study adapts the
-Nightdesk template after reviewing the live Uiverse catalog. The beta adapts that
-selected design with light and dark appearances, compact navigation, and an evidence
-panel beside the conversation.
+The user named OpenCode, T3 Code and Cloudflare OS as visual references, with
+particular emphasis on T3 Code's desktop polish. The current workbench adapts the
+Nightdesk template selected from the Uiverse catalog, with light and dark
+appearances, compact navigation and evidence beside the conversation.

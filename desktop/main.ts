@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
 import { DocumentError, ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
-import { ReviewProxy, ExecutionProxy } from "./review-proxy.ts";
+import { ReviewProxy, ExecutionProxy, PacketProxy } from "./review-proxy.ts";
 import { readInferenceConfigurations, storeInferenceConfiguration } from "./credentials.ts";
 
 protocol.registerSchemesAsPrivileged([
@@ -112,6 +112,34 @@ if (!app.requestSingleInstanceLock()) {
           const { api } = yield* BackendApi;
 
           return {
+            ChoosePacketReport: ({ projectId, reviewId }) =>
+              Effect.tryPromise({
+                try: () =>
+                  dialog.showSaveDialog({
+                    title: "Save Moke review report",
+                    defaultPath: "Moke-review.html",
+                    filters: [{ name: "HTML report", extensions: ["html"] }],
+                  }),
+                catch: () =>
+                  new ReviewStorageError({ message: "The report chooser could not open." }),
+              }).pipe(
+                Effect.flatMap((result) =>
+                  result.canceled || !result.filePath
+                    ? Effect.succeed(false)
+                    : api
+                        .ExportPacketReport({ projectId, reviewId, destination: result.filePath })
+                        .pipe(
+                          Effect.as(true),
+                          Effect.mapError(
+                            () =>
+                              new ReviewStorageError({
+                                message:
+                                  "The report could not be saved. Choose a new filename and try again.",
+                              }),
+                          ),
+                        ),
+                ),
+              ),
             ChooseReviewPdf: (request) =>
               Effect.tryPromise({
                 try: () =>
@@ -230,7 +258,7 @@ if (!app.requestSingleInstanceLock()) {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
       }).pipe(
-        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, shellHandlers)),
+        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, PacketProxy, shellHandlers)),
         Layer.provideMerge(backend),
         Layer.provide(logging),
       );

@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { ReviewFilesRpc, ReviewRpc } from "./review/contracts.ts";
+import { PacketReviewRpc } from "./review/packet.ts";
 import { ExecutionRpc } from "./review/execution.ts";
 import { ReviewPackageFilesRpc } from "./review/packages.ts";
 
@@ -57,6 +58,15 @@ export class BackendReady extends Schema.Class<BackendReady>("BackendReady")({
 
 /** Database operations available only to the trusted desktop shell. */
 class DatabaseRpc extends RpcGroup.make(
+  Rpc.make("ExportPacketReport", {
+    payload: {
+      projectId: Schema.String.check(Schema.isUUID()),
+      reviewId: Schema.String.check(Schema.isUUID()),
+      destination: Path,
+    },
+    success: Schema.Void,
+    error: DatabaseFileError,
+  }),
   Rpc.make("ExportDatabase", {
     payload: { destination: Path },
     success: Schema.String,
@@ -73,4 +83,5 @@ class DatabaseRpc extends RpcGroup.make(
 export class BackendRpc extends DatabaseRpc.merge(ReviewRpc)
   .merge(ReviewFilesRpc)
   .merge(ExecutionRpc)
+  .merge(PacketReviewRpc)
   .merge(ReviewPackageFilesRpc) {}

@@ -58,7 +58,8 @@ const Attempt = Schema.Struct({
 
 const ResponseIdentity = Schema.fromJsonString(Schema.Struct({ id: Schema.NonEmptyString }));
 
-const ResponseBody = Schema.fromJsonString(
+/** Complete SAM image-response envelope reused by packet and selected-count adapters. */
+export const ResponseBody = Schema.fromJsonString(
   Schema.Struct({
     id: Schema.NonEmptyString,
     status: Schema.Literal("completed"),
@@ -76,7 +77,8 @@ const ResponseBody = Schema.fromJsonString(
   }),
 );
 
-const promptFor = Effect.fn("ReviewSegmentation.prompt")(function* (
+/** Build official SAM guidance against the exact image delivered to the provider. */
+export const promptFor = Effect.fn("ReviewSegmentation.prompt")(function* (
   request: SamInspectionRequest,
   image: ExecutionImage,
 ) {
@@ -101,7 +103,8 @@ const promptFor = Effect.fn("ReviewSegmentation.prompt")(function* (
   });
 });
 
-const parseInstances = Effect.fn("ReviewSegmentation.parse")(function* (
+/** Parse official geometry and map all corners through the delivered image transform. */
+export const parseInstances = Effect.fn("ReviewSegmentation.parse")(function* (
   text: string,
   image: ExecutionImage,
 ) {

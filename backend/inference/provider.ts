@@ -36,9 +36,25 @@ export interface ProviderConfiguration {
   readonly timeoutMs?: number;
 }
 
+/** Catalog capability for a pinned review model; Open's separate serving output maximum is unpublished. */
+export function reviewModelCapabilities(modelId: string) {
+  if (modelId === "meta-models/muse-spark-open-1026")
+    return { contextWindow: 1048576, maxOutputTokens: null };
+
+  const model = metaProvider()
+    .getModels()
+    .find((entry) => entry.id === modelId);
+
+  if (!model || !reviewModels.some((entry) => entry.id === modelId && entry.provider === "meta"))
+    throw new Error("Pinned model catalog is incompatible");
+
+  return { contextWindow: model.contextWindow, maxOutputTokens: model.maxTokens };
+}
+
 /** Durable admission callbacks are implemented with short application SQL operations. */
 interface ProviderAdmission {
   readonly maxInputTokens: number;
+  readonly packetReview?: boolean;
   readonly maxOutputTokens: number;
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
@@ -143,7 +159,7 @@ export function createAdmittedModels(
 ) {
   if (configuration.route === "recorded" && configuration.transport === undefined)
     throw new Error("Recorded execution requires a recorded transport");
-  const identity = createExecutionTelemetry();
+  const identity = createExecutionTelemetry(admission.packetReview === true);
   const base: Provider = configuration.provider === "baseten" ? basetenProvider() : metaProvider();
 
   const modelId =
@@ -176,8 +192,9 @@ export function createAdmittedModels(
     baseUrl: "https://inference.baseten.co/v1",
     input: ["text", "image"],
     reasoning: true,
-    contextWindow: 64000,
-    maxTokens: 8192,
+    contextWindow: 1048576,
+    // Open serving does not publish a separate output ceiling; the context is the upper bound.
+    maxTokens: 1048576,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 
@@ -206,7 +223,7 @@ export function createAdmittedModels(
         )
           throw new Error("Provider admission denied");
 
-        const bounded = boundedImageContext(transcript);
+        const bounded = admission.packetReview ? transcript : boundedImageContext(transcript);
 
         const fingerprint = createHash("sha256")
           .update(
@@ -242,9 +259,9 @@ export function createAdmittedModels(
             if (
               dispatched ||
               bounds.textBytes > admission.maxInputTokens ||
-              bounds.imageBytes > 2 * 1024 * 1024 ||
-              bounds.requestBytes > 3 * 1024 * 1024 ||
-              bounds.images > 6
+              bounds.imageBytes > (admission.packetReview ? 64 : 2) * 1024 * 1024 ||
+              bounds.requestBytes > (admission.packetReview ? 72 : 3) * 1024 * 1024 ||
+              (!admission.packetReview && bounds.images > 6)
             )
               throw new Error("Transport admission denied");
             dispatched = true;
@@ -260,7 +277,7 @@ export function createAdmittedModels(
         const receipt = JSON.stringify(message);
 
         if (
-          Buffer.byteLength(receipt) > 1024 * 1024 ||
+          Buffer.byteLength(receipt) > (admission.packetReview ? 8 : 1) * 1024 * 1024 ||
           message.usage.output > admission.maxOutputTokens
         )
           throw new Error("Provider response exceeded its reservation");
@@ -302,15 +319,19 @@ export function createAdmittedModels(
     options: ProviderRequestOptions | undefined,
     fetch: FetchFunction,
   ): SimpleStreamOptions => {
-    const result: SimpleStreamOptions = {
+    const result: SimpleStreamOptions & { reasoningEffort?: "high" } = {
       apiKey: Redacted.value(configuration.apiKey),
       fetch,
       transport: "sse",
       maxRetries: 0,
-      maxTokens: admission.maxOutputTokens,
       timeoutMs: configuration.timeoutMs ?? 60000,
-      reasoning: "low",
+      reasoning: admission.packetReview ? "high" : "low",
     };
+
+    if (admission.packetReview) result.reasoningEffort = "high";
+
+    if (!admission.packetReview || selected.provider !== "baseten")
+      result.maxTokens = admission.maxOutputTokens;
 
     if (options?.signal !== undefined) result.signal = options.signal;
 
@@ -344,5 +365,6 @@ export function createAdmittedModels(
     models,
     telemetry: identity.telemetry,
     model: { provider: selected.provider, modelId: selected.id },
+    capabilities: { contextWindow: selected.contextWindow, maxTokens: selected.maxTokens },
   };
 }

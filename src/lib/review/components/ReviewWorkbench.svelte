@@ -13,15 +13,15 @@
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
   import SheetSetup from "./SheetSetup.svelte";
-  import { sendReviewMessage } from "#lib/review/conversation.ts";
   import {
-    ExecutionBudget,
     ReviewDisciplineSelection,
     reviewDisciplines,
     type ExecutionSetup,
     type ExecutionStatus,
   } from "#lib/review/execution.ts";
   import FindingInspector from "./FindingInspector.svelte";
+  import PacketReviewPanel from "./PacketReviewPanel.svelte";
+  import type { PacketReview } from "#lib/review/packet.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
   import ReviewSelect from "./ReviewSelect.svelte";
@@ -59,7 +59,12 @@
   let selectedModel = $state<typeof ReviewModelId.Type>("muse-spark-1.3");
   let setup = $state.raw<ExecutionSetup | null>(null);
   let executionStatus = $state.raw<ExecutionStatus | null>(null);
-  let callLimit = $state(12);
+  let callLimit = $state<number | undefined>(undefined);
+  let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
+  let packetBusy = $state(false);
+  let packetConnectionLost = $state(false);
+  let packetProjectId: Project["id"] | null = null;
+  let packetSubscription: AbortController | null = null;
   let notice = $state("");
   let sourceLoading = $state(false);
   let previewedSheet = $state.raw<Sheet | null>(null);
@@ -141,8 +146,17 @@
   const selectedFinding = $derived(findings.find((item) => item.id === selectedFindingId) ?? null);
   const reviewFinding = $derived(findings.find((item) => item.id === reviewFindingId) ?? null);
 
-  const budget = $derived(
-    new ExecutionBudget({ maxCalls: callLimit, maxInputTokens: 64000, maxOutputTokens: 4096 }),
+  const conversationReviews = $derived(
+    packetReviews
+      .filter((review) => review.conversationId === activeConversation?.id)
+      .toSorted((left, right) => left.startedAt - right.startedAt),
+  );
+
+  const activePacketReview = $derived(conversationReviews.at(-1) ?? null);
+  const packetFindings = $derived(activePacketReview?.findings ?? []);
+
+  const validCallLimit = $derived(
+    callLimit === undefined || (Number.isInteger(callLimit) && callLimit > 0),
   );
 
   const modelOptions = $derived(
@@ -165,9 +179,11 @@
   );
 
   const executionBlocked = $derived(
-    executionStatus !== null &&
-      (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
-        (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged)),
+    (activePacketReview !== null &&
+      ["running", "paused", "uncertain"].includes(activePacketReview.state)) ||
+      (executionStatus !== null &&
+        (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
+          (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged))),
   );
 
   const visibleFindings = $derived(
@@ -178,11 +194,179 @@
     ),
   );
 
+  const visiblePacketFindings = $derived(
+    packetFindings.filter((finding) =>
+      `${finding.title} ${finding.observed} ${finding.correction} ${finding.discipline}`
+        .toLowerCase()
+        .includes(findQuery.toLowerCase()),
+    ),
+  );
+
   const conversationMessages = $derived(
     activeConversation === null
       ? []
       : messages.filter((message) => message.conversationId === activeConversation.id),
   );
+
+  function receivePacketReview(review: PacketReview) {
+    if (review.projectId !== selectedProjectId) return;
+    const previous = packetReviews.find((item) => item.id === review.id);
+
+    if (previous && previous.version > review.version) return;
+    packetReviews = [...packetReviews.filter((item) => item.id !== review.id), review];
+  }
+
+  async function trackPacketReviews(projectId: Project["id"]) {
+    if (packetProjectId === projectId && packetSubscription !== null) return;
+    packetSubscription?.abort();
+    const controller = new AbortController();
+    packetSubscription = controller;
+    packetProjectId = projectId;
+    packetReviews = [];
+    packetConnectionLost = false;
+    void client
+      .observePacketReviews(
+        projectId,
+        async (review) => {
+          if (controller.signal.aborted || projectId !== selectedProjectId) return;
+          receivePacketReview(review);
+          await refresh(projectId);
+        },
+        controller.signal,
+      )
+      .then(() => {
+        if (!controller.signal.aborted && projectId === selectedProjectId) {
+          packetSubscription = null;
+          packetConnectionLost = true;
+        }
+      });
+    const result = await client.listPacketReviews(projectId);
+
+    if (controller.signal.aborted || projectId !== selectedProjectId) return;
+
+    if (result.ok) result.value.forEach(receivePacketReview);
+    else error = result.error.message;
+  }
+
+  async function showPacketFinding(findingId: string) {
+    searchOpen = false;
+    closeFindings();
+    await tick();
+    const finding = document.querySelector(`[data-testid="packet-finding-${findingId}"]`);
+
+    if (finding instanceof HTMLDetailsElement) {
+      finding.open = true;
+      finding.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  async function controlPacketReview(
+    review: PacketReview,
+    action: "pause" | "resume" | "cancel",
+    maxCalls?: number | null,
+  ) {
+    packetBusy = true;
+
+    const result = await client.controlPacketReview(
+      review.projectId,
+      review.id,
+      review.version,
+      action,
+      maxCalls,
+    );
+
+    packetBusy = false;
+
+    if (result.ok) receivePacketReview(result.value);
+    else error = result.error.message;
+  }
+
+  async function completePacketFinding(
+    review: PacketReview,
+    findingId: string,
+    completed: boolean,
+  ) {
+    packetBusy = true;
+
+    const result = await client.completePacketFinding(
+      review.projectId,
+      review.id,
+      findingId,
+      completed,
+      review.version,
+    );
+
+    packetBusy = false;
+
+    if (result.ok) receivePacketReview(result.value);
+    else error = result.error.message;
+  }
+
+  async function exportPacketReport(review: PacketReview) {
+    packetBusy = true;
+    const result = await client.choosePacketReport(review.projectId, review.id);
+    packetBusy = false;
+
+    if (!result.ok) error = result.error.message;
+    else if (result.value) notice = "HTML review report exported.";
+  }
+
+  async function openPacketEvidence(
+    artifactId: import("#lib/review/contracts.ts").Artifact["id"] | null,
+    location?: {
+      sheetId: Sheet["id"];
+      region: import("#lib/review/contracts.ts").Region | null;
+      detail: string;
+    },
+  ) {
+    if (project === null) return;
+    const projectId = project.id;
+    await refresh(projectId);
+
+    if (projectId !== selectedProjectId) return;
+    const artifact = snapshot?.artifacts.find((item) => item.id === artifactId);
+
+    const sheet = snapshot?.sheets.find(
+      (item) => item.id === (artifact?.sheetId ?? location?.sheetId),
+    );
+
+    if (!sheet) {
+      error = "This source sheet is unavailable in the current project.";
+
+      return;
+    }
+
+    selectedFindingId = null;
+    panelOpen = true;
+    sourceTab = "evidence";
+    closeFindings();
+
+    if (artifact) {
+      const request = ++sourceRequest;
+      sourceLoading = true;
+      previewedSheet = sheet;
+      sourceOverlays = [];
+      const blob = await client.loadArtifactBlobUrl(artifact.projectId, artifact);
+
+      if (request !== sourceRequest) {
+        if (blob.ok) URL.revokeObjectURL(blob.value);
+
+        return;
+      }
+
+      sourceLoading = false;
+
+      if (!blob.ok) {
+        error = blob.error.message;
+
+        return;
+      }
+
+      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+      sourceImageUrl = blob.value;
+      sourceArtifact = artifact;
+    } else await loadSheetSource(sheet, 150, location?.region ?? undefined);
+  }
 
   async function refresh(projectId: typeof selectedProjectId = selectedProjectId) {
     const request = ++refreshRequest;
@@ -235,6 +419,8 @@
     if (selectedProjectId !== null && !expandedProjects.includes(selectedProjectId)) {
       expandedProjects = [...expandedProjects, selectedProjectId];
     }
+
+    if (selectedProjectId !== null) void trackPacketReviews(selectedProjectId);
   }
 
   async function runCommand(command: Parameters<ReviewClient["command"]>[0]) {
@@ -347,23 +533,36 @@
     });
 
     if (reviewMode === "review") {
-      if (reviewFinding === null || !selectedModelAvailable || executionBlocked) return;
+      if (sheets.length === 0 || !selectedModelAvailable || !validCallLimit || executionBlocked)
+        return;
       busy = true;
+      const selection = { model: selectedModel, discipline, maxCalls: callLimit ?? null };
+      const saved = await client.command(command);
 
-      const result = await sendReviewMessage(client, {
-        command,
-        executionCommandId: newCommandId(),
-        findingId: reviewFinding.id,
-        discipline,
-        model: selectedModel,
-        budget,
+      if (!saved.ok) {
+        error = saved.error.message;
+        busy = false;
+
+        return;
+      }
+
+      draft = "";
+      await refresh(saved.value.projectId);
+
+      const result = await client.startPacketReview({
+        commandId: newCommandId(),
+        projectId: command.projectId,
+        conversationId: command.conversationId,
+        messageId: saved.value.entityId,
+        ...selection,
       });
 
-      if (result.saved) draft = "";
-      await refresh();
-
-      if (result.saved) executionStatus = result.execution;
-      error = result.error ?? "";
+      if (result.ok) {
+        receivePacketReview(result.value);
+        error = "";
+        notice = "Review started.";
+      } else error = `Your message was saved. ${result.error.message}`;
+      await refresh(saved.value.projectId);
       busy = false;
     } else if (await runCommand(command)) {
       draft = "";
@@ -411,7 +610,7 @@
     panelOpen = true;
     sourceTab = "sheets";
     previewedSheet = null;
-    notice = "PDF imported. Review and confirm its sheets, then create a coordination check.";
+    notice = "PDF imported. Ask Moke for a whole-set QA pass or choose a discipline reviewer.";
     busy = false;
     importing = false;
   }
@@ -643,7 +842,10 @@
   async function chooseConversation(id: string | null, remember = true) {
     if (remember) rememberConversation();
 
-    if (id !== selectedConversationId) executionStatus = null;
+    if (id !== selectedConversationId) {
+      executionStatus = null;
+    }
+
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
@@ -851,6 +1053,7 @@
           selectedConversationId = result.value.conversations[0]?.id ?? null;
           projectConversations = { [result.value.project.id]: result.value.conversations };
           expandedProjects = [result.value.project.id];
+          void trackPacketReviews(result.value.project.id);
         }
       } else {
         error = result.error.message;
@@ -871,6 +1074,7 @@
 
     return () => {
       controller.abort();
+      packetSubscription?.abort();
       sourceRequest++;
 
       if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
@@ -953,7 +1157,7 @@
             popovertarget="review-findings"
             onclick={positionFindings}
             ><ReviewIcon name="layout-grid" size={15} /><span>Findings</span><span
-              class="finding-count">{findings.length}</span
+              class="finding-count">{findings.length + packetFindings.length}</span
             ><ReviewIcon name="chevron-down" size={13} /></button
           >
         {/if}
@@ -1014,22 +1218,27 @@
         >
       </header>
       <section class="settings-section">
-        <h3>Review effort</h3>
-        <ReviewSelect
-          label="Maximum calls per inspection"
-          value={String(callLimit)}
-          options={[
-            { value: "4", label: "Quick · 4 calls" },
-            { value: "8", label: "Standard · 8 calls" },
-            { value: "12", label: "Thorough · 12 calls" },
-          ]}
-          onChange={(value) => {
-            callLimit = Schema.decodeUnknownSync(Schema.NumberFromString)(value);
-          }}
-        />
+        <h3>Review scope</h3>
         <p class="muted">
-          Sets how much work Moke can do in one inspection. Nothing starts until you send a request.
+          Ask for a whole-set QA pass, a discipline review, or follow-up scrutiny. Moke follows the
+          project instructions and records the sources, coverage, findings, and missing inputs.
         </p>
+        <details>
+          <summary>Optional call budget</summary>
+          <label
+            >Maximum provider calls<input
+              type="number"
+              min="1"
+              step="1"
+              bind:value={callLimit}
+              placeholder="No application call limit"
+            /></label
+          >
+          <p class="muted">
+            Leave blank to let the review continue without an application call ceiling. A budget
+            applies to the next review; recorded work remains available if it is reached.
+          </p>
+        </details>
       </section>
       <section class="settings-section">
         <h3>Model connections</h3>
@@ -1052,17 +1261,23 @@
       <section class="settings-section">
         <h3>You make the final call</h3>
         <p class="muted">
-          Moke compares counts on drawings and schedules. Review its evidence and approve counts
-          before using the results. Code compliance needs a separate review.
+          Review the findings, evidence, governing sources, and any missing inputs before using a
+          report. Completion checkboxes track your correction work; they do not change the review's
+          evidence or source status.
         </p>
         <details>
           <summary>Technical details</summary>
           <p class="muted">
-            Each request allows up to 64,000 input tokens and 4,096 output tokens. The call limit
-            includes up to two SAM requests when connected. Image-token usage and cost may be
-            unavailable.
+            Moke uses the selected model's configured capabilities and durable review history.
+            Context management preserves source records and completed work. Image-token usage and
+            cost may be unavailable.
           </p>
-          <p class="muted">{setup?.promptVersion} · {setup?.instructionRevision.slice(0, 12)}</p>
+          <p class="muted">
+            {setup?.packetPromptVersion ?? setup?.promptVersion} · {setup?.instructionRevision.slice(
+              0,
+              12,
+            )}
+          </p>
         </details>
       </section>
       <footer><button class="ghost" onclick={() => settingsDialog?.close()}>Done</button></footer>
@@ -1167,6 +1382,14 @@
               onclick={() => (error = "")}><ReviewIcon name="x" size={16} /></button
             >
           </div>{/if}
+        {#if packetConnectionLost}<div class="notice" role="status">
+            <span>Live review progress disconnected. Recorded work is preserved.</span><button
+              class="text-button"
+              onclick={() => {
+                if (selectedProjectId) void trackPacketReviews(selectedProjectId);
+              }}>Reconnect</button
+            >
+          </div>{/if}
         {#if notice}<div class="notice" role="status">
             <span>{notice}</span><button
               class="icon-button"
@@ -1180,13 +1403,13 @@
             {:else if project === null}<div class="chat-empty">
                 {@render mark(28)}
                 <h1>Start a drawing review</h1>
-                <p>Create a project, import its drawings, and choose a coordination check.</p>
+                <p>Create a project, import its drawings, and ask Moke to review them.</p>
                 <button class="ghost" onclick={openProjectDialog}>Create a project</button>
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
                 {@render mark(28)}
-                <h1>What are we checking?</h1>
+                <h1>What should Moke review?</h1>
                 {#if sheets.length === 0}<p>
                     Import a drawing PDF to begin. Your source sheets and review history stay with
                     this project.
@@ -1194,17 +1417,12 @@
                   <button class="ghost" disabled={busy} onclick={importPdf}
                     ><ReviewIcon name="upload" size={15} />Import drawings</button
                   >
-                {:else if findings.length === 0}<p>
-                    Confirm the source sheets and define a drawn-to-schedule count check. Then ask
-                    Moke to inspect it.
-                  </p>
-                  <button class="ghost" onclick={() => openSetup("sheets", true)}
-                    >Set up a coordination check</button
-                  >
                 {:else}<p>
-                    Select a check below and ask Moke to inspect its drawing evidence. You decide
-                    which observations to accept.
-                  </p>{/if}
+                    Ask for a whole-set QA pass or select a discipline reviewer. Moke reads the
+                    supplied sheets, checks sources and coordination, and prepares findings with
+                    evidence and an HTML report.
+                  </p>
+                  <p class="muted">For example: “Run a quick QA pass on this drawing set.”</p>{/if}
               </div>
             {/if}
             {#each conversationMessages as message (message.id)}
@@ -1241,6 +1459,35 @@
                   >{/if}
               </article>
             {/each}
+            {#if activePacketReview}
+              {#key activePacketReview.id}<PacketReviewPanel
+                  review={activePacketReview}
+                  busy={packetBusy || busy}
+                  onControl={(action, maxCalls) =>
+                    controlPacketReview(activePacketReview, action, maxCalls)}
+                  onComplete={(findingId, completed) =>
+                    completePacketFinding(activePacketReview, findingId, completed)}
+                  onExport={() => exportPacketReport(activePacketReview)}
+                  onEvidence={openPacketEvidence}
+                />{/key}
+              {#if conversationReviews.length > 1}<details class="previous-reviews">
+                  <summary>Previous reviews in this conversation</summary>{#each conversationReviews
+                    .slice(0, -1)
+                    .toReversed() as review (review.id)}<div>
+                      <span
+                        >{review.scope._tag === "WholeSet"
+                          ? "Whole set"
+                          : review.scope.discipline.replaceAll("_", " ")} · {new Date(
+                          review.startedAt,
+                        ).toLocaleString()} · {review.state}</span
+                      ><button
+                        class="text-button"
+                        disabled={packetBusy || busy}
+                        onclick={() => exportPacketReport(review)}>Export report</button
+                      >
+                    </div>{/each}
+                </details>{/if}
+            {/if}
             {#if reviewFinding}
               {#key reviewFinding.id + (activeConversation?.id ?? "")}<ExecutionControls
                   {client}
@@ -1259,23 +1506,25 @@
           <div class="composer-region">
             {#if project}
               <div class="scope-bar">
-                <div class="scope-select">
-                  <ReviewSelect
-                    label="Check"
-                    value={reviewFindingId ?? ""}
-                    options={[
-                      { value: "", label: "Choose a check…" },
-                      ...findings.map((finding) => ({ value: finding.id, label: finding.title })),
-                    ]}
-                    disabled={busy || executionBlocked}
-                    onChange={selectReviewFinding}
-                  />
-                </div>
+                {#if findings.length > 0}<div class="scope-select">
+                    <ReviewSelect
+                      label="Check"
+                      value={reviewFindingId ?? ""}
+                      options={[
+                        { value: "", label: "Optional count comparison" },
+                        ...findings.map((finding) => ({ value: finding.id, label: finding.title })),
+                      ]}
+                      disabled={busy || executionBlocked}
+                      onChange={selectReviewFinding}
+                    />
+                  </div>{:else}<span class="muted review-scope"
+                    >Whole set or selected discipline</span
+                  >{/if}
                 <button
                   class="text-button"
                   data-testid="open-create-finding"
                   onclick={() => openSetup("sheets", true)}
-                  ><ReviewIcon name="plus" size={14} />New check</button
+                  ><ReviewIcon name="plus" size={14} />New count check</button
                 >
               </div>
             {/if}
@@ -1285,9 +1534,9 @@
                 bind:this={composerInput}
                 bind:value={draft}
                 rows="2"
-                maxlength="2000"
+                maxlength="32000"
                 placeholder={reviewMode === "review"
-                  ? "Ask Moke to inspect the selected check…"
+                  ? "Ask for a whole-set QA pass, a discipline review, or follow-up…"
                   : "Add a project note…"}
                 disabled={project === null || activeConversation === null}></textarea>
               <div class="composer-tools">
@@ -1308,7 +1557,7 @@
                       {
                         value: "auto",
                         label: "Auto",
-                        description: "Choose from your request and drawing sheets",
+                        description: "Whole set unless your request selects a discipline",
                       },
                       ...reviewDisciplines.map((scope) => ({
                         value: scope.id,
@@ -1338,23 +1587,26 @@
                     busy ||
                     !project ||
                     (reviewMode === "review" &&
-                      (!reviewFinding || !selectedModelAvailable || executionBlocked))}
+                      (sheets.length === 0 ||
+                        !selectedModelAvailable ||
+                        !validCallLimit ||
+                        executionBlocked))}
                   aria-label="Send message"
-                  title={reviewMode === "review"
-                    ? "Send and start bounded inspection"
-                    : "Save note"}><ReviewIcon name="arrow-up" size={17} /></button
+                  title={reviewMode === "review" ? "Send and start document review" : "Save note"}
+                  ><ReviewIcon name="arrow-up" size={17} /></button
                 >
               </div>
             </form>
             <div class="composer-help">
-              {#if reviewMode === "note"}Notes are saved without starting an inspection.{:else if !reviewFinding}Choose
-                what to compare using the Check menu above.{:else if !setup?.configured}Provider not
+              {#if reviewMode === "note"}Notes are saved without starting a review.{:else if sheets.length === 0}Import
+                the drawing set to start a review.{:else if !setup?.configured}Provider not
                 configured. <button class="text-button" onclick={() => openSetup("settings")}
                   >Open review settings</button
                 >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
-                review settings.{:else if executionBlocked}Resolve the current inspection before
-                sending another request.{:else}You approve the results. Moke never accepts counts
-                for you.{/if}
+                review settings.{:else if !validCallLimit}Enter a positive whole-number call budget
+                or leave it blank.{:else if executionBlocked}Resolve the current review before
+                sending another request.{:else}Review the findings, source status, and coverage
+                before using the results.{/if}
             </div>
           </div>
         {/if}
@@ -1373,11 +1625,11 @@
           <div class="source-tabs">
             <button
               class={{ current: sourceTab === "evidence" }}
-              disabled={busy || !selectedFinding}
+              disabled={busy || (!selectedFinding && !previewedSheet)}
               onclick={() => {
-                if (selectedFinding === null) return;
                 sourceTab = "evidence";
-                void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
+                if (selectedFinding)
+                  void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
               }}>Evidence</button
             ><button
               disabled={busy}
@@ -1465,6 +1717,20 @@
                       ?.scrollIntoView({ block: "nearest" });
                   }}
                 />{/key}
+            {:else if sourceTab === "evidence" && previewedSheet}
+              {#if sourceLoading}<p class="muted" role="status">
+                  Rendering source…
+                </p>{:else if sourceImageUrl}<SourceViewer
+                  imageUrl={sourceImageUrl}
+                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
+                  label="Original source render"
+                />{/if}
+              <div class="source-provenance">
+                <strong>{previewedSheet.label}</strong><span
+                  >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
+                    1}</span
+                >
+              </div>
             {:else if sourceTab === "revision"}
               {#if revisions.length >= 2}
                 {@const latest = revisions.at(-1)}
@@ -1569,6 +1835,14 @@
           <ReviewIcon name="folder" size={17} /><strong>{project.name}</strong>
         </div>
         <div class="bubble-results">
+          {#each packetFindings as finding (finding.id)}<button
+              class="finding-row"
+              onclick={() => showPacketFinding(finding.id)}
+              ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
+                >{finding.title}</span
+              ><span class="outcome">{finding.severity}</span></button
+            >{/each}
+          {#if findings.length > 0}<p class="menu-section-label">Count comparisons</p>{/if}
           {#each findings as finding (finding.id)}<button
               class={["finding-row", { selected: selectedFindingId === finding.id }]}
               data-testid={"finding-row-" + finding.id}
@@ -1580,9 +1854,10 @@
                 name="chevron-right"
                 size={14}
               /></button
-            >{:else}<p class="menu-empty">
-              No findings yet. Define a coordination check to begin.
-            </p>{/each}
+            >{/each}
+          {#if packetFindings.length === 0 && findings.length === 0}<p class="menu-empty">
+              No findings yet. Ask Moke to review the supplied drawing set.
+            </p>{/if}
         </div>{/if}
     </section>
     {#if searchOpen}<section class="search-panel" aria-label="Search findings">
@@ -1598,13 +1873,24 @@
           >
         </div>
         <div class="search-results">
+          {#each visiblePacketFindings as finding (finding.id)}<button
+              class="finding-row"
+              onclick={() => showPacketFinding(finding.id)}
+              >{finding.title}<span class="outcome">{finding.severity} · {finding.status}</span
+              ></button
+            >{/each}
           {#each visibleFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => openFinding(finding)}
               >{finding.title}<span class="outcome">{formatOutcome(finding.outcome)}</span></button
-            >{:else}<p class="menu-empty">
-              {findQuery ? "No matching findings." : "No findings in this project."}
-            </p>{/each}
+            >{/each}
+          {#if visiblePacketFindings.length === 0 && visibleFindings.length === 0}<p
+              class="menu-empty"
+            >
+              {findQuery
+                ? "No matching findings."
+                : "No findings in this conversation or count comparisons."}
+            </p>{/if}
         </div>
       </section>{/if}
   </div>
@@ -1813,6 +2099,29 @@
     border: 1px solid var(--nd-hairline);
     background: var(--nd-panel);
     font-size: 13px;
+  }
+  .previous-reviews {
+    color: var(--nd-ink-muted);
+    font-size: 12px;
+    margin: 16px 0 28px;
+  }
+  .previous-reviews summary {
+    cursor: pointer;
+  }
+  .previous-reviews > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .menu-section-label {
+    color: var(--nd-ink-muted);
+    font-size: 11px;
+    padding: 8px 12px 0;
+  }
+  .review-scope {
+    font-size: 12px;
   }
   .finding-count {
     background: var(--nd-raised);

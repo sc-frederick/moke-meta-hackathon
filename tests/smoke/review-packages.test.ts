@@ -4,6 +4,7 @@ import {
   Effect,
   Fiber,
   ManagedRuntime,
+  Match,
   Redacted,
   Result,
   Schema,
@@ -38,7 +39,8 @@ import {
 import { BackendConfig } from "#lib/backend-rpc.ts";
 import { Application } from "../../backend/application.ts";
 import { Artifact, CommandId, Project, ReviewCommand, Revision } from "#lib/review/contracts.ts";
-import { PackageError, packageEngineFormat } from "#lib/review/packages.ts";
+import { PackageError, PackageManifest, packageEngineFormat } from "#lib/review/packages.ts";
+import { PacketReview, PacketScope } from "#lib/review/packet.ts";
 
 const migrations = resolve("migrations");
 
@@ -245,7 +247,17 @@ const seedReview = async (dataDirectory: string, label: string, ownerGeneration:
   wal.run(`INSERT INTO notes(text) VALUES ('${label}-note')`);
   wal.close();
 
-  return { pdfSha, pngSha, runningId, uncertainId, runningJournal, uncertainJournal };
+  return {
+    projectId: project.id,
+    revisionId: revision.id,
+    renderId: render.id,
+    pdfSha,
+    pngSha,
+    runningId,
+    uncertainId,
+    runningJournal,
+    uncertainJournal,
+  };
 };
 
 const noteTexts = (dataDirectory: string) => {
@@ -263,6 +275,143 @@ const runStates = (dataDirectory: string) => {
 
   try {
     return database.prepare("SELECT run_id, state FROM review_execution_runs ORDER BY state").all();
+  } finally {
+    database.close();
+  }
+};
+
+const seedPacketReviews = async (
+  dataDirectory: string,
+  seeded: Awaited<ReturnType<typeof seedReview>>,
+  owner: string,
+) => {
+  const database = new DatabaseSync(join(dataDirectory, "app.sqlite"));
+
+  const ids: Array<{ id: string; journalId: string; state: "running" | "paused" | "completed" }> =
+    [];
+
+  try {
+    for (const state of ["running", "paused", "completed"] as const) {
+      const id = randomUUID();
+      const journalId = randomUUID();
+
+      const review = Schema.decodeUnknownSync(PacketReview)({
+        id,
+        projectId: seeded.projectId,
+        projectName: "Packet package fixture",
+        conversationId: randomUUID(),
+        requestId: randomUUID(),
+        request: "Review this packet with its supporting evidence.",
+        scope: PacketScope.cases.WholeSet.make({}),
+        model: "muse-spark-1.3",
+        provider: "meta",
+        state,
+        version: 0,
+        startedAt: 1000,
+        changedAt: 2000,
+        maxCalls: null,
+        admittedCalls: state === "paused" ? 3 : 0,
+        promptVersion: "moke-packet-review-v1",
+        instructionRevision: "fixture",
+        sheets: [],
+        inspectedSheetIds: [],
+        evidenceIds: [seeded.renderId],
+        projectConfiguration: { jurisdiction: "Needs input" },
+        coverage: [],
+        sources: [],
+        citations: [],
+        calculations: [],
+        findings: [
+          {
+            id: randomUUID(),
+            title: "Source follow-up",
+            discipline: "general",
+            severity: "Minor",
+            status: "Needs input",
+            classification: "Recommendation",
+            locations: [],
+            observed: "Additional supporting source is needed.",
+            correction: "Supply the supporting source.",
+            evidenceIds: [seeded.renderId],
+            evidenceNote: "Fixture source render",
+            citationIds: [],
+            calculationIds: [],
+            priorCommentId: null,
+            completed: true,
+          },
+        ],
+        priorComments: [],
+        summary: "Saved packet review fixture",
+        missingInputs: ["Jurisdiction"],
+        error: null,
+        finished: state === "completed",
+      });
+
+      database
+        .prepare(
+          `INSERT INTO packet_reviews (id,project_id,conversation_id,command_id,fingerprint,source_version,owner_generation,journal_id,engine,payload) VALUES (?,?,?,?,?,0,?,?,?,?)`,
+        )
+        .run(
+          id,
+          seeded.projectId,
+          review.conversationId,
+          randomUUID(),
+          "packet-fixture",
+          owner,
+          journalId,
+          packageEngineFormat,
+          JSON.stringify(review),
+        );
+
+      if (state === "paused") {
+        for (const [index, kind] of ["model", "sam"].entries()) {
+          database
+            .prepare(
+              `INSERT INTO packet_review_attempts (review_id,task_id,attempt,kind,fingerprint,status,sent,response_json) VALUES (?,?,1,?,'request-fingerprint','uncertain',1,NULL)`,
+            )
+            .run(id, index + 1, kind);
+        }
+
+        database
+          .prepare(
+            `INSERT INTO packet_review_attempts (review_id,task_id,attempt,kind,fingerprint,status,sent,response_json) VALUES (?,3,1,'model','completed-fingerprint','completed',1,?)`,
+          )
+          .run(id, JSON.stringify({ responseId: "retained-response" }));
+      }
+
+      const journal = new DatabaseSync(
+        join(dataDirectory, "execution-journals", `${journalId}.sqlite`),
+      );
+
+      try {
+        journal.exec(
+          "CREATE TABLE review_journal_identity (id INTEGER PRIMARY KEY CHECK(id=1), journal_id TEXT NOT NULL UNIQUE, format TEXT NOT NULL)",
+        );
+        journal
+          .prepare("INSERT INTO review_journal_identity VALUES (1,?,?)")
+          .run(journalId, packageEngineFormat);
+      } finally {
+        journal.close();
+      }
+
+      ids.push({ id, journalId, state });
+    }
+  } finally {
+    database.close();
+  }
+
+  return ids;
+};
+
+const packetRows = (dataDirectory: string) => {
+  const database = new DatabaseSync(join(dataDirectory, "app.sqlite"), { readOnly: true });
+
+  try {
+    return Schema.decodeUnknownSync(
+      Schema.Array(
+        Schema.Struct({ engine: Schema.String, payload: Schema.fromJsonString(PacketReview) }),
+      ),
+    )(database.prepare("SELECT engine,payload FROM packet_reviews ORDER BY id").all());
   } finally {
     database.close();
   }
@@ -917,3 +1066,149 @@ test("pending replacement blocks application writes until restart recovery compl
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("complete packages retain packet journals, evidence and both kinds of uncertain receipts as historical reviews", async () => {
+  const root = await mkdtemp(join(tmpdir(), "packet-package-roundtrip-"));
+  const source = join(root, "source");
+  const restored = join(root, "restored");
+  const destination = join(root, "package");
+  const owner = randomUUID();
+
+  try {
+    await migrate(source);
+    await migrate(restored);
+    const seeded = await seedReview(source, "packet-source", owner);
+    const packets = await seedPacketReviews(source, seeded, owner);
+    await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
+
+    const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageManifest))(
+      await readFile(join(destination, "manifest.json"), "utf8"),
+    );
+
+    expect(manifest.journals).toHaveLength(5);
+    expect(manifest.runs).toHaveLength(5);
+
+    for (const packet of packets) {
+      expect(manifest.runs.find((item) => item.runId === packet.id)?.uncertainAttempts).toBe(
+        packet.state === "paused" ? 2 : 0,
+      );
+      expect(existsSync(join(destination, "journals", `${packet.journalId}.sqlite`))).toBe(true);
+    }
+
+    expect(existsSync(join(destination, "artifacts", `${seeded.pngSha}.png`))).toBe(true);
+
+    const result = await run(
+      restoreReviewPackage(
+        configFor(restored, Semaphore.makeUnsafe(1), { ownerGeneration: randomUUID() }),
+        destination,
+      ),
+    );
+
+    const reviews = packetRows(restored);
+    expect(reviews).toHaveLength(3);
+
+    for (const packet of packets) {
+      const actual = reviews.find((item) => item.payload.id === packet.id);
+      expect(actual?.engine).toBe(`restored-history:${packageEngineFormat}`);
+
+      const expectedState = Match.value(packet.state).pipe(
+        Match.when("running", () => "paused" as const),
+        Match.when("paused", () => "uncertain" as const),
+        Match.when("completed", () => "completed" as const),
+        Match.exhaustive,
+      );
+
+      expect(actual?.payload.state).toBe(expectedState);
+      expect(actual?.payload.version).toBe(1);
+      expect(actual?.payload.findings[0]?.completed).toBe(true);
+      expect(actual?.payload.evidenceIds).toEqual([seeded.renderId]);
+      expect(existsSync(join(restored, "execution-journals", `${packet.journalId}.sqlite`))).toBe(
+        true,
+      );
+      const admission = result.admission.runs.find((item) => item.runId === packet.id);
+      expect(admission?.resumeBlocked).toBe(packet.state !== "completed");
+      expect(admission?.uncertainAttempts).toBe(packet.state === "paused" ? 2 : 0);
+    }
+
+    const database = new DatabaseSync(join(restored, "app.sqlite"), { readOnly: true });
+
+    try {
+      expect(
+        database
+          .prepare(
+            "SELECT kind,status,sent,response_json FROM packet_review_attempts ORDER BY task_id",
+          )
+          .all(),
+      ).toEqual([
+        { kind: "model", status: "uncertain", sent: 1, response_json: null },
+        { kind: "sam", status: "uncertain", sent: 1, response_json: null },
+        {
+          kind: "model",
+          status: "completed",
+          sent: 1,
+          response_json: JSON.stringify({ responseId: "retained-response" }),
+        },
+      ]);
+    } finally {
+      database.close();
+    }
+
+    await run(
+      exportReviewPackage(
+        configFor(restored, Semaphore.makeUnsafe(1)),
+        join(root, "second-package"),
+      ),
+    );
+    expect(packetRows(restored).map((row) => row.payload.version)).toEqual([1, 1, 1]);
+
+    const first = packets[0];
+
+    if (!first) throw new Error("Missing packet fixture");
+    await rm(join(restored, "execution-journals", `${first.journalId}.sqlite`));
+
+    const missing = await failureOf(
+      exportReviewPackage(
+        configFor(restored, Semaphore.makeUnsafe(1)),
+        join(root, "missing-journal-package"),
+      ),
+    );
+
+    expect(missing.reason).toBe("incomplete");
+    expect(existsSync(join(root, "missing-journal-package", "manifest.json"))).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15000);
+
+test("pre-packet packages remain readable when the new packet tables are absent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "legacy-packet-package-"));
+  const source = join(root, "source");
+  const current = join(root, "current");
+  const legacy = join(root, "legacy-migrations");
+  const destination = join(root, "package");
+
+  try {
+    await mkdir(legacy);
+
+    for (const name of await readdir(migrations)) {
+      if (!/^000[1-8]_.*\.sql$/.test(name)) continue;
+      await writeFile(join(legacy, name), await readFile(join(migrations, name)));
+    }
+
+    await run(
+      Effect.scoped(migrateDatabase(join(source, "app.sqlite"), legacy, join(source, "backups"))),
+    );
+    const seeded = await seedReview(source, "legacy-source", randomUUID());
+    await migrate(current);
+    await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
+    await run(restoreReviewPackage(configFor(current, Semaphore.makeUnsafe(1)), destination));
+    expect(runStates(current)).toEqual([
+      { run_id: seeded.runningId, state: "paused" },
+      { run_id: seeded.uncertainId, state: "uncertain" },
+    ]);
+    await migrate(current);
+    expect(packetRows(current)).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15000);

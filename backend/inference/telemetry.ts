@@ -1,18 +1,29 @@
 import type { SpanOptions, TelemetryContext, TelemetrySpan } from "@earendil-works/pi-telemetry";
 import { Result, Schema } from "effect";
 
-const Phase = Schema.Struct({
+const PhaseIdentity = {
   "task.id": Schema.Int.check(Schema.isGreaterThan(0)),
-  "task.name": Schema.Literal("pi.generation"),
-  phase: Schema.Literal("request"),
   attempt: Schema.Int.check(Schema.isGreaterThan(0)),
-});
+};
+
+const Phase = Schema.Union([
+  Schema.Struct({
+    ...PhaseIdentity,
+    "task.name": Schema.Literal("pi.generation"),
+    phase: Schema.Literal("request"),
+  }),
+  Schema.Struct({
+    ...PhaseIdentity,
+    "task.name": Schema.Literal("pi.compaction"),
+    phase: Schema.Literal("summarize"),
+  }),
+]);
 
 /** Validated durable provider identity, obtained from host-created phase spans only. */
 export type RequestPhase = typeof Phase.Type;
 
 /** Preserve the exact span identity passed by Pi 1.4.0 to registered providers. */
-export function createExecutionTelemetry() {
+export function createExecutionTelemetry(allowCompaction = false) {
   const phases = new WeakMap<object, RequestPhase>();
 
   const telemetry: TelemetryContext = {
@@ -32,7 +43,9 @@ export function createExecutionTelemetry() {
       if (options.name === "pi.durable.phase") {
         const parsed = Schema.decodeUnknownResult(Phase)(options.attributes);
         Result.match(parsed, {
-          onSuccess: (phase) => phases.set(span, phase),
+          onSuccess: (phase) => {
+            if (allowCompaction || phase["task.name"] === "pi.generation") phases.set(span, phase);
+          },
           onFailure: () => undefined,
         });
       }

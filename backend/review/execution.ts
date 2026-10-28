@@ -45,6 +45,7 @@ import {
   reviewInstructionRevision,
   reviewPromptVersion,
   selectedReviewPrompt,
+  packetPromptVersion,
 } from "./prompts/review-prompt.ts";
 import { reviewModels } from "#lib/review/models.ts";
 
@@ -1256,6 +1257,7 @@ export class ReviewExecution extends Context.Service<
               })),
               segmentation: port.segmentation !== undefined,
               promptVersion: reviewPromptVersion,
+              packetPromptVersion,
               instructionRevision: reviewInstructionRevision,
             }),
           ),

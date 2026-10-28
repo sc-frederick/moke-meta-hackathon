@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import { ResponseReceipt } from "../../backend/inference/response.ts";
+import { PacketReview } from "#lib/review/packet.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 test("desktop proves supported, corrected, unchanged-control, revision, media, and reopen outcomes", async () => {
@@ -45,6 +46,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
   }
 
   let app = await electron.launch(options);
+  let liveObservedState: PacketReview["state"] | null = null;
 
   try {
     let page = await app.firstWindow();
@@ -95,14 +97,13 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("import-pdf")).toBeEnabled();
 
     await page.getByRole("button", { name: "Review settings" }).click();
-    const callLimit = page.getByRole("button", { name: /^Maximum calls per inspection:/ });
-    await expect(callLimit).toContainText("12 calls");
+    await page.getByText("Optional call budget", { exact: true }).click();
+    const callLimit = page.getByLabel("Maximum provider calls", { exact: true });
+    await expect(callLimit).toHaveValue("");
+    await callLimit.fill("12");
+    await expect(callLimit).toHaveValue("12");
 
-    for (const limit of ["4", "8", "12"]) {
-      await callLimit.click();
-      await page.getByRole("option", { name: new RegExp(`${limit} calls`) }).click();
-      await expect(callLimit).toContainText(`${limit} calls`);
-    }
+    if (!live) await callLimit.fill("");
 
     await page.getByRole("button", { name: "Close review settings" }).click();
     await page.getByTestId("import-pdf").click();
@@ -206,17 +207,52 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await page
         .getByLabel("Message", { exact: true })
         .fill(
-          "Inspect the selected lighting count against the schedule and propose counts with drawing evidence.",
+          "Run an electrical QA pass on the two supplied drawing sheets. Open both pages and render a focused original-PDF detail to read the Room 101 label or schedule quantity. Record actual findings, coverage, and missing inputs, then finish with what the evidence supports. Do not accept count facts or claim a completed permit review.",
         );
       await page.getByRole("button", { name: "Send message" }).click();
-      await expect(page.locator(".application-message").first()).toBeVisible({ timeout: 240000 });
-      await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "2 on drawing",
+      const reviewPanel = page.getByTestId("packet-review-panel");
+      await expect(reviewPanel).toBeVisible();
+      await expect(reviewPanel.getByLabel("Review elapsed time", { exact: true })).not.toHaveText(
+        "0:00",
+        { timeout: 15000 },
       );
-      await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "3 in schedule",
+      await page.screenshot({ path: test.info().outputPath("packaged-live-running.png") });
+      await expect(reviewPanel.getByRole("heading", { level: 2 })).not.toHaveText(
+        "Review in progress",
+        { timeout: 300000 },
       );
-      await page.screenshot({ path: test.info().outputPath("packaged-live-muse.png") });
+      const database = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
+
+      const review = Schema.decodeUnknownSync(Schema.fromJsonString(PacketReview))(
+        database.prepare("SELECT payload FROM packet_reviews ORDER BY rowid DESC LIMIT 1").get()
+          ?.payload,
+      );
+
+      const accepted = database
+        .prepare(
+          "SELECT id FROM review_records WHERE kind='fact' AND json_extract(payload,'$.state')='accepted'",
+        )
+        .all();
+
+      database.close();
+      liveObservedState = review.state;
+      expect(["completed", "paused"]).toContain(review.state);
+      expect(review.maxCalls).toBe(12);
+      expect(review.admittedCalls).toBeGreaterThan(0);
+      expect(review.admittedCalls).toBeLessThanOrEqual(12);
+      expect(review.inspectedSheetIds.length).toBeGreaterThan(0);
+      expect(accepted).toHaveLength(0);
+
+      if (review.state === "completed") {
+        await expect(page.locator(".application-message").first()).toBeVisible();
+        expect(review.summary.trim().length).toBeGreaterThan(0);
+      } else {
+        await expect(reviewPanel).toContainText("Review paused");
+        await reviewPanel.getByRole("button", { name: "Cancel review", exact: true }).click();
+        await expect(reviewPanel).toContainText("Review cancelled");
+      }
+
+      await page.screenshot({ path: test.info().outputPath("packaged-live-moke.png") });
     }
 
     await accept("drawn", 2, "Counted the two type A symbols within Room 101 on L-101.");
@@ -375,46 +411,59 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     if (live) {
       const db = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
 
+      const review = Schema.decodeUnknownSync(Schema.fromJsonString(PacketReview))(
+        db.prepare("SELECT payload FROM packet_reviews ORDER BY rowid DESC LIMIT 1").get()?.payload,
+      );
+
       const receipts = Schema.decodeUnknownSync(
         Schema.Array(Schema.Struct({ response_json: Schema.String })),
       )(
         db
           .prepare(
-            "SELECT response_json FROM review_execution_attempts WHERE status='completed' ORDER BY task_id",
+            "SELECT response_json FROM packet_review_attempts WHERE kind='model' AND status='completed' ORDER BY task_id",
           )
           .all(),
       ).map((row) =>
         Schema.decodeUnknownSync(Schema.fromJsonString(ResponseReceipt))(row.response_json),
       );
 
-      const sam = Schema.decodeUnknownSync(
+      const attempts = Schema.decodeUnknownSync(
         Schema.Array(
-          Schema.Struct({
-            status: Schema.String,
-            response_id: Schema.NullOr(Schema.String),
-            result_json: Schema.NullOr(Schema.String),
-          }),
+          Schema.Struct({ kind: Schema.String, status: Schema.String, sent: Schema.Int }),
         ),
-      )(db.prepare("SELECT status,response_id,result_json FROM review_sam_attempts").all());
+      )(
+        db
+          .prepare("SELECT kind,status,sent FROM packet_review_attempts ORDER BY task_id,attempt")
+          .all(),
+      );
 
       db.close();
 
       const tools = receipts.flatMap((receipt) =>
-        receipt.content.flatMap((part) => (part.type === "toolCall" ? [part.name] : [])),
+        receipt.content.flatMap((part) => (part.type === "toolCall" ? [part] : [])),
       );
 
-      expect(tools).toContain("render_missing_detail");
-      expect(tools).toContain("segment_source_region");
-      expect(sam.some((attempt) => attempt.status === "completed")).toBe(true);
+      expect(tools.some((tool) => tool.name === "render_sheet")).toBe(true);
+      expect(
+        tools.some((tool) => tool.name === "render_sheet" && tool.arguments.region !== undefined),
+      ).toBe(true);
+      expect(review.admittedCalls).toBeLessThanOrEqual(12);
       await writeFile(
         test.info().outputPath("packaged-live-evidence.json"),
         JSON.stringify(
           {
-            tools,
-            sam: sam.map((attempt) => ({
-              status: attempt.status,
-              responseId: attempt.response_id,
-            })),
+            observedState: liveObservedState,
+            persistedState: review.state,
+            finished: review.finished,
+            admittedCalls: review.admittedCalls,
+            maxCalls: review.maxCalls,
+            scope: review.scope,
+            inspectedSheetIds: review.inspectedSheetIds,
+            coverage: review.coverage,
+            missingInputs: review.missingInputs,
+            summary: review.summary,
+            tools: tools.map((tool) => tool.name),
+            attempts,
             receipts: receipts.map((receipt) => ({
               responseId: receipt.responseId,
               provider: receipt.provider,
@@ -422,8 +471,6 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
               usage: {
                 input: receipt.usage.input,
                 output: receipt.usage.output,
-                cacheRead: receipt.usage.cacheRead,
-                cacheWrite: receipt.usage.cacheWrite,
                 totalTokens: receipt.usage.totalTokens,
               },
               stopReason: receipt.stopReason,

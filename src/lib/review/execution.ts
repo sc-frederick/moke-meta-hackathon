@@ -91,6 +91,7 @@ export class ExecutionSetup extends Schema.Class<ExecutionSetup>("ExecutionSetup
   model: Schema.NullOr(Schema.String),
   segmentation: Schema.Boolean,
   promptVersion: Schema.String,
+  packetPromptVersion: Schema.optionalKey(Schema.String),
   instructionRevision: Schema.String,
   models: Schema.optionalKey(Schema.Array(ReviewModelOption)),
 }) {}
