@@ -6,7 +6,7 @@ import { CommandId, CommandReceipt, ProjectId, ReviewError, ReviewRpc } from "./
 const Version = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /** Shell import hands stable command identity to the trusted desktop frame. */
-export const ChooseReviewPdf = Schema.Struct({
+const ChooseReviewPdf = Schema.Struct({
   projectId: ProjectId,
   expectedVersion: Version,
   commandId: CommandId,

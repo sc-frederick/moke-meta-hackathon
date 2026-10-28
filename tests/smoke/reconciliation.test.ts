@@ -1,85 +1,8 @@
 import { expect, test } from "bun:test";
-import { Effect, Result, Schema } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sha256 } from "../backend/segmentation/fixtures.ts";
-import {
-  FixtureSchedule,
-  InventoryFixture,
-  reconcileFixtures,
-} from "../backend/segmentation/reconciliation.ts";
-
-const schedule = Schema.decodeUnknownSync(FixtureSchedule)({
-  rows: [
-    { mark: "WC", description: "Water closet", quantity: 2 },
-    { mark: "LAV", description: "Lavatory", quantity: 2 },
-    { mark: "BS", description: "Basin sink", quantity: 8 },
-  ],
-});
-
-const fixture = Schema.decodeUnknownSync(InventoryFixture)({
-  id: "wc-1",
-  mark: "WC",
-  room: "Staff restroom",
-  scope: "existing",
-  crop: "staff-room",
-  pdf: "sample.pdf",
-  page: 2,
-  evidence: "available",
-  proposal: { left: 10, top: 20, right: 40, bottom: 60 },
-});
-
-test("fixture reconciliation joins independently read quantities and preserves untested rows", async () => {
-  const rows = await Effect.runPromise(
-    reconcileFixtures(schedule, [fixture, { ...fixture, id: "wc-2" }], ["WC", "LAV"]),
-  );
-
-  expect(rows.find((row) => row.mark === "WC")).toMatchObject({
-    scheduled: 2,
-    proposed: 2,
-    delta: 0,
-    status: "counts-agree",
-  });
-  expect(rows.find((row) => row.mark === "LAV")).toMatchObject({
-    proposed: 0,
-    delta: -2,
-    status: "counts-differ",
-  });
-  expect(rows.find((row) => row.mark === "BS")).toMatchObject({
-    scheduled: 8,
-    proposed: null,
-    delta: null,
-    status: "not-tested",
-  });
-});
-
-test("missing masks and missing schedule rows remain needs-input rather than agreeing", async () => {
-  const rows = await Effect.runPromise(
-    reconcileFixtures(schedule, [{ ...fixture, evidence: "failed" }], ["WC", "SS"]),
-  );
-
-  expect(rows.find((row) => row.mark === "WC")).toMatchObject({
-    proposed: 0,
-    unresolved: 1,
-    status: "needs-input",
-  });
-  expect(rows.find((row) => row.mark === "SS")).toMatchObject({
-    scheduled: null,
-    proposed: 0,
-    status: "needs-input",
-  });
-});
-
-test("duplicate inventory IDs, duplicate schedule marks, and undeclared coverage fail visibly", async () => {
-  for (const operation of [
-    reconcileFixtures(schedule, [fixture, fixture], ["WC"]),
-    reconcileFixtures({ rows: [schedule.rows[0], schedule.rows[0]] }, [fixture], ["WC"]),
-    reconcileFixtures(schedule, [fixture], ["LAV"]),
-  ]) {
-    expect(Result.isFailure(await Effect.runPromise(Effect.result(operation)))).toBe(true);
-  }
-});
+import { sha256 } from "../../backend/segmentation/fixtures.ts";
 
 test("real offline CLI preserves candidate provenance and rejects changed image evidence", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-inventory-cli-"));

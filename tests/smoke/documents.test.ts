@@ -3,12 +3,12 @@ import { Effect, Exit, Fiber } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Documents } from "../backend/documents/documents.ts";
-import { createHeroPdf } from "./fixtures/hero-case.ts";
+import { Documents } from "../../backend/documents/documents.ts";
+import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { transformPoint } from "#lib/review/geometry.ts";
 import { fileURLToPath } from "node:url";
-import { canvasNativeFileName, canvasNativePackage } from "../scripts/prepare-pdf-assets.ts";
+import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import { Schema } from "effect";
 import { Region, Sheet, ProjectId, RevisionId, SheetId } from "#lib/review/contracts.ts";
 
@@ -16,7 +16,7 @@ const sheetId = (value: string) => Schema.decodeUnknownSync(SheetId)(value);
 const projectId = (value: string) => Schema.decodeUnknownSync(ProjectId)(value);
 const revisionId = (value: string) => Schema.decodeUnknownSync(RevisionId)(value);
 
-import { buildMinimalPdf } from "./fixtures/generated/minimal-pdf.ts";
+import { buildMinimalPdf } from "../fixtures/generated/minimal-pdf.ts";
 
 const fixtureDirectory = await mkdtemp(join(tmpdir(), "moke-pdf-fixtures-"));
 

@@ -26,10 +26,8 @@ export const NamedBox = Schema.Struct({ id: Identifier, box: PixelBox });
 /** A localized observation, distinct from an accepted semantic inventory instance. */
 export type NamedBox = typeof NamedBox.Type;
 
-const Center = Schema.Struct({ id: Identifier, x: Coordinate, y: Coordinate });
-
 /** Invalid geometry or duplicate observation identifiers prevents a reliable comparison. */
-export class InventoryGeometryError extends Schema.TaggedError<InventoryGeometryError>()(
+class InventoryGeometryError extends Schema.TaggedError<InventoryGeometryError>()(
   "InventoryGeometryError",
   { message: Schema.String },
 ) {}
@@ -45,18 +43,6 @@ type InventoryComparison = {
   readonly leftOnly: ReadonlyArray<string>;
   readonly rightOnly: ReadonlyArray<string>;
   readonly ambiguous: ReadonlyArray<string>;
-};
-
-/** Localization-only center-hit counts; neither semantic correctness nor mask accuracy. */
-type CenterEvaluation = {
-  readonly truePositives: number;
-  readonly falsePositives: number;
-  readonly falseNegatives: number;
-  readonly matches: ReadonlyArray<{ readonly centerId: string; readonly objectId: string }>;
-  readonly missedCenterIds: ReadonlyArray<string>;
-  readonly unmatchedObjectIds: ReadonlyArray<string>;
-  readonly ambiguousCenterIds: ReadonlyArray<string>;
-  readonly ambiguousObjectIds: ReadonlyArray<string>;
 };
 
 const parseBoxes = Effect.fn("parseInventoryBoxes")(function* (
@@ -156,79 +142,5 @@ export const compareInventories = Effect.fn("compareInventories")(function* (
       .filter((box) => !matches.some((match) => match.rightId === box.id))
       .map((box) => box.id),
     ambiguous: Array.from(new Set(ambiguous)),
-  };
-});
-
-function contains(box: PixelBox, point: typeof Center.Type): boolean {
-  return box.left <= point.x && point.x < box.right && box.top <= point.y && point.y < box.bottom;
-}
-
-/**
- * Score frozen annotation centers against boxes using maximum one-to-one matching.
- * A hit is center membership in a half-open box. Duplicate predictions remain
- * false positives; one prediction can match only one center. Counts express
- * localization coverage against the supplied annotations, not semantic accuracy.
- */
-export const evaluateCenters = Effect.fn("evaluateInventoryCenters")(function* (
-  centers: ReadonlyArray<{ readonly id: string; readonly x: number; readonly y: number }>,
-  objects: ReadonlyArray<NamedBox>,
-): Effect.fn.Return<CenterEvaluation, InventoryGeometryError> {
-  const points = yield* Schema.decodeUnknownEffect(Schema.Array(Center))(centers).pipe(
-    Effect.mapError(() => new InventoryGeometryError({ message: "Invalid annotation center." })),
-  );
-
-  const boxes = yield* parseBoxes(objects, "evaluation predictions");
-
-  if (new Set(points.map((point) => point.id)).size !== points.length) {
-    return yield* new InventoryGeometryError({ message: "Duplicate annotation center ID." });
-  }
-
-  const neighbors = new Map(
-    points.map((point) => [point.id, boxes.filter((box) => contains(box.box, point))]),
-  );
-
-  const owners = new Map<string, typeof Center.Type>();
-
-  // Augmenting paths can move an earlier match, preserving maximum cardinality.
-  function assign(point: typeof Center.Type, seen: Set<string>): boolean {
-    for (const box of neighbors.get(point.id) ?? []) {
-      if (seen.has(box.id)) continue;
-
-      seen.add(box.id);
-      const owner = owners.get(box.id);
-
-      if (!owner || assign(owner, seen)) {
-        owners.set(box.id, point);
-
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  for (const point of points) assign(point, new Set());
-
-  const matches = boxes.flatMap((box) => {
-    const owner = owners.get(box.id);
-
-    return owner ? [{ centerId: owner.id, objectId: box.id }] : [];
-  });
-
-  return {
-    truePositives: matches.length,
-    falsePositives: boxes.length - matches.length,
-    falseNegatives: points.length - matches.length,
-    matches,
-    missedCenterIds: points
-      .filter((point) => !matches.some((match) => match.centerId === point.id))
-      .map((point) => point.id),
-    unmatchedObjectIds: boxes.filter((box) => !owners.has(box.id)).map((box) => box.id),
-    ambiguousCenterIds: points
-      .filter((point) => (neighbors.get(point.id)?.length ?? 0) > 1)
-      .map((point) => point.id),
-    ambiguousObjectIds: boxes
-      .filter((box) => points.filter((point) => contains(box.box, point)).length > 1)
-      .map((box) => box.id),
   };
 });

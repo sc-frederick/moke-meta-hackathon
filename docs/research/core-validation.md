@@ -52,24 +52,24 @@ only the authored schematic. This directory and credentials are excluded from gi
 
 - `bun run verify`: strict TypeScript and Effect diagnostics, Svelte checks,
   vendored lint, formatting, network-free tests, all builds, and Electron E2E.
-- `tests/pi-storage.test.ts`: all 25 published storage conformance cases plus
-  rollback/transaction-lifecycle cases: 27 tests, 210 assertions.
-- `tests/review-execution.test.ts`: actual Pi and SDK with controlled SSE;
+- The original storage conformance checks were retired during repository cleanup.
+  Application-owned journal replay and recovery remain in the execution smoke suite.
+- `tests/smoke/review-execution.test.ts`: actual Pi and SDK with controlled SSE;
   compiled SIGKILL/ownership recovery, zero additional sends after uncertainty,
   pause/cancel, command/response receipts, image blocks, bounded image windows,
   journal incompatibility and persisted progress pagination.
-- `tests/review-fences.test.ts`: the real parent port and SQLite permit correction
+- `tests/smoke/review-fences.test.ts`: the real parent port and SQLite permit correction
   while a response waits, reject its stale promotion and replay a committed receipt.
-- `tests/backend.test.ts`: auth/origin/process failures plus streaming HTTP
+- `tests/smoke/backend.test.ts`: auth/origin/process failures plus streaming HTTP
   delivery before a subscription closes.
-- `tests/documents.test.ts`: actual marked pixels across all page rotations,
+- `tests/smoke/documents.test.ts`: actual marked pixels across all page rotations,
   nonzero boxes and UserUnit, bounded artifacts and cancellation.
-- `tests/review-segmentation.test.ts`: official parser, coordinate conventions,
+- `tests/smoke/review-segmentation.test.ts`: official parser, coordinate conventions,
   safe SAM receipts, uncertainty and cross-project/version fences.
-- `tests/review-packages.test.ts`: complete export/restore, corruption and
+- `tests/smoke/review-packages.test.ts`: complete export/restore, corruption and
   migration rejection, retained snapshots and interrupted replacement recovery.
-- `bun run probe:pdf-packaging`: compiled renderer from an isolated sidecar
-  layout, without runtime package resolution. Latest probe: exit 0, 512 × 663
+- The retired PDF packaging probe rendered from an isolated sidecar layout,
+  without runtime package resolution. Its recorded result: exit 0, 512 × 663
   PNG, 2,988 bytes, 204 ms. This is a small packaging fixture, not a drawing benchmark.
 - `bun run package:desktop` builds AppImage and Debian installers. The installed
   executable is used by `bun run test:packaged`. Windows/macOS remain in CI;

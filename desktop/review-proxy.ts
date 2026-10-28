@@ -56,7 +56,6 @@ export const ExecutionProxy = ExecutionRpc.toLayer(
         api.AcknowledgeUncertainExecution(request).pipe(safe),
       ExecutionStatus: (request) => api.ExecutionStatus(request).pipe(safe),
       ControlExecution: (request) => api.ControlExecution(request).pipe(safe),
-      ExecutionEvents: (request) => api.ExecutionEvents(request).pipe(safe),
       ObserveExecution: (request) =>
         api.ObserveExecution(request).pipe(
           Stream.mapError((cause) =>

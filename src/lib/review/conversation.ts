@@ -3,7 +3,7 @@ import type { ReviewClient } from "./client.ts";
 import type { ExecutionBudget, ExecutionStatus, ReviewDiscipline } from "./execution.ts";
 
 /** A reviewer send is saved once, then explicitly admitted for the selected check. */
-export interface ReviewMessageSubmission {
+interface ReviewMessageSubmission {
   readonly command: typeof ReviewCommand.cases.PostMessage.Type;
   readonly executionCommandId: typeof CommandId.Type;
   readonly findingId: typeof FindingId.Type;
@@ -12,7 +12,7 @@ export interface ReviewMessageSubmission {
 }
 
 /** A saved request may remain a note if provider admission fails; callers must not resend it silently. */
-export type ReviewMessageResult =
+type ReviewMessageResult =
   | { readonly saved: false; readonly error: string }
   | {
       readonly saved: true;

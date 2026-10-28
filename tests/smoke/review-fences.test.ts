@@ -5,12 +5,12 @@ import { SqlClient } from "effect/sql";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { acquireDataDirectoryOwnership } from "../backend/ownership.ts";
-import { migrateDatabase } from "../backend/database-files.ts";
-import { ImportedPdf } from "../backend/documents/types.ts";
-import { createReviewOperations } from "../backend/review/operations.ts";
-import { ReviewStore } from "../backend/review/store.ts";
-import { ExecutionFence } from "../backend/review/execution-port.ts";
+import { acquireDataDirectoryOwnership } from "../../backend/ownership.ts";
+import { migrateDatabase } from "../../backend/database-files.ts";
+import { ImportedPdf } from "../../backend/documents/types.ts";
+import { createReviewOperations } from "../../backend/review/operations.ts";
+import { ReviewStore } from "../../backend/review/store.ts";
+import { ExecutionFence } from "../../backend/review/execution-port.ts";
 import {
   CommandId,
   FindingId,

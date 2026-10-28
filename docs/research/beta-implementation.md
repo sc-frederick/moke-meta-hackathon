@@ -164,7 +164,7 @@ in [beta validation](beta-validation.md). Council results belong to the pull req
 Relevant commands from [package.json](../../package.json) are:
 
 ```sh
-bun test tests/review-conversation.test.ts tests/review-execution.test.ts tests/review-fences.test.ts tests/review-packages.test.ts
+bun test tests/smoke/review-conversation.test.ts tests/smoke/review-execution.test.ts tests/smoke/review-fences.test.ts tests/smoke/review-packages.test.ts
 bun run test:e2e tests/e2e/review.spec.ts
 bun run verify
 ```

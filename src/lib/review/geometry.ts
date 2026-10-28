@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Affine, Region, ReviewInputError } from "#lib/review/contracts.ts";
 
-/** Apply an affine transform without discarding page rotation, scale, or crop origin. */
+/** Apply a PDF-to-pixel or pixel-to-PDF affine transform to one source point. */
 export function transformPoint(transform: typeof Affine.Type, x: number, y: number) {
   const [a, b, c, d, e, f] = transform;
 

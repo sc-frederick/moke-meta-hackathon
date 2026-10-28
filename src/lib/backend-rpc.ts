@@ -22,7 +22,6 @@ export class BackendUnavailable extends Schema.TaggedError<BackendUnavailable>()
 
 const Path = Schema.String.check(Schema.isMinLength(1));
 
-/** Private PDF processing paths are chosen by Electron, never renderer arguments. */
 const ProcessingConfiguration = Schema.Struct({
   workerCommand: Schema.NonEmptyArray(Path),
   assetsDirectory: Path,

@@ -76,7 +76,7 @@ export const readCrops = Effect.fn("readCrops")(function* (
 });
 
 /** Resolve fixture paths without allowing the manifest to escape its directory. */
-export const fixturePath = Effect.fn("fixturePath")(function* (directory: string, file: string) {
+const fixturePath = Effect.fn("fixturePath")(function* (directory: string, file: string) {
   const path = resolve(directory, file);
   const inside = relative(resolve(directory), path);
 

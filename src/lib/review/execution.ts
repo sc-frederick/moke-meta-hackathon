@@ -171,11 +171,6 @@ export class ExecutionRpc extends RpcGroup.make(
     success: ExecutionStatus,
     error: ExecutionError,
   }),
-  Rpc.make("ExecutionEvents", {
-    payload: { projectId: ProjectId, afterSequence: ExecutionVersion },
-    success: Schema.Array(ExecutionEvent),
-    error: ExecutionError,
-  }),
   Rpc.make("ObserveExecution", {
     payload: { projectId: ProjectId, afterSequence: ExecutionVersion },
     success: ExecutionEvent,

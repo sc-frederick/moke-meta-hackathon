@@ -1,33 +1,50 @@
 # Project documentation
 
-- [Beta workflow](research/beta-implementation.md): connected Moke instructions, chat reviews,
-  sheet setup, reviewer acceptance, and product boundaries.
-- [Beta validation](research/beta-validation.md): cleanup, live composer acceptance, UI fixes,
-  packaged tests, screenshots, and remaining limits.
-- [Core council](research/core-council.md): findings, fixes and review scores.
-- [Core validation](research/core-validation.md): packaged Meta/SAM acceptance, actual receipts, recovery tests and limits.
-- [Core implementation plan](core-implementation-plan.md): Bun/Effect architecture,
-  evidence contracts, implementation sequence, recovery gates and evaluation.
-- [Core implementation research](research/core-implementation-sources.md): source
-  evidence, documentation conflicts and compatibility questions behind the plan.
-- [Inference setup](inference.md): where to put Meta and Baseten hackathon keys,
-  configuration defaults, and manual API checks.
-- [Model reference](models.md): Meta's model catalog and Baseten's hackathon endpoint.
-- [Review runtime](review-runtime.md): Pi Durable, local execution, Modal cloud handoff,
-  and hackathon eligibility and scoring priorities.
-- [Hackathon bonuses](hackathon-bonuses.md): award fit, required evidence, and launch
-  priorities while protecting the main-track entry.
-- [SAM drawing experiment](segmentation-test.md): PDF crop rendering, live segmentation,
-  saved overlays, coordinate mapping, and experiment limits.
-- [Data and recovery](data.md): SQLite, migrations, backups, and restores.
-- [SAM plumbing coordination](plumbing-segmentation.md): fixture-count experiments,
-  captured grounding recipes, correction probes, and the offline reconciliation worksheet.
-- [SAM beyond plumbing](sam-drawing-expansion.md): electrical and lighting counts,
-  HVAC, doors, correction experiments, scaling limits, and Exa/Firecrawl research.
-- [Adaptive Meta review](adaptive-meta-review.md): Muse tool calls that compare
-  independent inventories, request PDF zooms, and test fresh SAM guidance.
-- [Additional discipline sets](sam-expanded-sets.md): new D–J electrical, alarm,
-  structural and civil probes, source-frozen observations, corrections and limits.
-- [Deployment](deployment.md): builds, packaging, CI, and runtime boundaries.
-- [Agent SDK comparison](research/agent-harness-comparison.md): Effect AI, Pi Durable,
-  persistent execution alternatives, and the Grok critique.
+Start with [Moke's README](../README.md) for the product, workflow, and screenshots.
+
+## Setup and development
+
+- [Development and testing](development.md): commands, smoke/Electron suites, and screenshot refresh.
+- [Inference setup](inference.md): provider keys, canonical routes, and manual API checks.
+- [Model reference](models.md): the Meta catalog and the Baseten hackathon endpoint.
+- [Desktop builds and releases](deployment.md): packaging, CI, credentials, and runtime boundaries.
+- [Data and recovery](data.md): SQLite migrations, consistent backups, complete packages, and restore behavior.
+- [Demonstration fixture](fixtures/hero-case.md): supported issue, correction, unchanged control, and revision recheck.
+- [Design provenance](../design/concepts/DESIGN.md): the selected Nightdesk reference and original UI study.
+
+## Architecture and validation
+
+- [Beta workflow](research/beta-implementation.md): conversations, sheet setup, reviewer acceptance, and product boundaries.
+- [Beta validation](research/beta-validation.md): recorded desktop and packaged checks, screenshots, fixes, and limits.
+- [Core validation](research/core-validation.md): recorded Meta/SAM receipts, recovery checks, and limits.
+- [Review runtime](review-runtime.md): local ownership, Pi Durable, hosted inference, and planned checkpoint handoff.
+- [Pi execution](research/pi-runtime.md): journals, request admission, controls, and crash recovery.
+- [Review packages](research/review-packages.md): complete export/restore and interrupted replacement recovery.
+- [SAM integration](research/sam-integration.md): image geometry, intent ledger, source fences, and proposals.
+- [PDF packaging](research/pdf-packaging.md): renderer assets and historical packaging measurements.
+
+## Drawing experiments
+
+These studies record bounded development experiments. Captured model results are
+not a benchmark for unseen drawings. Reproducing live requests requires provider
+access and the separately supplied drawing pack.
+
+- [SAM drawing experiment](segmentation-test.md): crop rendering, prompts, overlays, and coordinates.
+- [Plumbing coordination](plumbing-segmentation.md): count experiments, corrections, and the offline worksheet.
+- [SAM beyond plumbing](sam-drawing-expansion.md): electrical, lighting, HVAC, doors, and observed limits.
+- [Adaptive Meta review](adaptive-meta-review.md): independent inventories, targeted zooms, and fresh SAM guidance.
+- [Additional discipline sets](sam-expanded-sets.md): electrical, fire alarm, structural, and civil probes.
+
+## Planning and provenance
+
+These documents retain the decisions and source research behind the implementation.
+For current behavior, use the setup, architecture, and validation documents above.
+
+- [Product scope](../PRODUCT.md)
+- [Core implementation plan](core-implementation-plan.md)
+- [Implementation source research](research/core-implementation-sources.md)
+- [Core council findings](research/core-council.md)
+- [Agent harness comparison](research/agent-harness-comparison.md)
+- [Hackathon bonuses](hackathon-bonuses.md)
+- [Project choices and dependency provenance](../.project-kit/manifest.json)
+- [Review prompt provenance](../backend/review/prompts/README.md)

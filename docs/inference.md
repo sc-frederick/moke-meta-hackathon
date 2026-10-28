@@ -19,13 +19,10 @@ blank `.env.example` template. Keep that template free of credentials.
 
 | Variable                  | Default or purpose                                            |
 | ------------------------- | ------------------------------------------------------------- |
-| `APP_STAGE`               | `development`                                                 |
+| `MOKE_PROVIDER`           | `meta`, or `baseten` for the alternative desktop route        |
 | `MODEL_API_KEY`           | Meta hackathon key, initially blank                           |
 | `META_API_BASE_URL`       | `https://api.meta.ai/v1`                                      |
 | `META_TEXT_MODEL`         | `muse-spark-1.3`                                              |
-| `META_WONDER_MODEL`       | `muse-wonder-1.0`                                             |
-| `META_IMAGE_MODEL`        | `muse-image-1.0`                                              |
-| `META_TRANSCRIBE_MODEL`   | `muse-voice-transcribe-1.0`                                   |
 | `META_SEGMENTATION_MODEL` | `sam-3.1`                                                     |
 | `BASETEN_API_KEY`         | Baseten hackathon key, initially blank                        |
 | `BASETEN_API_BASE_URL`    | `https://inference.baseten.co/v1`                             |

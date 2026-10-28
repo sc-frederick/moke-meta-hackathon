@@ -60,7 +60,6 @@ export const runExperiment = Effect.fn("runExperiment")(function* (options: Expe
 
   const prepared = [];
 
-  // Check every selected case before creating output or sending the first request.
   for (const test of cases) {
     const crop = crops.find((item) => item.id === test.crop);
 

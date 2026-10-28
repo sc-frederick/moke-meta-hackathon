@@ -153,7 +153,7 @@ not copied. Exact source and submitted dimensions, hashes, transforms, and raw
 response remain available in the receipt for audit. Exposing declared source
 size in the official parser would close this remaining protocol validation gap.
 
-`tests/review-segmentation.test.ts` uses real temporary SQLite databases with all
+`tests/smoke/review-segmentation.test.ts` uses real temporary SQLite databases with all
 four migrations and an injected transport. It covers completed zero/one/multiple
 outputs; confidence-bearing one-bit masks; source-pixel inclusive one-pixel edges;
 mask dimensions distinct from the image; rotated, resized, offset inverse maps;

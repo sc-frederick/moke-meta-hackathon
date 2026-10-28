@@ -307,8 +307,6 @@ export const BackendHandlers = BackendRpc.toLayer(
         application.execution.control(projectId, runId, expectedVersion, action, commandId),
       AcknowledgeUncertainExecution: ({ projectId, runId, expectedVersion, commandId }) =>
         application.execution.acknowledge(projectId, runId, expectedVersion, commandId),
-      ExecutionEvents: ({ projectId, afterSequence }) =>
-        application.execution.events(projectId, afterSequence),
       ObserveExecution: ({ projectId, afterSequence }) =>
         application.execution.observe(projectId, afterSequence),
     };

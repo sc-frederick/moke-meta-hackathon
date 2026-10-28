@@ -2,7 +2,7 @@
   "name": "moke-meta-hackathon",
   "version": "0.1.0",
   "private": true,
-  "description": "moke-meta-hackathon application",
+  "description": "A desktop workbench for evidence-backed engineering drawing review",
   "homepage": "https://github.com/sc-frederick/moke-meta-hackathon",
   "author": "Stephen Frederick",
   "type": "module",
@@ -23,10 +23,10 @@
     "lint": "bun --bun oxlint -c oxlint.config.ts --disable-nested-config src desktop backend scripts tests tools *.ts",
     "format": "bun fmt",
     "format:check": "bun fmt --check",
-    "test": "bun test",
+    "test": "bun test ./tests/smoke",
     "test:sam": "bun scripts/test-sam.ts",
     "reconcile:fixtures": "bun scripts/reconcile-fixtures.ts",
-    "test:e2e": "bun --bun playwright test",
+    "test:e2e": "bun --bun playwright test --project=desktop",
     "verify": "bun run check && bun run test && bun run build && bun run test:e2e",
     "effect:setup": "bun --bun effect-tsgo patch --typescript-package @typescript/native",
     "postinstall": "bun run effect:setup",
@@ -35,9 +35,9 @@
     "test:packaged": "bun scripts/test-packaged.ts",
     "test:review-agent": "bun scripts/test-review-agent.ts",
     "build:backend:main": "bun build ./backend/main.ts --compile --outfile ./dist/backend/app-backend --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
-    "build:backend:pdf-worker": "bun build ./backend/documents/pdf-worker-main.ts --compile --outfile ./dist/backend/pdf-worker --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json && bun build ./backend/documents/pdf-packaging-probe-worker.mjs --compile --outfile ./dist/backend/pdf-packaging-probe --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
+    "build:backend:pdf-worker": "bun build ./backend/documents/pdf-worker-main.ts --compile --outfile ./dist/backend/pdf-worker --compile-exec-argv=--no-orphans --no-compile-autoload-dotenv --no-compile-autoload-bunfig --no-compile-autoload-tsconfig --no-compile-autoload-package-json",
     "prepare:pdf-assets": "bun scripts/prepare-pdf-assets.ts",
-    "probe:pdf-packaging": "bun scripts/pdf-packaging-probe.ts"
+    "test:screenshots": "bun --bun playwright test tests/e2e/review.spec.ts --project=screenshots"
   },
   "dependencies": {
     "effect": "4.0.4",

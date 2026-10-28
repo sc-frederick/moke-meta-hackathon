@@ -145,7 +145,7 @@ internally, which are never reported as application cost estimates.
 
 ## Observed evidence and remaining gates
 
-`bun test tests/review-execution.test.ts` exercises the production service with
+`bun test tests/smoke/review-execution.test.ts` exercises the production service with
 real SQLite, actual Pi Harness, and actual Meta Responses SDK using injected
 synthetic HTTP/SSE. No SDK internals are mocked and no paid calls are made.
 The final focused run passed 13 tests and 71 assertions on Bun 1.4.4, Linux x64.

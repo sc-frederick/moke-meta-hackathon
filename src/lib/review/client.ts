@@ -3,7 +3,6 @@ import { RpcClient, type RpcClientError } from "effect/rpc";
 import { RendererRpcClient } from "electron-effect-rpc/renderer";
 import {
   type Artifact,
-  type ArtifactId,
   CommandId,
   type OperationId,
   type ProjectId,
@@ -99,13 +98,6 @@ export function createReviewClient() {
         Effect.flatMap(ReviewDesktopApi, (api) => api.ExecutionStatus({ projectId, runId })),
         "Execution status is unavailable.",
       ),
-    executionEvents: (projectId: typeof ProjectId.Type, afterSequence: number) =>
-      run(
-        Effect.flatMap(ReviewDesktopApi, (api) =>
-          api.ExecutionEvents({ projectId, afterSequence }),
-        ),
-        "Execution progress is unavailable.",
-      ),
     controlExecution: (
       projectId: typeof ProjectId.Type,
       runId: typeof RunId.Type,
@@ -170,19 +162,6 @@ export function createReviewClient() {
       run(
         Effect.flatMap(ReviewDesktopApi, (client) => client.RenderSource(payload)),
         "The source region could not be rendered.",
-      ),
-
-    readArtifactChunk: (
-      projectId: typeof ProjectId.Type,
-      artifactId: typeof ArtifactId.Type,
-      offset: number,
-      limit: number,
-    ) =>
-      run(
-        Effect.flatMap(ReviewDesktopApi, (client) =>
-          client.ReadArtifactChunk({ projectId, artifactId, offset, limit }),
-        ),
-        "The artifact could not be read.",
       ),
 
     chooseReviewPdf: (payload: {

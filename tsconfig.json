@@ -26,14 +26,5 @@
     ]
   },
   "include": ["src", "desktop", "backend", "tests", "scripts", "*.ts", "tools/lint.ts"],
-  "exclude": [
-    "repos",
-    "tools/oxlint",
-    "node_modules",
-    "build",
-    "dist",
-    "release",
-    ".alchemy",
-    "backend/documents/**/*.mjs"
-  ]
+  "exclude": ["repos", "tools/oxlint", "node_modules", "build", "dist", "release", ".alchemy"]
 }

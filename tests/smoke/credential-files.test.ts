@@ -3,7 +3,7 @@ import { Redacted } from "effect";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CredentialError, readProviderConfiguration } from "../desktop/credential-files.ts";
+import { CredentialError, readProviderConfiguration } from "../../desktop/credential-files.ts";
 
 test("explicit session credentials reject shared Unix permissions and accept a private file", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-credential-permissions-"));

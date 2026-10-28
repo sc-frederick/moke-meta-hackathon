@@ -4,15 +4,15 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Resvg } from "@resvg/resvg-js";
-import { sha256 } from "../backend/segmentation/fixtures.ts";
+import { sha256 } from "../../backend/segmentation/fixtures.ts";
 import {
-  DeviceLabels,
+  VisualDevice,
   MetaReviewClient,
   MetaReviewConfig,
   MetaReviewError,
   ProposalDecision,
   type ReviewImage,
-} from "../backend/segmentation/meta-review.ts";
+} from "../../backend/segmentation/meta-review.ts";
 
 const key = "local-contract-key-not-a-real-credential";
 
@@ -22,7 +22,7 @@ function sourceImage(id = "source", color = "black"): ReviewImage {
   return { id, width: 24, height: 24, bytes: new Resvg(svg).render().asPng() };
 }
 
-const unknownLabels = Schema.decodeUnknownSync(DeviceLabels)({
+const unknownLabels = Schema.decodeUnknownSync(VisualDevice.fields.labels)({
   room: { value: null, quote: "", box: null },
   panel: { value: null, quote: "", box: null },
   circuit: { value: null, quote: "", box: null },

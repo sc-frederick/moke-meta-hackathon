@@ -5,10 +5,10 @@ import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { BackendApi } from "../desktop/backend.ts";
-import { canvasNativeFileName, canvasNativePackage } from "../scripts/prepare-pdf-assets.ts";
+import { BackendApi } from "../../desktop/backend.ts";
+import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import { CommandId, FindingId, OperationId, Region, ReviewCommand } from "#lib/review/contracts.ts";
-import { createHeroPdf } from "./fixtures/hero-case.ts";
+import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 const commandId = () => Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
 

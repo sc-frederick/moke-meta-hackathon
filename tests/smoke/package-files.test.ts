@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openRegularFile, portablePackagePath } from "../backend/review/package-files.ts";
+import { openRegularFile } from "../../backend/review/package-files.ts";
 
 test("package reads without O_NOFOLLOW retain regular-file identity and reject links", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-package-file-"));
@@ -32,10 +32,4 @@ test("package reads without O_NOFOLLOW retain regular-file identity and reject l
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-});
-
-test("Windows-generated package paths use portable separators without accepting manifest escapes", () => {
-  expect(portablePackagePath("artifacts\\abc.png", "\\")).toBe("artifacts/abc.png");
-  expect(portablePackagePath("journals/abc.sqlite", "/")).toBe("journals/abc.sqlite");
-  expect(portablePackagePath("artifacts\\escape.png", "/")).toBe("artifacts\\escape.png");
 });

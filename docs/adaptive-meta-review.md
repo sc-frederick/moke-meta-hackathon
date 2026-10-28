@@ -123,8 +123,8 @@ Score locations one-to-one; equal totals do not establish correctness. Score
 room/circuit/protection attribution separately from location and mask usefulness.
 Retain unsuccessful requests, call totals and elapsed time.
 
-`tests/spatial-inventory.test.ts` replays the earlier frozen-center checks against
-the small, hash-linked `captured-locations.json` fixture: procedure 10 hits / two
+The earlier frozen-center evaluation against the hash-linked
+`captured-locations.json` fixture recorded: procedure 10 hits / two
 extras / zero misses; exam two hits / nine extras / two misses; fresh lighting
 10 hits / zero extras / zero misses. Procedure annotations are a post-run visual
 audit; exam and lighting expectations were recorded before their SAM runs. These

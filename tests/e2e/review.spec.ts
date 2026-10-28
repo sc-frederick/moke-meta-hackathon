@@ -1,7 +1,7 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import { ResponseReceipt } from "../../backend/inference/response.ts";
@@ -9,6 +9,9 @@ import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 test("desktop proves supported, corrected, unchanged-control, revision, media, and reopen outcomes", async () => {
   const live = process.env.MOKE_E2E_LIVE === "1";
+  const screenshots = test.info().project.name === "screenshots";
+
+  if (screenshots && live) throw new Error("Documentation screenshots use the offline fixture.");
   test.setTimeout(live ? 360000 : 90000);
   const directory = await mkdtemp(join(tmpdir(), "desktop-review-"));
   const fixtureA = join(directory, "Revision A.pdf");
@@ -18,12 +21,16 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
   const environment = Object.fromEntries(
     Object.entries(process.env).flatMap(([key, value]) =>
-      value === undefined || key === "ELECTRON_RUN_AS_NODE" ? [] : [[key, value]],
+      value === undefined ||
+      key === "ELECTRON_RUN_AS_NODE" ||
+      (!live && ["MODEL_API_KEY", "BASETEN_API_KEY", "MOKE_SESSION_CREDENTIAL_FILE"].includes(key))
+        ? []
+        : [[key, value]],
     ),
   );
 
   const options: Parameters<typeof electron.launch>[0] = {
-    args: ["."],
+    args: [".", `--user-data-dir=${join(directory, "profile")}`],
     env: {
       ...environment,
       PROJECT_KIT_DATA_DIRECTORY: directory,
@@ -33,13 +40,50 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
   if (process.env.PROJECT_KIT_EXECUTABLE !== undefined) {
     options.executablePath = process.env.PROJECT_KIT_EXECUTABLE;
-    options.args = [];
+    options.args = [`--user-data-dir=${join(directory, "profile")}`];
   }
 
   let app = await electron.launch(options);
 
   try {
     let page = await app.firstWindow();
+    const rendererErrors: string[] = [];
+    const monitor = () => page.on("pageerror", (error) => rendererErrors.push(error.message));
+    monitor();
+
+    if (screenshots) await page.setViewportSize({ width: 1440, height: 1000 });
+
+    const capture = async (name: string, history = false) => {
+      if (!screenshots) return;
+      await expect(
+        page.getByRole("region", { name: "Original source render" }).locator("img"),
+      ).toHaveJSProperty("complete", true);
+      const notice = page.getByRole("button", { name: "Dismiss notification" });
+
+      if (await notice.isVisible()) await notice.click();
+
+      if (history) await page.getByTestId("check-history").scrollIntoViewIfNeeded();
+      else
+        await page.locator(".source-scroll").evaluate((element) => {
+          element.scrollTop = 0;
+        });
+
+      if (name.startsWith("workbench")) {
+        const findings = page.getByRole("region", { name: "Workspace findings" });
+
+        if (!(await findings.isVisible()))
+          await page.getByRole("button", { name: "Open findings" }).click();
+        await expect(findings).toBeVisible();
+      }
+
+      await page.evaluate(() => document.fonts.ready);
+      await mkdir(resolve("docs/screenshots"), { recursive: true });
+      await page.screenshot({
+        path: resolve("docs/screenshots", `${name}.png`),
+        animations: "disabled",
+      });
+    };
+
     await app.evaluate(({ dialog }, source) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixtureA);
@@ -122,6 +166,15 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await expect(page.getByTestId("check-history").locator("li").last()).toContainText(outcome);
     };
 
+    const saveNote = async (text: string) => {
+      await page.getByLabel("Message action").selectOption("note");
+      await page.getByLabel("Message", { exact: true }).fill(text);
+      await page.getByRole("button", { name: "Send message" }).click();
+      await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
+        text,
+      );
+    };
+
     await createFinding("Room 101 type A");
 
     await expect(
@@ -162,6 +215,11 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("check-history")).toContainText("2 drawn");
     await expect(page.getByTestId("check-history")).toContainText("3 scheduled");
 
+    if (screenshots)
+      await saveNote(
+        "Room 101: two type A luminaires drawn, three scheduled. Keep this mismatch open for the next revision.",
+      );
+
     await createFinding("Room 102 type B");
     await accept("drawn", 1, "Deliberate initial misread for the correction acceptance case.");
     await accept("scheduled", 2, "Read the Room 102 row on L-601.");
@@ -185,6 +243,12 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("check-history").locator("li").first()).toContainText(
       "Supported issue",
     );
+
+    if (screenshots)
+      await saveNote(
+        "Room 102: corrected my initial count from one to two type B luminaires. The counts agree; the earlier false alarm remains in the check history.",
+      );
+    await capture("correction", true);
     await page.getByTestId("detail-drawn").click();
     const sourceImage = page.getByRole("region", { name: "Original source render" }).locator("img");
     await expect(sourceImage).toHaveJSProperty("naturalWidth", 2550);
@@ -237,17 +301,19 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     );
     await evaluate("Checked, no issue");
     await expect(page.getByTestId("check-history")).toContainText("3 drawn");
+
+    if (screenshots)
+      await saveNote(
+        "Revision B adds the third type A luminaire in Room 101. Accepted fresh drawing evidence and reran the check: three drawn, three scheduled.",
+      );
+    await capture("revision", true);
     await openFinding("Independent type C detail");
     await expect(page.getByTestId("check-history").locator("li").first()).toHaveAttribute(
       "data-check-id",
       controlId ?? "missing",
     );
 
-    await page.getByLabel("Message action").selectOption("note");
-    await page
-      .getByLabel("Message", { exact: true })
-      .fill("Rechecked Revision B; keep the original issue and correction history.");
-    await page.getByRole("button", { name: "Send message" }).click();
+    await saveNote("Rechecked Revision B; keep the original issue and correction history.");
     await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
       "Rechecked Revision B",
     );
@@ -255,6 +321,20 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       element.scrollTop = 0;
     });
     await expect(sourceImage).toBeVisible();
+
+    if (screenshots) {
+      await openFinding("Room 101 type A");
+    }
+
+    await capture("workbench");
+
+    if (screenshots) {
+      await page.getByRole("button", { name: "Use light appearance" }).click();
+      await capture("workbench-light");
+      await page.getByRole("button", { name: "Use dark appearance" }).click();
+      await page.keyboard.press("Escape");
+    }
+
     await page.screenshot({ path: test.info().outputPath("review-workbench.png") });
     const packageParent = test.info().outputPath("packages");
     await mkdir(packageParent, { recursive: true });
@@ -346,6 +426,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     app = await electron.launch(options);
     page = await app.firstWindow();
+    monitor();
     await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
       "Rechecked Revision B",
     );
@@ -354,6 +435,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("check-history").locator("li").last()).toContainText(
       "Checked, no issue",
     );
+    expect(rendererErrors).toEqual([]);
   } finally {
     await app.close();
 

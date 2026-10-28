@@ -23,7 +23,7 @@ const VisualAssertion = Schema.Struct({
 });
 
 /** Independently attributable room, panel, circuit and visible protection notation. */
-export const DeviceLabels = Schema.Struct({
+const DeviceLabels = Schema.Struct({
   room: VisualAssertion,
   panel: VisualAssertion,
   circuit: VisualAssertion,

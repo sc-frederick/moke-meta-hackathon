@@ -6,11 +6,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ReviewSegmentation, type SamTransport } from "../backend/inference/segmentation.ts";
-import { DataDirectoryOwnership } from "../backend/ownership.ts";
-import { ExecutionFence, ExecutionImage } from "../backend/review/execution-port.ts";
-import { Artifact } from "../src/lib/review/contracts.ts";
-import { SamInspectionRequest } from "../src/lib/review/segmentation.ts";
+import { ReviewSegmentation, type SamTransport } from "../../backend/inference/segmentation.ts";
+import { DataDirectoryOwnership } from "../../backend/ownership.ts";
+import { ExecutionFence, ExecutionImage } from "../../backend/review/execution-port.ts";
+import { Artifact } from "#lib/review/contracts.ts";
+import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 
 // Public parser conformance fixture retained in tests/reconciliation.test.ts.
 const oneBitMask = "<|mask;x=0;y=0;c=0.8;data=1,1,!!!!!&O.lVP|>";
@@ -46,7 +46,9 @@ async function fixture(options: Options = {}) {
     "0003_review_execution.sql",
     "0004_sam_observations.sql",
   ]) {
-    database.exec(await readFile(new URL(`../migrations/${migration}`, import.meta.url), "utf8"));
+    database.exec(
+      await readFile(new URL(`../../migrations/${migration}`, import.meta.url), "utf8"),
+    );
   }
 
   const ownerRuntime = ManagedRuntime.make(DataDirectoryOwnership.layer(directory));

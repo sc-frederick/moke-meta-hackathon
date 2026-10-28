@@ -1,205 +1,120 @@
 # Moke
 
-A desktop workbench for engineering drawing review, built for the Meta AI
-Developer Hackathon.
+Moke is a desktop workbench for reviewing engineering drawings, built for the
+Meta AI Developer Hackathon. Import a PDF, inspect a finding against its source,
+and correct the evidence when a model misreads it. When a drawing changes, recheck
+the affected findings while keeping the earlier results.
 
-Moke helps engineers inspect drawing-review findings, correct
-the evidence behind them, and recheck the affected conclusions when a drawing
-changes. Each finding leads back to the source sheet, the observations,
-and the calculation that supports it.
+![Moke's desktop workbench with source evidence, accepted counts, and findings navigation](docs/screenshots/workbench.png)
 
 ## The review workflow
 
-The local workflow keeps the engineer involved at each step:
+1. **Import and confirm sheets.** Original PDFs stay in the local project. Confirm
+   sheet identities before using them as evidence.
+2. **Choose a coordination check.** Select the drawn and scheduled sources, the
+   object type and scope, and the discipline. Ask Moke to inspect that check with
+   an explicit model-call limit.
+3. **Inspect the evidence.** Meta Muse can request detailed crops from the original
+   PDF. SAM can propose object boundaries. Every observation remains a proposal
+   until the reviewer accepts it.
+4. **Accept or correct counts.** Compare reviewer-accepted quantities with
+   `schedule-count-v1`. Missing evidence leaves the check unresolved. Corrections
+   retain the original finding and its calculation history.
+5. **Recheck a revision.** Associate replacement sheets, confirm what changed,
+   and review fresh evidence. Unrelated results retain their history.
 
-1. **Review a drawing set.** Keep the original PDFs in a local project and select
-   the sheets and engineering check to review.
-2. **Take a closer look.** Meta Muse identifies missing evidence and requests
-   detailed crops rendered from the original PDF. SAM proposes object boundaries
-   where segmentation helps.
-3. **Inspect a finding.** Follow it to the source region, accepted facts, and
-   explicit check inputs. Missing or unreadable evidence leaves a check unresolved.
-4. **Correct the interpretation.** Update an accepted fact and recompute the
-   dependent checks, including withdrawing a false alarm when warranted.
-5. **Recheck a revision.** Mark affected results as stale, inspect the new
-   evidence, and retain the history and unrelated results.
+![A revised drawing resolves the original count mismatch while retaining earlier checks](docs/screenshots/revision.png)
 
-The first rule, `schedule-count-v1`, compares reviewer-accepted drawing and
-schedule quantities. The original two-sheet fixture demonstrates a supported
-issue, corrected false alarm, unchanged control, and revision recheck. It is a
-coordination check, not a verified code threshold. See [the hero case](docs/fixtures/hero-case.md).
+The current beta supports drawn-to-schedule quantity coordination. It does not
+verify governing codes or produce a complete permit review. Model proposals and
+SAM masks do not establish engineering completeness or physical dimensions.
+The [two-sheet demonstration](docs/fixtures/hero-case.md) includes a supported
+issue, a corrected false alarm, an unchanged control, and a revision recheck.
 
-## Current status
+## How it works
 
-The production Nightdesk workbench imports PDFs, renders source regions, accepts
-reviewer facts, calculates count differences, retains corrections, and associates
-revisions. Muse inspects real overview/detail images and proposes observations.
-SAM is available to the Meta route for geometric proposals. Neither model accepts
-facts or declares engineering completeness.
+| Process            | Owns                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| SvelteKit renderer | Projects, conversations, findings, and source inspection                                       |
+| Electron           | Windows, menus, file dialogs, protected credentials, and the trusted renderer bridge           |
+| Bun backend        | Effect application services, SQLite, PDF workers, evidence, calculations, and review execution |
 
-Pi Durable journals and a separate pre-send ledger retain execution progress.
-Pause/cancel, crash recovery, explicit uncertainty acknowledgement, bounded
-budgets, complete package export/restore, and source hashes protect local evidence.
-Missing evidence remains unresolved. Keys use Electron's protected startup pipe;
-packaged launches use OS-encrypted storage or an explicitly selected session file.
+Effect Schema contracts validate process messages. The renderer uses Effect RPC
+over authorized Electron MessagePorts; Electron forwards application requests to
+Bun over authenticated loopback HTTP. Database access and provider credentials
+stay outside the renderer.
 
-Normal tests require no provider keys. Live validation is explicit and budgeted:
-`bun --env-file=/path/to/private.env scripts/validate-core.ts --live`.
-See [validation evidence and limits](docs/research/core-validation.md).
+Pi Durable journals review execution. A separate pre-send ledger records model
+requests, so interrupted requests with unknown outcomes require acknowledgement
+before a new run. Reviews have bounded budgets and pause/cancel controls.
+Complete packages export and restore databases, original PDFs, rendered evidence,
+and execution journals together.
 
-## Review architecture
-
-The selected architecture keeps projects and review execution local by default,
-with Modal checkpoint handoff deferred as an optional follow-up:
-
-| Part                   | Responsibility                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| Electron and SvelteKit | Desktop workbench, project navigation, findings, and source inspection                          |
-| Bun and Effect         | Application services, shared contracts, SQLite, evidence, calculations, and dependency tracking |
-| Pi Durable             | Persist the agent's execution state behind an Effect application service                        |
-| Meta Muse and SAM      | Choose useful inspection actions, interpret drawing evidence, and propose geometry              |
-| Modal Sandbox, planned | Continue the same versioned review engine from a checkpoint after an explicit handoff           |
-
-Local execution still uses hosted inference: selected drawing evidence is sent
-to Meta or Baseten. The planned cloud handoff also transfers the source material
-needed to continue the review. Neither path implies fully offline inference.
-
-See the [review runtime decision](docs/review-runtime.md) for ownership, recovery,
-and handoff requirements, and the [docs index](docs/README.md) for the supporting
-design and setup notes.
+Projects run locally, but inference uses hosted Meta or Baseten APIs and sends
+selected drawing evidence to the provider. Modal checkpoint handoff remains
+planned. See [the runtime decision](docs/review-runtime.md) and
+[data and recovery](docs/data.md).
 
 ## Development
 
-Add the Meta and Baseten hackathon keys to the root `.env` file. For a fresh
-checkout, copy `.env.example` to `.env` first. See [Inference setup](docs/inference.md)
-for the key names and [Model reference](docs/models.md) for the full Meta catalog
-and Baseten's required hackathon model ID. The [docs index](docs/README.md) links
-the rest of the project documentation.
-
-Install the Bun version in `.bun-version`, then run:
+Install the Bun version pinned in [.bun-version](.bun-version), then run:
 
 ```sh
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
-Bun runs the development tools and the application backend. Electron owns the
-windows, menus, dialogs, and trusted renderer bridge. Its embedded Node runtime
-forwards typed application requests to Bun. The renderer has no database or Bun
-access. The packaged app includes a standalone Bun executable; users do not
-install Bun or Node.
+You can import drawings, accept counts, and evaluate checks without provider keys.
+For model inspections, copy [.env.example](.env.example) to `.env` and set
+`MODEL_API_KEY`. Set `MOKE_PROVIDER=baseten` and `BASETEN_API_KEY` to use Baseten.
+Restart the app after changing configuration. See [inference setup](docs/inference.md)
+for credentials and the limits of each route.
 
-## Desktop UI study
-
-Open [the interactive study](design/concepts/index.html) directly in a browser.
-It previews the approved project-based chat navigation, findings menu, and source
-panel using sample content. The production workbench uses the same selected design
-with real project data and review services.
-See [the design notes](design/concepts/DESIGN.md) for the interaction and reference.
-Screenshots show the [findings menu](design/concepts/preview.png) and
-[source panel](design/concepts/preview-source.png).
-
-```sh
-bun run build:concepts
-bun run check:concepts
-```
-
-The study is self-contained. Its Svelte source is checked by `bun run check`, and
-CI rebuilds the standalone HTML on all supported desktop platforms.
-
-## Check API keys
-
-Keep `MODEL_API_KEY` and `BASETEN_API_KEY` in the root `.env`, which Git ignores.
-For a fresh checkout, copy `.env.example` to `.env` and fill in the keys. From the
-repository root, run:
-
-```sh
-bun run check:api-keys
-# Or: bun scripts/check-api-keys.ts
-```
-
-Bun loads `.env` automatically. The script sends one small text generation to
-Meta and one to Baseten using the configured base URLs and text models. Each
-request has a 30-second timeout and may consume API credits. It prints a result
-for each provider without printing keys or response bodies, then exits with code
-1 if either check fails. Image, audio, and segmentation models are not tested.
-
-The requests follow [Meta's Chat Completions API](https://dev.meta.ai/docs/protocols/chat-completions)
-and [Baseten's Model APIs](https://docs.baseten.co/inference/model-apis/overview).
-
-## SAM drawing experiment
-
-Run `bun run test:sam` to prepare PDF crops and requests without inference.
-Run `bun run test:sam --live` to test SAM 3.1 on the local drawing fixtures.
-See [SAM drawing experiment](docs/segmentation-test.md) for Poppler setup,
-case selection, saved evidence, and coordinate conventions.
-
-The [adaptive Meta review](docs/adaptive-meta-review.md) uses Muse tool calls to
-compare independent electrical inventories, request PDF zooms and apply fresh
-SAM guidance. Prepare it with `bun run test:review-agent`; add `--live` for the
-bounded model experiment. See [the broader drawing study](docs/sam-drawing-expansion.md)
-for lighting, receptacles, HVAC, doors and observed failure cases.
-
-The [additional-set study](docs/sam-expanded-sets.md) tests the expanded D–J pack
-across electrical, fire alarm, structural and civil workflows. Recipes are in
-`experiments/sam/expanded/`; the supplied PDFs remain under
-`Moke-Hackathon-Drawings/expanded/`.
-
-## Toolchain
-
-| Task                       | Tool                                                                             |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| Packages and scripts       | Bun, with `bun.lock` and a frozen install in CI                                  |
-| Type checking              | Native `bun check`, plus `svelte-check --tsgo` for Svelte and Effect diagnostics |
-| Formatting                 | Native `bun fmt`                                                                 |
-| Linting                    | Oxlint running on Bun, with the existing generic and Effect rules                |
-| Tests                      | `bun:test` plus Playwright's real Electron smoke test                            |
-| Desktop and backend builds | Native `bun build`, with a compiled backend executable                           |
-| SvelteKit frontend build   | Vite running on Bun                                                              |
-| Installers                 | Electron Builder running on Bun                                                  |
-
-Bun 1.4.4's installed binary does not provide the documented native `bun lint`
-command. `bun run lint` uses Oxlint and preserves all local rule customizations.
-`bun install` runs `effect:setup` automatically to patch the compiler used by
-`svelte-check --tsgo`. Re-run `bun run effect:setup` if that compiler is replaced.
+Bun runs tools and the application backend. The packaged app includes the Bun
+executable, PDF renderer, and native assets; users do not install Bun or Node.
+Build installers with `bun run package:desktop`. See [desktop builds and releases](docs/deployment.md).
 
 ## Verification
 
 ```sh
-bun run verify
-bun run package:desktop
-bun run test:packaged
+bun run verify          # checks, smoke tests, builds, and Electron end-to-end tests
+bun run test:packaged   # after packaging, repeat the desktop flow against the packaged executable
+bun run test:screenshots
 ```
 
-Use `xvfb-run -a bun run verify` and `xvfb-run -a bun run test:packaged` on headless
-Linux. Tests cover real Bun RPC, authentication, persistence, migrations, backups,
-restore failures, process shutdown, and the desktop UI across app restarts.
-Packaging tests launch the installed-layout app and its compiled Bun backend.
-See `docs/deployment.md` for CI and runtime details and `docs/data.md` for recovery.
+Tests use real local databases, RPC, PDF workers, and Electron. Hosted-provider
+boundaries use local transports; normal verification requires no keys and makes
+no paid requests. Headless Linux needs an X display, for example
+`xvfb-run -a bun run verify`. Install Poppler for the optional experiment smoke
+tests; they skip explicitly when `pdftoppm` is unavailable.
 
-## Project choices
+Screenshots come from the same Electron workflow using authored synthetic PDFs,
+without inference. [Development and testing](docs/development.md) explains the
+suite layout, screenshot refresh, and toolchain.
 
-Choose authentication before deployment. The default is undecided. The private
-local backend credential is a process boundary, not end-user authentication.
-Authenticated apps must implement and pass `test:auth` before deployment. Apps
-intentionally without login record authentication as none in `.project-kit/manifest.json`.
+## Repository layout
 
-The desktop UI study adapts Nightdesk from the private Uiverse archive. See the
-[design notes](design/concepts/DESIGN.md) for the selected reference and license
-handling. Keep reference source assets out of public distributions.
+```text
+src/          SvelteKit workbench and shared Effect Schema/RPC contracts
+desktop/     Electron shell, preload, and backend connection
+backend/      Application services, PDF workers, inference, and review storage
+migrations/   Immutable SQLite migrations
+tests/       Smoke tests, Electron end-to-end flows, and synthetic fixtures
+scripts/      Development, build, packaged checks, and opt-in model experiments
+docs/        Setup, architecture, screenshots, and validation evidence
+design/       Selected Nightdesk design provenance and the original UI study
+experiments/  SAM recipes, captured proposals, and research evidence
+```
+
+The [documentation index](docs/README.md) separates setup and architecture from
+hackathon research and drawing experiments. The original [UI study](design/concepts/DESIGN.md)
+records the Nightdesk reference and third-party asset attribution.
 
 ## Hackathon provenance
 
-The Moke name and review prompts predate this entry. This repository starts a
-fresh application implementation from the project-kit desktop starter; it does
-not reuse the earlier Moke application. The drawing-review behavior, evidence
-handling, corrections, and revision workflow are the intended new contribution.
-The [runtime decision](docs/review-runtime.md) records dependency attribution
-and the distinction between the underlying agent harness and Moke's work.
-
-## Maintenance
-
-The project-kit baseline originally used pnpm and Vite+. Review generated updates
-before applying them so they preserve this project's Bun toolchain and backend
-boundary. Effect reference source and vendored lint rules remain read-only.
-Never edit applied database migrations.
+The Moke name and review prompts predate this entry. This repository implements
+a fresh application from the project-kit desktop starter, with drawing evidence,
+corrections, and revision tracking built for the hackathon. It does not reuse the
+earlier Moke application. Prompt and dependency provenance live in
+[the project manifest](.project-kit/manifest.json) and
+[the review prompt sources](backend/review/prompts/README.md).

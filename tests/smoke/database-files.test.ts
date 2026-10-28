@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "bun:test";
-import { exportDatabase, migrateDatabase, restoreDatabase } from "../backend/database-files.ts";
+import { exportDatabase, migrateDatabase, restoreDatabase } from "../../backend/database-files.ts";
 import { DatabaseFileError } from "#lib/backend-rpc.ts";
 
 test("an upgrade backs up real data; export and restore recover it", async () => {

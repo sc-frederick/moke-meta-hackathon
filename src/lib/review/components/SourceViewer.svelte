@@ -49,12 +49,11 @@
     panY = 0;
   }
 
-  function onPointerDown(event: PointerEvent) {
+  function onPointerDown(event: PointerEvent & { currentTarget: HTMLDivElement }) {
     dragging = true;
     lastX = event.clientX;
     lastY = event.clientY;
-    // SAFETY: pointer handlers are registered on the viewport div element.
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function onPointerMove(event: PointerEvent) {
@@ -65,10 +64,9 @@
     lastY = event.clientY;
   }
 
-  function onPointerUp(event: PointerEvent) {
+  function onPointerUp(event: PointerEvent & { currentTarget: HTMLDivElement }) {
     dragging = false;
-    // SAFETY: pointer handlers are registered on the viewport div element.
-    const element = event.currentTarget as HTMLElement;
+    const element = event.currentTarget;
 
     if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
   }

@@ -94,11 +94,11 @@ Add `--live` to make paid requests. Other recipe files are `provided-cases.json`
 Muse box proposals in crop pixels; they do not rerun Muse or test independent SAM
 discovery. Manual recipes explicitly use source-reviewed locations.
 
-`tests/expanded-segmentation.test.ts` validates every recipe and prompt before
+`tests/smoke/expanded-segmentation.test.ts` validates every recipe and prompt before
 inference, including image bounds, required point labels and unique IDs across
-the recipe files. Its second test reproduces all 15 scored branches from
-`captured-locations.json` and `expected-metrics.json`, matching one-to-one within
-semantic kinds. Both tests need no PDF files, API credentials or model calls.
+the recipe files. This preflight needs no PDF files, API credentials, or model
+calls. Historical scores for the 15 branches remain in `captured-locations.json`
+and `expected-metrics.json`; the test suite no longer reruns the scoring helper.
 
 Source review methods: Moke's
 [electrical](https://github.com/sc-frederick/skills/blob/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review/references/disciplines/electrical.md),

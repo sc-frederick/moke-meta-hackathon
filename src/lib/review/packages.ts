@@ -4,7 +4,7 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import { ExecutionState } from "./execution.ts";
 
 /** Directory package format. The manifest is written last and is not an archive. */
-export const packageFormat = "moke-review-package";
+const packageFormat = "moke-review-package";
 
 /** Current package manifest version. Older and newer versions are refused. */
 export const packageFormatVersion = 1;

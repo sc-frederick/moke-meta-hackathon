@@ -3,16 +3,16 @@ import { Effect, Schema } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AdaptiveCase, runAdaptiveReview } from "../backend/segmentation/adaptive-review.ts";
-import { DrawingCrop, pngSize, sha256 } from "../backend/segmentation/fixtures.ts";
+import { AdaptiveCase, runAdaptiveReview } from "../../backend/segmentation/adaptive-review.ts";
+import { DrawingCrop, pngSize, sha256 } from "../../backend/segmentation/fixtures.ts";
 import {
   MetaReviewClient,
   MetaReviewError,
   VisualDevice,
   type ReviewAction,
   type ReviewTurn,
-} from "../backend/segmentation/meta-review.ts";
-import { SamClient } from "../backend/segmentation/sam.ts";
+} from "../../backend/segmentation/meta-review.ts";
+import { SamClient } from "../../backend/segmentation/sam.ts";
 
 const temporary: Array<string> = [];
 

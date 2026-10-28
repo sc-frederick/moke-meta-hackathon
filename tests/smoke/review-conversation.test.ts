@@ -6,17 +6,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import { DataDirectoryOwnership } from "../backend/ownership.ts";
-import { migrateDatabase } from "../backend/database-files.ts";
-import { ImportedPdf } from "../backend/documents/types.ts";
-import { createReviewOperations } from "../backend/review/operations.ts";
-import { ReviewStore } from "../backend/review/store.ts";
-import { ReviewExecution, type ExecutionConfiguration } from "../backend/review/execution.ts";
+import { DataDirectoryOwnership } from "../../backend/ownership.ts";
+import { migrateDatabase } from "../../backend/database-files.ts";
+import { ImportedPdf } from "../../backend/documents/types.ts";
+import { createReviewOperations } from "../../backend/review/operations.ts";
+import { ReviewStore } from "../../backend/review/store.ts";
+import { ReviewExecution, type ExecutionConfiguration } from "../../backend/review/execution.ts";
 import {
   reviewInstructionRevision,
   reviewPromptVersion,
-} from "../backend/review/prompts/review-prompt.ts";
-import type { ProviderTransport } from "../backend/inference/provider.ts";
+} from "../../backend/review/prompts/review-prompt.ts";
+import type { ProviderTransport } from "../../backend/inference/provider.ts";
 import {
   CommandId,
   FindingId,

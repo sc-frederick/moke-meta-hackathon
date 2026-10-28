@@ -1,6 +1,5 @@
 import { Effect, Redacted, Schema } from "effect";
 
-// Bun loads the root .env automatically. Run this script from the repository root.
 const providers = [
   {
     name: "Meta",

@@ -27,24 +27,18 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "bun:test";
 
-import { migrateDatabase } from "../backend/database-files.ts";
+import { migrateDatabase } from "../../backend/database-files.ts";
 import {
   exportReviewPackage,
   hasReviewBearingRows,
   recoverInterruptedRestore,
   restoreReviewPackage,
   type PackagesConfig,
-} from "../backend/review/packages.ts";
+} from "../../backend/review/packages.ts";
 import { BackendConfig } from "#lib/backend-rpc.ts";
-import { Application } from "../backend/application.ts";
-import {
-  Artifact,
-  CommandId,
-  Project,
-  ReviewCommand,
-  Revision,
-} from "../src/lib/review/contracts.ts";
-import { PackageError, packageEngineFormat } from "../src/lib/review/packages.ts";
+import { Application } from "../../backend/application.ts";
+import { Artifact, CommandId, Project, ReviewCommand, Revision } from "#lib/review/contracts.ts";
+import { PackageError, packageEngineFormat } from "#lib/review/packages.ts";
 
 const migrations = resolve("migrations");
 

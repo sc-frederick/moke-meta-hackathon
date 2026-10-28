@@ -42,7 +42,7 @@ const Hash = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
 const Confidence = Schema.NullOr(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })));
 
 /** A SAM instance is a geometry proposal, never an accepted fact or a coverage assertion. */
-export const SamInstance = Schema.Struct({
+const SamInstance = Schema.Struct({
   id: Schema.String,
   confidence: Confidence,
   sourcePixelsInclusive: Coordinates,

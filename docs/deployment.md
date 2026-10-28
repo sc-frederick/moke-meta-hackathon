@@ -33,7 +33,7 @@ are generated from the project name.
 ## Bun backend and build tools
 
 CI installs the exact Bun version from `.bun-version` and uses `bun install
---frozen-lockfile`. Native Bun commands check types, format, run unit tests, bundle
+--frozen-lockfile`. Native Bun commands check types, format, run smoke tests, bundle
 Electron entrypoints, and compile the backend. SvelteKit keeps its Vite integration,
 running on Bun. Oxlint and Electron Builder also run on Bun; the local custom rules
 and patched Svelte/Effect component checks remain enabled.

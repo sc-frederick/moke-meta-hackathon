@@ -158,7 +158,7 @@ export class CountFact extends Schema.Class<CountFact>("CountFact")({
 }) {}
 
 /** Check outcomes describe the available evidence rather than reviewer task status. */
-export const CheckOutcome = Schema.Literals([
+const CheckOutcome = Schema.Literals([
   "pending",
   "running",
   "needs_evidence",

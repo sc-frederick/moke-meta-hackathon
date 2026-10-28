@@ -128,9 +128,10 @@ establish a verified revision.
 
 ## Verification and sources
 
-`bun test tests/segmentation.test.ts` covers protocol decoding, empty results,
-failed/incomplete output, coordinate mapping, location prompts, and the real CLI
-against a local Responses endpoint. The CLI integration test renders a synthetic
+`bun test tests/smoke/segmentation.test.ts` drives the real CLI against a local
+Responses endpoint, checking saved masks, empty results, hashes, safe preparation,
+and access failures. The production SAM smoke suite covers coordinate mapping,
+guided prompts, and rejected responses through the application service. The CLI integration test renders a synthetic
 PDF and needs Poppler; it is explicitly skipped when `pdftoppm` is unavailable.
 Automated checks do not call Meta or require the local drawing pack. Run the full
 repository check with `bun run verify`.

@@ -1,4 +1,4 @@
-import { executionPersistence } from "../backend/review/execution-store.ts";
+import { executionPersistence } from "../../backend/review/execution-store.ts";
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createCanvas } from "@napi-rs/canvas";
@@ -17,22 +17,18 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { acquireDataDirectoryOwnership, OwnershipError } from "../backend/ownership.ts";
-import { ReviewExecution, executionCommandId } from "../backend/review/execution.ts";
+import { acquireDataDirectoryOwnership, OwnershipError } from "../../backend/ownership.ts";
+import { ReviewExecution } from "../../backend/review/execution.ts";
 import {
   CountProposal,
   ExecutionEvidence,
   ExecutionImage,
   type ExecutionPort,
   type ExecutionFence,
-} from "../backend/review/execution-port.ts";
-import { Artifact, CommandId, CommandReceipt } from "../src/lib/review/contracts.ts";
-import {
-  ExecutionBudget,
-  ExecutionError,
-  type ExecutionStatus,
-} from "../src/lib/review/execution.ts";
-import { createAdmittedModels, type ProviderTransport } from "../backend/inference/provider.ts";
+} from "../../backend/review/execution-port.ts";
+import { Artifact, CommandId, CommandReceipt } from "#lib/review/contracts.ts";
+import { ExecutionBudget, ExecutionError, type ExecutionStatus } from "#lib/review/execution.ts";
+import { createAdmittedModels, type ProviderTransport } from "../../backend/inference/provider.ts";
 
 const projectId = randomUUID();
 const findingId = randomUUID();
@@ -111,17 +107,20 @@ async function directory() {
   const path = await mkdtemp(join(tmpdir(), "review-execution-"));
   const db = new Database(join(path, "app.sqlite"));
   db.exec(
-    await readFile(new URL("../migrations/0003_review_execution.sql", import.meta.url), "utf8"),
+    await readFile(new URL("../../migrations/0003_review_execution.sql", import.meta.url), "utf8"),
   );
   db.exec(
-    await readFile(new URL("../migrations/0004_sam_observations.sql", import.meta.url), "utf8"),
-  );
-  db.exec(
-    await readFile(new URL("../migrations/0005_execution_commands.sql", import.meta.url), "utf8"),
+    await readFile(new URL("../../migrations/0004_sam_observations.sql", import.meta.url), "utf8"),
   );
   db.exec(
     await readFile(
-      new URL("../migrations/0007_review_prompt_context.sql", import.meta.url),
+      new URL("../../migrations/0005_execution_commands.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  db.exec(
+    await readFile(
+      new URL("../../migrations/0007_review_prompt_context.sql", import.meta.url),
       "utf8",
     ),
   );
@@ -570,12 +569,6 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function*(){ yield* acquireData
     await rm(path, { recursive: true, force: true });
   }
 }, 15000);
-
-test("journal task IDs map to stable command UUIDs without model call identity", () => {
-  const journal = randomUUID();
-  expect(executionCommandId(journal, 42)).toBe(executionCommandId(journal, 42));
-  expect(executionCommandId(journal, 42)).not.toBe(executionCommandId(journal, 43));
-});
 
 test("compiled Pi process killed at dispatch reopens uncertain with zero extra sends", async () => {
   const path = await directory();

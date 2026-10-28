@@ -6,7 +6,7 @@ import { Effect, Exit } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { BackendApi } from "../desktop/backend.ts";
+import { BackendApi } from "../../desktop/backend.ts";
 
 test("Bun owns typed APIs, authenticated access, recovery, persistence, and process cleanup", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "bun-backend-"));

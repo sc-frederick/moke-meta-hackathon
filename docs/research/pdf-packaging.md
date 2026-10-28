@@ -1,4 +1,9 @@
-# PDF packaging (gate 0B)
+# PDF packaging
+
+The early standalone probe is retired. Current packaging verification uses
+`bun run package:desktop` followed by `bun run test:packaged`, which imports and
+renders the demonstration PDF through the shipped worker. Measurements below
+are retained as historical evidence.
 
 Primary demo target: **Linux x64**. Packages pin `pdfjs-dist@6.4.299` and `@napi-rs/canvas@1.0.13`.
 
@@ -13,7 +18,6 @@ After `bun run prepare:pdf-assets`, the backend bundle includes:
 | `dist/backend/pdf-assets/layout.json`                 | Selected native package for `process.platform` / `process.arch` |
 | `dist/backend/pdf-assets/licenses.json`               | Bundled license text                                            |
 | `dist/backend/pdf-worker`                             | NDJSON worker (import, bounded region render)                   |
-| `dist/backend/pdf-packaging-probe`                    | Compiled overview render for packaging checks                   |
 
 Runtime environment for workers:
 
@@ -30,9 +34,9 @@ Platform selection lives in `scripts/prepare-pdf-assets.ts` (`canvasNativePackag
 - Dev render (`render-probe.mjs`): page 1 MediaBox view `[0, 0, 612, 792]`; overview **512×372 px**, **112 KB** PNG; 300 DPI crop **2500×1667 px**, **95 KB** PNG
 - Packaged asset smoke (`MOKE_PDFJS_ASSETS=/tmp/moke-packaged-layout/pdfjs`, native **37 MB** `skia.linux-x64-gnu.node`): overview **512×372**, stdout `ok 512 372`
 
-### Worktree packaging probe (`bun run probe:pdf-packaging`)
+### Historical worktree packaging probe
 
-Latest run (generated fixture `tests/fixtures/generated/original.pdf`, temp layout mirroring installed resources, **no** repo `node_modules` on `PATH` for the probe binary):
+Recorded run (generated fixture `tests/fixtures/generated/original.pdf`, temp layout mirroring installed resources, **no** repo `node_modules` on `PATH` for the probe binary):
 
 ```json
 {
@@ -50,7 +54,6 @@ Full machine-readable output: `docs/research/pdf-packaging-probe-result.json`.
 Compiled artifact sizes (Linux x64, Bun 1.4.4 compile):
 
 - `dist/backend/pdf-worker` — bundled worker (~147 MB class, same order as preflight `pdf-render-bin`)
-- `dist/backend/pdf-packaging-probe` — minimal overview probe (~147 MB)
 
 Electron Builder copies `app-backend`, `pdf-worker`, and `pdf-assets` under `resources/backend/` (`electron-builder.json`).
 
@@ -69,4 +72,4 @@ Parent wiring should set `workerCommand` to the packaged `pdf-worker` binary and
 
 ## Tests
 
-`tests/documents.test.ts` covers import/hash storage, rotation round-trip (≤1 px), malformed PDF rejection, pixel-limit rejection (`userUnit` 2 full page @ 300 DPI), chunked read, and interruptible import (worker delay hook).
+`tests/smoke/documents.test.ts` covers import/hash storage, rotation round-trip (≤1 px), malformed PDF rejection, pixel-limit rejection (`userUnit` 2 full page @ 300 DPI), chunked read, and interruptible import (worker delay hook).

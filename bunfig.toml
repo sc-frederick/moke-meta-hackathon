@@ -6,8 +6,7 @@ shell = "bun"
 exact = true
 
 [test]
-root = "./tests"
-pathIgnorePatterns = ["**/e2e/**"]
+root = "./tests/smoke"
 
 [fmt]
 printWidth = 100

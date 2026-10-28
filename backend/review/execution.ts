@@ -71,7 +71,7 @@ const callback = <A>(operation: () => Promise<A>) =>
   });
 
 /** Stable UUID command identity derived from the immutable journal and durable tool task. */
-export function executionCommandId(
+function executionCommandId(
   journalId: string,
   taskId: number,
   operation = "tool",
@@ -119,10 +119,6 @@ export class ReviewExecution extends Context.Service<
       projectId: ProjectKey,
       afterSequence: number,
     ) => Stream.Stream<ExecutionEvent, ExecutionError>;
-    readonly events: (
-      projectId: ProjectKey,
-      afterSequence: number,
-    ) => Effect.Effect<ReadonlyArray<ExecutionEvent>, ExecutionError>;
     /** Bounded close persists pause/uncertainty first; false means the process must exit holding ownership. */
     readonly close: Effect.Effect<boolean, ExecutionError>;
     /** Drain and close journals for a consistent package, then admit only explicitly requested new work. */
@@ -1214,7 +1210,6 @@ export class ReviewExecution extends Context.Service<
           status,
           control,
           observe,
-          events: (projectId, afterSequence) => store.query(store.events(projectId, afterSequence)),
           close,
           quiesce,
         });
