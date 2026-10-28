@@ -36,7 +36,7 @@ export interface ProviderConfiguration {
 }
 
 /** Durable admission callbacks are implemented with short application SQL operations. */
-export interface ProviderAdmission {
+interface ProviderAdmission {
   readonly maxInputTokens: number;
   readonly maxOutputTokens: number;
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;

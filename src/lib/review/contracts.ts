@@ -141,7 +141,13 @@ export class CountFact extends Schema.Class<CountFact>("CountFact")({
       route: Schema.Literals(["live", "recorded"]),
       provider: Schema.Literals(["meta", "baseten"]),
       model: Schema.String,
-      promptVersion: Schema.Literal("selected-finding-review-v1"),
+      promptVersion: Schema.Literals([
+        "selected-finding-review-v1",
+        "moke-selected-coordination-v2",
+      ]),
+      instructionRevision: Schema.optionalKey(Schema.String),
+      discipline: Schema.optionalKey(Schema.String),
+      reviewerMessageId: Schema.optionalKey(Identifier),
       sourceVersion: Schema.Int,
       factVersion: Schema.Int,
     }),
@@ -209,6 +215,15 @@ export class ReviewMessage extends Schema.Class<ReviewMessage>("ReviewMessage")(
   role: Schema.Literals(["reviewer", "application"]),
   text: Reason,
   createdAt: Schema.String,
+  origin: Schema.optionalKey(
+    Schema.Struct({
+      runId: Identifier,
+      findingId: FindingId,
+      promptVersion: Schema.String,
+      instructionRevision: Schema.NullOr(Schema.String),
+      discipline: Schema.NullOr(Schema.String),
+    }),
+  ),
 }) {}
 
 /** Persisted event cursors make reconnect independent of in-memory broadcasts. */

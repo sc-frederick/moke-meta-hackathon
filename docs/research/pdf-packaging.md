@@ -56,7 +56,7 @@ Electron Builder copies `app-backend`, `pdf-worker`, and `pdf-assets` under `res
 
 ## Application API (backend)
 
-Exported from `backend/documents/index.ts`:
+Import from the owning modules under `backend/documents/`:
 
 - `Documents` (`Context.Service`) with `Documents.layer(config)`
 - `DocumentsConfig`: `{ dataDirectory, workerCommand, assetsDirectory, nativeLibraryPath }`

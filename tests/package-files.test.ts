@@ -20,9 +20,15 @@ test("package reads without O_NOFOLLOW retain regular-file identity and reject l
 
     const link = join(directory, "link");
     await symlink(source, link, "file");
-    await expect(openRegularFile(link, 0)).rejects.toThrow("symbolic link");
+    const linked = await openRegularFile(link, 0).catch((cause: unknown) => cause);
+    expect(linked).toMatchObject({ message: expect.stringContaining("symbolic link") });
     await mkdir(join(directory, "folder"));
-    await expect(openRegularFile(join(directory, "folder"), 0)).rejects.toThrow("regular file");
+
+    const folder = await openRegularFile(join(directory, "folder"), 0).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(folder).toMatchObject({ message: expect.stringContaining("regular file") });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

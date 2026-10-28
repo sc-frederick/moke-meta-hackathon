@@ -12,15 +12,19 @@
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
+  import SheetSetup from "./SheetSetup.svelte";
+  import { sendReviewMessage } from "#lib/review/conversation.ts";
+  import {
+    ExecutionBudget,
+    ReviewDiscipline,
+    reviewDisciplines,
+    type ExecutionSetup,
+    type ExecutionStatus,
+  } from "#lib/review/execution.ts";
   import FindingInspector from "./FindingInspector.svelte";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
-  import {
-    findingSubtitle,
-    formatOutcome,
-    projectMonogram,
-    sheetCaption,
-  } from "./review-format.ts";
+  import { findingSubtitle, formatOutcome, projectMonogram } from "./review-format.ts";
 
   let { client }: { client: ReviewClient } = $props();
 
@@ -32,6 +36,7 @@
   let findQuery = $state("");
   let ready = $state(false);
   let busy = $state(false);
+  let importing = $state(false);
   let error = $state("");
   let snapshot = $state.raw<ReviewSnapshot | null>(null);
   let eventCursor = $state(0);
@@ -39,10 +44,23 @@
   let selectedProjectId = $state<Project["id"] | null>(null);
   let selectedConversationId = $state<string | null>(null);
   let selectedFindingId = $state<string | null>(null);
-  let sourceTab = $state<"evidence" | "sheets" | "revision">("evidence");
+  let sourceTab = $state<"evidence" | "sheets" | "revision" | "settings">("evidence");
+  let panelOpen = $state(false);
+  let reviewFindingId = $state<string | null>(null);
+  let reviewMode = $state<"review" | "note">("review");
+  let discipline = $state<typeof ReviewDiscipline.Type>("general");
+  let setup = $state.raw<ExecutionSetup | null>(null);
+  let executionStatus = $state.raw<ExecutionStatus | null>(null);
+  let callLimit = $state(12);
+  let notice = $state("");
+  let sourceLoading = $state(false);
+  let previewedSheet = $state.raw<Sheet | null>(null);
+  let projectConversations = $state.raw<Readonly<Record<string, ReadonlyArray<Conversation>>>>({});
+  const conversationViews = new Map<string, { draft: string; scroll: number }>();
+  let sourceRequest = 0;
+  let refreshRequest = 0;
 
   let newProjectName = $state("");
-  let newConversationTitle = $state("Drawing coordination");
   let draft = $state("");
   let expandedProjects = $state.raw<ReadonlyArray<string>>([]);
 
@@ -76,12 +94,6 @@
     ];
   }
 
-  let findingTitle = $state("Schedule coordination");
-  let findingObjectClass = $state("Selected fixture type");
-  let findingDrawnSheet = $state("");
-  let findingScheduledSheet = $state("");
-  let findingApplicability = $state(false);
-
   let sourceImageUrl = $state("");
   let sourceArtifact = $state.raw<Artifact | null>(null);
 
@@ -96,6 +108,7 @@
   let findingsBubble: HTMLElement | undefined = $state();
   let chatViewport: HTMLDivElement | undefined = $state();
   let composerInput: HTMLTextAreaElement | undefined = $state();
+  let searchInput: HTMLInputElement | undefined = $state();
 
   const project = $derived(snapshot?.project ?? null);
   const projects = $derived(snapshot?.projects ?? []);
@@ -112,10 +125,21 @@
   );
 
   const selectedFinding = $derived(findings.find((item) => item.id === selectedFindingId) ?? null);
+  const reviewFinding = $derived(findings.find((item) => item.id === reviewFindingId) ?? null);
+
+  const budget = $derived(
+    new ExecutionBudget({ maxCalls: callLimit, maxInputTokens: 64000, maxOutputTokens: 4096 }),
+  );
+
+  const executionBlocked = $derived(
+    executionStatus !== null &&
+      (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
+        (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged)),
+  );
 
   const visibleFindings = $derived(
     findings.filter((finding) =>
-      `${finding.title} ${finding.objectClass} ${formatOutcome(finding.outcome)}`
+      `${finding.title} ${finding.objectClass} ${findingSubtitle(finding, sheets)} ${formatOutcome(finding.outcome)}`
         .toLowerCase()
         .includes(findQuery.toLowerCase()),
     ),
@@ -127,10 +151,11 @@
       : messages.filter((message) => message.conversationId === activeConversation.id),
   );
 
-  const progressEvents = $derived(snapshot?.events ?? []);
-
   async function refresh(projectId: typeof selectedProjectId = selectedProjectId) {
+    const request = ++refreshRequest;
     const result = await client.snapshot(projectId, eventCursor);
+
+    if (request !== refreshRequest) return;
 
     if (!result.ok) {
       error = result.error.message;
@@ -155,6 +180,12 @@
       }),
     };
     error = "";
+
+    if (result.value.project !== null)
+      projectConversations = {
+        ...projectConversations,
+        [result.value.project.id]: result.value.conversations,
+      };
 
     if (result.value.events.length > 0) {
       eventCursor = result.value.events.at(-1)?.sequence ?? eventCursor;
@@ -196,6 +227,8 @@
     const name = newProjectName.trim();
 
     if (!name) return;
+    rememberConversation();
+    eventCursor = 0;
 
     const ok = await runCommand(
       reviewCommand(ReviewCommand.cases.CreateProject.make({ commandId: newCommandId(), name })),
@@ -206,32 +239,54 @@
     newProjectOpen = false;
     selectedFindingId = null;
     selectedConversationId = snapshot?.conversations[0]?.id ?? null;
+    reviewFindingId = null;
+    executionStatus = null;
+    draft = "";
+    closeSource();
   }
 
-  async function selectProject(entry: Project) {
+  function rememberConversation() {
+    if (activeConversation)
+      conversationViews.set(activeConversation.id, { draft, scroll: chatViewport?.scrollTop ?? 0 });
+  }
+
+  async function selectProject(entry: Project, conversationId?: string) {
+    rememberConversation();
+
+    if (entry.id === selectedProjectId) {
+      if (conversationId) await chooseConversation(conversationId);
+
+      return;
+    }
+
+    closeSource();
+    reviewFindingId = null;
+    executionStatus = null;
     eventCursor = 0;
     selectedProjectId = entry.id;
     selectedConversationId = null;
     selectedFindingId = null;
     await refresh(entry.id);
     const first = snapshot?.conversations[0];
-    selectedConversationId = first?.id ?? null;
+    await chooseConversation(conversationId ?? first?.id ?? null, false);
   }
 
   async function createConversation() {
     if (project === null) return;
-    await runCommand(
+    rememberConversation();
+
+    const ok = await runCommand(
       reviewCommand(
         ReviewCommand.cases.CreateConversation.make({
           commandId: newCommandId(),
           projectId: project.id,
           expectedVersion: project.version,
-          title: newConversationTitle.trim() || "Drawing coordination",
+          title: `Drawing review ${conversations.length + 1}`,
         }),
       ),
     );
-    const latest = snapshot?.conversations.at(-1);
-    selectedConversationId = latest?.id ?? selectedConversationId;
+
+    if (ok) await chooseConversation(snapshot?.conversations.at(-1)?.id ?? null, false);
   }
 
   async function postMessage(event: SubmitEvent) {
@@ -241,18 +296,38 @@
     const text = draft.trim();
 
     if (!text) return;
-    await runCommand(
-      reviewCommand(
-        ReviewCommand.cases.PostMessage.make({
-          commandId: newCommandId(),
-          projectId: project.id,
-          expectedVersion: project.version,
-          conversationId: activeConversation.id,
-          text,
-        }),
-      ),
-    );
-    draft = "";
+
+    const command = ReviewCommand.cases.PostMessage.make({
+      commandId: newCommandId(),
+      projectId: project.id,
+      expectedVersion: project.version,
+      conversationId: activeConversation.id,
+      text,
+    });
+
+    if (reviewMode === "review") {
+      if (reviewFinding === null || !setup?.configured || executionBlocked) return;
+      busy = true;
+
+      const result = await sendReviewMessage(client, {
+        command,
+        executionCommandId: newCommandId(),
+        findingId: reviewFinding.id,
+        discipline,
+        budget,
+      });
+
+      if (result.saved) draft = "";
+      await refresh();
+
+      if (result.saved) executionStatus = result.execution;
+      error = result.error ?? "";
+      busy = false;
+    } else if (await runCommand(command)) {
+      draft = "";
+      notice = "Note saved.";
+    }
+
     await tick();
 
     if (chatViewport) chatViewport.scrollTop = chatViewport.scrollHeight;
@@ -261,6 +336,7 @@
   async function importPdf() {
     if (project === null) return;
     busy = true;
+    importing = true;
 
     const result = await client.chooseReviewPdf({
       projectId: project.id,
@@ -268,16 +344,34 @@
       commandId: newCommandId(),
     });
 
-    busy = false;
-
     if (!result.ok) {
+      busy = false;
+      importing = false;
       error = result.error.message;
 
       return;
     }
 
-    if (result.value === null) return;
+    if (result.value === null) {
+      busy = false;
+      importing = false;
+
+      return;
+    }
+
     await refresh(result.value.projectId);
+    sourceRequest++;
+    sourceLoading = false;
+
+    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+    sourceImageUrl = "";
+    sourceArtifact = null;
+    panelOpen = true;
+    sourceTab = "sheets";
+    previewedSheet = null;
+    notice = "PDF imported. Review and confirm its sheets, then create a coordination check.";
+    busy = false;
+    importing = false;
   }
 
   async function confirmSheet(sheet: Sheet, label: string, coverage: Sheet["coverage"]) {
@@ -291,43 +385,58 @@
           expectedVersion: project.version,
           sheetId: sheet.id,
           label: trimmed,
-          coverage: coverage === "unreviewed" ? "partial" : coverage,
+          coverage,
         }),
       ),
     );
   }
 
-  async function createFinding(event: SubmitEvent) {
-    event.preventDefault();
+  async function createFinding(input: {
+    title: string;
+    objectClass: string;
+    drawnSheetId: string;
+    scheduledSheetId: string;
+    applicabilityConfirmed: boolean;
+  }) {
+    if (project === null) return false;
 
-    if (project === null || !findingDrawnSheet || !findingScheduledSheet) return;
-    const drawn = sheets.find((sheet) => sheet.id === findingDrawnSheet);
-    const scheduled = sheets.find((sheet) => sheet.id === findingScheduledSheet);
+    if (!input.title || !input.objectClass) {
+      error = "Enter a title and object class for this check.";
+
+      return false;
+    }
+
+    const drawn = sheets.find((sheet) => sheet.id === input.drawnSheetId);
+    const scheduled = sheets.find((sheet) => sheet.id === input.scheduledSheetId);
 
     if (drawn === undefined || scheduled === undefined) {
       error = "Choose both source sheets.";
 
-      return;
+      return false;
     }
 
-    await runCommand(
+    const ok = await runCommand(
       reviewCommand(
         ReviewCommand.cases.CreateFinding.make({
           commandId: newCommandId(),
           projectId: project.id,
           expectedVersion: project.version,
-          title: findingTitle.trim(),
-          objectClass: findingObjectClass.trim(),
+          title: input.title,
+          objectClass: input.objectClass,
           drawnSheetId: drawn.id,
           scheduledSheetId: scheduled.id,
-          applicabilityConfirmed: findingApplicability,
+          applicabilityConfirmed: input.applicabilityConfirmed,
         }),
       ),
     );
+
+    if (!ok) return false;
     createFindingOpen = false;
     const latest = snapshot?.findings.at(-1);
 
-    if (latest) selectedFindingId = latest.id;
+    if (latest) openFinding(latest);
+
+    return true;
   }
 
   async function loadSourceForFinding(
@@ -345,14 +454,31 @@
 
     if (sheet === undefined) return;
 
+    await loadSheetSource(sheet, dpi, region, finding);
+  }
+
+  async function loadSheetSource(
+    sheet: Sheet,
+    dpi: number,
+    region?: { x: number; y: number; width: number; height: number },
+    finding?: Finding,
+  ) {
+    if (project === null) return;
+    const request = ++sourceRequest;
+
+    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+    sourceImageUrl = "";
+    sourceArtifact = null;
+    sourceOverlays = [];
+    previewedSheet = sheet;
+    sourceLoading = true;
+
     const targetRegion = region ?? {
       x: sheet.box.x,
       y: sheet.box.y,
       width: sheet.box.width,
       height: sheet.box.height,
     };
-
-    busy = true;
 
     const rendered = await client.renderSource({
       projectId: project.id,
@@ -363,7 +489,8 @@
     });
 
     if (!rendered.ok) {
-      busy = false;
+      if (request !== sourceRequest) return;
+      sourceLoading = false;
       error = rendered.error.message;
 
       return;
@@ -371,7 +498,14 @@
 
     const artifact = rendered.value;
     const blob = await client.loadArtifactBlobUrl(project.id, artifact);
-    busy = false;
+
+    if (request !== sourceRequest) {
+      if (blob.ok) URL.revokeObjectURL(blob.value);
+
+      return;
+    }
+
+    sourceLoading = false;
 
     if (!blob.ok) {
       error = blob.error.message;
@@ -382,10 +516,10 @@
     if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
     sourceImageUrl = blob.value;
     sourceArtifact = artifact;
-    const drawn = facts.findLast((fact) => fact.findingId === finding.id && fact.side === "drawn");
+    const drawn = facts.findLast((fact) => fact.findingId === finding?.id && fact.side === "drawn");
 
     const scheduled = facts.findLast(
-      (fact) => fact.findingId === finding.id && fact.side === "scheduled",
+      (fact) => fact.findingId === finding?.id && fact.side === "scheduled",
     );
 
     sourceOverlays = [
@@ -400,6 +534,8 @@
 
   function openFinding(finding: Finding) {
     selectedFindingId = finding.id;
+    selectReviewFinding(finding.id);
+    panelOpen = true;
     sourceTab = "evidence";
     closeFindings();
     searchOpen = false;
@@ -408,6 +544,9 @@
   }
 
   function closeSource() {
+    sourceRequest++;
+    sourceLoading = false;
+    panelOpen = false;
     selectedFindingId = null;
 
     if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
@@ -436,7 +575,11 @@
   }
 
   function toggleSidebar() {
-    if (window.matchMedia("(max-width: 900px)").matches) {
+    if (
+      window.matchMedia("(max-width: 700px)").matches ||
+      (panelOpen && window.matchMedia("(max-width: 1180px)").matches)
+    ) {
+      sidebarOpen = true;
       mobileNavigationOpen = !mobileNavigationOpen;
     } else {
       sidebarOpen = !sidebarOpen;
@@ -451,18 +594,47 @@
       : [...expandedProjects, id];
   }
 
-  function chooseConversation(entry: Conversation) {
-    selectedConversationId = entry.id;
+  async function chooseConversation(id: string | null, remember = true) {
+    if (remember) rememberConversation();
+    selectedConversationId = id;
+    draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
     closeFindings();
+    await tick();
+
+    if (chatViewport)
+      chatViewport.scrollTop =
+        (id === null ? 0 : conversationViews.get(id)?.scroll) ?? chatViewport.scrollHeight;
+  }
+
+  function selectReviewFinding(id: string) {
+    if (reviewFindingId !== id) executionStatus = null;
+    reviewFindingId = id || null;
+  }
+
+  function openSetup(tab: "sheets" | "settings" | "revision", create = false) {
+    panelOpen = true;
+    sourceTab = tab;
+    createFindingOpen = create;
+    closeFindings();
+    mobileNavigationOpen = false;
+  }
+
+  async function openSearch() {
+    closeFindings();
+    searchOpen = true;
+    findQuery = "";
+    await tick();
+    searchInput?.focus();
   }
 
   function handleKey(event: KeyboardEvent) {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       closeFindings();
-      searchOpen = !searchOpen;
-      findQuery = "";
+
+      if (searchOpen) searchOpen = false;
+      else void openSearch();
     }
 
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
@@ -474,7 +646,7 @@
       searchOpen = false;
       mobileNavigationOpen = false;
 
-      if (!popoverOpen && selectedFindingId) closeSource();
+      if (!popoverOpen && panelOpen) closeSource();
     }
   }
 
@@ -613,6 +785,8 @@
         if (result.value.project) {
           selectedProjectId = result.value.project.id;
           selectedConversationId = result.value.conversations[0]?.id ?? null;
+          projectConversations = { [result.value.project.id]: result.value.conversations };
+          expandedProjects = [result.value.project.id];
         }
       } else {
         error = result.error.message;
@@ -620,9 +794,16 @@
 
       ready = true;
     });
+    void client.executionSetup().then((result) => {
+      if (controller.signal.aborted) return;
+
+      if (result.ok) setup = result.value;
+      else error = result.error.message;
+    });
 
     return () => {
       controller.abort();
+      sourceRequest++;
 
       if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
     };
@@ -645,11 +826,15 @@
 
 <div class="workbench-root" data-theme={theme}>
   <div
-    class="desktop"
+    class={[
+      "desktop",
+      {
+        "sidebar-closed": !sidebarOpen,
+        "source-open": panelOpen,
+        "mobile-navigation-open": mobileNavigationOpen,
+      },
+    ]}
     data-testid="review-workbench"
-    class:sidebar-closed={!sidebarOpen}
-    class:source-open={selectedFinding !== null}
-    class:mobile-navigation-open={mobileNavigationOpen}
   >
     <header class="window-bar">
       <div class="brand-slot">
@@ -658,23 +843,16 @@
         ><span class="brand-name">Moke</span>
       </div>
       <nav class="breadcrumbs" aria-label="Breadcrumb">
-        {#if project}
-          <span class="project-crumb"
+        {#if project}<span class="project-crumb" title={project.name}
             ><span class="project-monogram" aria-hidden="true">{projectMonogram(project.name)}</span
             ><span>{project.name}</span></span
-          >
-          <span class="breadcrumb-divider" aria-hidden="true">/</span>
-          <strong aria-current="page">{activeConversation?.title ?? "Review"}</strong>
-        {:else}
-          <strong aria-current="page">Drawing review</strong>
-        {/if}
+          ><span class="breadcrumb-divider" aria-hidden="true">/</span>{/if}
+        <strong aria-current="page">{activeConversation?.title ?? "Drawing review"}</strong>
       </nav>
       <div class="window-actions">
         <button
           class="theme-picker"
-          onclick={() => {
-            theme = theme === "dark" ? "light" : "dark";
-          }}
+          onclick={() => (theme = theme === "dark" ? "light" : "dark")}
           aria-label={theme === "dark" ? "Use light appearance" : "Use dark appearance"}
           >{theme === "dark" ? "Light" : "Dark"}</button
         >
@@ -684,13 +862,21 @@
             class="ghost"
             disabled={busy}
             data-testid="import-pdf"
+            aria-busy={importing}
             onclick={importPdf}
-            ><ReviewIcon name="upload" size={15} /><span>Import PDF</span></button
+            ><ReviewIcon name="upload" size={15} /><span
+              >{importing ? "Importing PDF…" : "Import PDF"}</span
+            ></button
+          >
+          <button class="ghost sheets-trigger" onclick={() => openSetup("sheets")}
+            ><ReviewIcon name="file-text" size={15} /><span>Sheets</span><span class="finding-count"
+              >{sheets.length}</span
+            ></button
           >
           <button
+            class={["findings-trigger", { expanded: popoverOpen }]}
+            disabled={busy}
             bind:this={findingsButton}
-            class="findings-trigger"
-            class:expanded={popoverOpen}
             aria-label="Open findings"
             aria-expanded={popoverOpen}
             popovertarget="review-findings"
@@ -702,13 +888,22 @@
         {/if}
       </div>
     </header>
-
     <div class="app-body">
       {#if sidebarOpen}
         <aside class="sidebar" aria-label="Conversation navigation">
-          {#if !ready}
-            <p role="status">Loading review…</p>
-          {:else if projects.length === 0 || newProjectOpen}
+          <button
+            class="new-chat"
+            data-testid="new-conversation"
+            onclick={createConversation}
+            disabled={!project || busy}
+            ><ReviewIcon name="plus" size={16} /><span>New conversation</span></button
+          >
+          <button class="nav-action" onclick={openSearch}
+            ><ReviewIcon name="search" size={16} /><span>Search findings</span><kbd>⌘ K</kbd
+            ></button
+          >
+          {#if !ready}<p role="status">Loading projects…</p>{/if}
+          {#if ready && (projects.length === 0 || newProjectOpen)}
             <form class="create-project" data-testid="create-project-form" onsubmit={createProject}>
               <h2>Create a project</h2>
               <label
@@ -717,196 +912,209 @@
                   bind:value={newProjectName}
                   required
                   maxlength="160"
+                  placeholder="Project name"
                 /></label
               >
-              <button type="submit" disabled={busy} data-testid="create-project-button"
-                >Create project</button
-              >
-            </form>
-          {:else}
-            <button class="new-chat" onclick={() => (newProjectOpen = true)}>New project</button>
-            <button
-              class="new-chat"
-              data-testid="new-conversation"
-              onclick={createConversation}
-              disabled={!project || busy}
-              ><ReviewIcon name="plus" size={16} /><span>New conversation</span></button
-            >
-            {#if project && sheets.length > 0}
-              <section class="sheet-setup" aria-label="Sheet confirmation">
-                <h2>Sheets</h2>
-                <ul class="sheet-list compact" data-testid="sheet-list">
-                  {#each sheets as sheet (sheet.id)}
-                    <li>
-                      <span>{sheetCaption(sheet)}</span>
-                      <label>Label<input data-sheet-label={sheet.id} value={sheet.label} /></label>
-                      <label
-                        >Coverage<select data-sheet-coverage={sheet.id} value={sheet.coverage}>
-                          <option value="unreviewed">Unreviewed</option>
-                          <option value="partial">Partial</option>
-                          <option value="reviewer_complete">Reviewer complete</option>
-                        </select></label
-                      >
-                      <button
-                        type="button"
-                        data-testid={`confirm-sheet-${sheet.id}`}
-                        disabled={busy}
-                        onclick={(event) => {
-                          const row = (event.currentTarget as HTMLButtonElement).closest("li");
-                          const label =
-                            row?.querySelector<HTMLInputElement>(`[data-sheet-label="${sheet.id}"]`)
-                              ?.value ?? sheet.label;
-                          const coverage =
-                            (row?.querySelector<HTMLSelectElement>(
-                              `[data-sheet-coverage="${sheet.id}"]`,
-                            )?.value as Sheet["coverage"]) ?? sheet.coverage;
-                          void confirmSheet(sheet, label, coverage);
-                        }}>Confirm</button
-                      >
-                    </li>
-                  {/each}
-                </ul>
-                <button
-                  type="button"
+              <div class="actions">
+                {#if projects.length > 0}<button
+                    type="button"
+                    onclick={() => (newProjectOpen = false)}>Cancel</button
+                  >{/if}<button
                   class="primary"
-                  data-testid="open-create-finding"
-                  onclick={() => {
-                    createFindingOpen = true;
-                    if (sheets.filter((entry) => entry.confirmed).length >= 2) {
-                      findingDrawnSheet = sheets.find((entry) => entry.confirmed)?.id ?? "";
-                      findingScheduledSheet =
-                        sheets.filter((entry) => entry.confirmed)[1]?.id ?? "";
-                    }
-                  }}>Create finding</button
+                  type="submit"
+                  disabled={busy}
+                  data-testid="create-project-button">Create project</button
                 >
-                {#if createFindingOpen}
-                  <form
-                    class="finding-form"
-                    data-testid="create-finding-form"
-                    onsubmit={createFinding}
-                  >
-                    <label>Title<input bind:value={findingTitle} required /></label>
-                    <label>Object class<input bind:value={findingObjectClass} required /></label>
-                    <label
-                      >Drawn sheet<select bind:value={findingDrawnSheet} required>
-                        <option value="">Select…</option>
-                        {#each sheets.filter((s) => s.confirmed) as sheet (sheet.id)}
-                          <option value={sheet.id}>{sheet.label}</option>
-                        {/each}
-                      </select></label
-                    >
-                    <label
-                      >Scheduled sheet<select bind:value={findingScheduledSheet} required>
-                        <option value="">Select…</option>
-                        {#each sheets.filter((s) => s.confirmed) as sheet (sheet.id)}
-                          <option value={sheet.id}>{sheet.label}</option>
-                        {/each}
-                      </select></label
-                    >
-                    <label class="checkbox"
-                      ><input type="checkbox" bind:checked={findingApplicability} />Applicability
-                      confirmed</label
-                    >
-                    <button type="submit" data-testid="create-finding-submit" disabled={busy}
-                      >Create finding</button
-                    >
-                  </form>
+              </div>
+            </form>
+          {/if}
+          <nav class="projects" aria-label="Projects">
+            {#each projects as entry (entry.id)}
+              <section class="project-group" aria-label={entry.name}>
+                <button
+                  class="project-heading"
+                  disabled={busy}
+                  aria-expanded={expandedProjects.includes(entry.id)}
+                  onclick={async () => {
+                    toggleProject(entry.id);
+                    await selectProject(entry);
+                  }}
+                  ><ReviewIcon
+                    name={expandedProjects.includes(entry.id) ? "chevron-down" : "chevron-right"}
+                    size={13}
+                  /><ReviewIcon name="folder" size={16} /><span title={entry.name}
+                    >{entry.name}</span
+                  ></button
+                >
+                {#if expandedProjects.includes(entry.id)}
+                  <div class="threads">
+                    {#each projectConversations[entry.id] ?? [] as thread (thread.id)}
+                      <button
+                        class={{ current: selectedConversationId === thread.id }}
+                        disabled={busy}
+                        aria-current={selectedConversationId === thread.id ? "page" : undefined}
+                        data-testid={"conversation-" + thread.id}
+                        onclick={() => selectProject(entry, thread.id)}
+                        ><ReviewIcon name="message" size={14} /><span title={thread.title}
+                          >{thread.title}</span
+                        ></button
+                      >
+                    {/each}
+                  </div>
                 {/if}
               </section>
-            {/if}
-            <nav class="projects" aria-label="Projects">
-              {#each projects as entry (entry.id)}
-                <section class="project-group" aria-label={entry.name}>
-                  <button
-                    class="project-heading"
-                    aria-expanded={expandedProjects.includes(entry.id)}
-                    onclick={() => toggleProject(entry.id)}
-                  >
-                    <ReviewIcon
-                      name={expandedProjects.includes(entry.id) ? "chevron-down" : "chevron-right"}
-                      size={13}
-                    /><ReviewIcon name="folder" size={16} /><span>{entry.name}</span>
-                  </button>
-                  {#if expandedProjects.includes(entry.id)}
-                    <div class="threads">
-                      {#each conversations.filter((c) => c.projectId === entry.id) as thread (thread.id)}
-                        <button
-                          class:current={selectedConversationId === thread.id}
-                          aria-current={selectedConversationId === thread.id ? "page" : undefined}
-                          data-testid={`conversation-${thread.id}`}
-                          onclick={() => {
-                            void selectProject(entry);
-                            chooseConversation(thread);
-                          }}
-                          ><ReviewIcon name="message" size={14} /><span>{thread.title}</span
-                          ></button
-                        >
-                      {/each}
-                    </div>
-                  {/if}
-                </section>
-              {/each}
-            </nav>
-          {/if}
-          <div class="package-actions">
-            <button
-              disabled={busy || !project}
-              onclick={async () => {
-                busy = true;
-                const result = await client.chooseReviewExport();
-                busy = false;
-                if (!result.ok) error = result.error.message;
-              }}>Export complete package</button
+            {/each}
+          </nav>
+          <div class="sidebar-footer">
+            <button class="nav-action" onclick={() => (newProjectOpen = true)} disabled={busy}
+              ><ReviewIcon name="folder" size={16} /><span>New project</span></button
             >
-            <button
-              disabled={busy}
-              onclick={async () => {
-                busy = true;
-                const result = await client.chooseReviewRestore();
-                busy = false;
-                if (!result.ok) error = result.error.message;
-              }}>Restore package</button
+            <button class="nav-action" onclick={() => openSetup("settings")}
+              ><ReviewIcon name="settings" size={16} /><span>Review settings</span><span
+                class={["connection-dot", { connected: setup?.configured }]}
+                title={setup?.configured ? "Provider configured" : "Provider not configured"}
+              ></span></button
             >
+            <div class="package-actions">
+              <button
+                disabled={busy || !project}
+                onclick={async () => {
+                  busy = true;
+                  const result = await client.chooseReviewExport();
+                  busy = false;
+                  if (!result.ok) error = result.error.message;
+                  else if (result.value) notice = "Complete review package exported.";
+                }}>Export complete package</button
+              ><button
+                disabled={busy}
+                onclick={async () => {
+                  busy = true;
+                  const result = await client.chooseReviewRestore();
+                  busy = false;
+                  if (!result.ok) error = result.error.message;
+                }}>Restore package</button
+              >
+            </div>
           </div>
         </aside>
       {/if}
-
       <section class="chat" aria-label="Conversation">
-        {#if error}<p class="banner" role="alert">{error}</p>{/if}
+        {#if error}<div class="banner" role="alert">
+            <span>{error}</span><button
+              class="icon-button"
+              aria-label="Dismiss error"
+              onclick={() => (error = "")}><ReviewIcon name="x" size={16} /></button
+            >
+          </div>{/if}
+        {#if notice}<div class="notice" role="status">
+            <span>{notice}</span><button
+              class="icon-button"
+              aria-label="Dismiss notification"
+              onclick={() => (notice = "")}><ReviewIcon name="x" size={15} /></button
+            >
+          </div>{/if}
         <div class="chat-scroll" bind:this={chatViewport}>
           <div class="conversation-content">
-            {#if project === null}
-              <div class="chat-empty">
-                {@render mark(26)}
+            {#if !ready}<div class="chat-empty"><p role="status">Opening workspace…</p></div>
+            {:else if project === null}<div class="chat-empty">
+                {@render mark(28)}
                 <h1>Start a drawing review</h1>
-                <p>Create a project to import PDFs and coordinate findings.</p>
+                <p>Create a project, import its drawings, and choose a coordination check.</p>
+                <button
+                  class="ghost"
+                  onclick={() => {
+                    sidebarOpen = true;
+                    mobileNavigationOpen = true;
+                    newProjectOpen = true;
+                  }}>Create a project</button
+                >
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
-                {@render mark(26)}
+                {@render mark(28)}
                 <h1>What are we checking?</h1>
-                <p>
-                  Confirm sheet coverage, accept source-linked counts, and evaluate coordination.
-                </p>
+                {#if sheets.length === 0}<p>
+                    Import a drawing PDF to begin. Your source sheets and review history stay with
+                    this project.
+                  </p>
+                  <button class="ghost" disabled={busy} onclick={importPdf}
+                    ><ReviewIcon name="upload" size={15} />Import drawings</button
+                  >
+                {:else if findings.length === 0}<p>
+                    Confirm the source sheets and define a drawn-to-schedule count check. Then ask
+                    Moke to inspect it.
+                  </p>
+                  <button class="ghost" onclick={() => openSetup("sheets", true)}
+                    >Set up a coordination check</button
+                  >
+                {:else}<p>
+                    Select a check below and ask Moke to inspect its drawing evidence. You decide
+                    which observations to accept.
+                  </p>{/if}
               </div>
-            {:else}
-              {#each conversationMessages as message (message.id)}
-                <div class="message" class:application-message={message.role === "application"}>
-                  <div class="byline">
-                    <span class="user-mark">{message.role === "reviewer" ? "S" : "M"}</span><strong
-                      >{message.role === "reviewer" ? "You" : "Application"}</strong
-                    >
-                  </div>
-                  <p>{message.text}</p>
-                </div>
-              {/each}
             {/if}
-            {#each progressEvents as event (event.sequence)}
-              <div class="progress-row" data-testid="review-progress">{event.message}</div>
+            {#each conversationMessages as message (message.id)}
+              <article
+                class={["message", { "application-message": message.role === "application" }]}
+              >
+                <div class="byline">
+                  {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
+                      class="moke-mark">{@render mark(16)}</span
+                    >{/if}<strong>{message.role === "reviewer" ? "You" : "Moke"}</strong
+                  >{#if message.origin}<span class="message-provenance"
+                      >Inspection · {message.origin.discipline?.replaceAll("_", " ") ??
+                        "general"}</span
+                    >{/if}
+                </div>
+                <p>{message.text}</p>
+                {#if message.origin}<button
+                    class="message-source"
+                    onclick={() => {
+                      const finding = findings.find(
+                        (item) => item.id === message.origin?.findingId,
+                      );
+                      if (finding) openFinding(finding);
+                    }}>Open reviewed finding<ReviewIcon name="arrow-up-right" size={13} /></button
+                  >{/if}
+              </article>
             {/each}
           </div>
         </div>
         <div class="composer-region">
+          {#if project}
+            <div class="scope-bar">
+              <label class="scope-select"
+                ><span class="sr-only">Review finding</span><select
+                  aria-label="Review finding"
+                  value={reviewFindingId ?? ""}
+                  onchange={(event) => selectReviewFinding(event.currentTarget.value)}
+                  ><option value="">Choose a coordination check…</option
+                  >{#each findings as finding (finding.id)}<option value={finding.id}
+                      >{finding.title}</option
+                    >{/each}</select
+                ></label
+              >
+              <button
+                class="text-button"
+                data-testid="open-create-finding"
+                onclick={() => openSetup("sheets", true)}
+                ><ReviewIcon name="plus" size={14} />New check</button
+              >
+            </div>
+            {#if reviewFinding}
+              {#key reviewFinding.id}<ExecutionControls
+                  {client}
+                  finding={reviewFinding}
+                  {setup}
+                  {budget}
+                  {discipline}
+                  conversation={activeConversation}
+                  projectVersion={project.version}
+                  bind:status={executionStatus}
+                  onProgress={() => refresh()}
+                />{/key}
+            {/if}
+          {/if}
           <form class="composer" onsubmit={postMessage}>
             <label class="sr-only" for="chat-message">Message</label><textarea
               id="chat-message"
@@ -914,63 +1122,174 @@
               bind:value={draft}
               rows="2"
               maxlength="2000"
-              placeholder="Reviewer instruction…"
+              placeholder={reviewMode === "review"
+                ? "Ask Moke to inspect the selected check…"
+                : "Add a project note…"}
               disabled={project === null || activeConversation === null}></textarea>
             <div class="composer-tools">
+              <div class="composer-options">
+                <select aria-label="Message action" bind:value={reviewMode}
+                  ><option value="review">Review with Moke</option><option value="note"
+                    >Save note</option
+                  ></select
+                >{#if reviewMode === "review"}<select
+                    aria-label="Review discipline"
+                    bind:value={discipline}
+                    >{#each reviewDisciplines as scope (scope.id)}<option value={scope.id}
+                        >{scope.label}</option
+                      >{/each}</select
+                  >{/if}
+              </div>
               <button
                 type="submit"
                 class="send"
-                disabled={!draft.trim() || busy}
-                aria-label="Send message"><ReviewIcon name="arrow-up" size={17} /></button
+                disabled={!draft.trim() ||
+                  busy ||
+                  !project ||
+                  (reviewMode === "review" &&
+                    (!reviewFinding || !setup?.configured || executionBlocked))}
+                aria-label="Send message"
+                title={reviewMode === "review" ? "Send and start bounded inspection" : "Save note"}
+                ><ReviewIcon name="arrow-up" size={17} /></button
               >
             </div>
           </form>
+          <div class="composer-help">
+            {#if reviewMode === "note"}Notes are saved without starting an inspection.{:else if !reviewFinding}Choose
+              a check or create one to review drawing evidence.{:else if !setup?.configured}Provider
+              not configured. <button class="text-button" onclick={() => openSetup("settings")}
+                >Open review settings</button
+              >{:else if executionBlocked}Resolve the current inspection before sending another
+              request.{:else}Up to {callLimit} calls · proposed evidence · governing code unverified{/if}
+          </div>
         </div>
       </section>
-
-      {#if selectedFinding}
+      {#if panelOpen}
         <aside class="source-panel" aria-label="Finding source" data-testid="source-panel">
           <header class="source-header">
-            <ReviewIcon name="file-text" size={16} /><strong>{selectedFinding.title}</strong><span
-              class="spacer"
-            ></span><button
-              class="icon-button"
-              aria-label="Close source panel"
-              onclick={closeSource}><ReviewIcon name="x" size={17} /></button
+            <ReviewIcon
+              name={sourceTab === "settings" ? "settings" : "file-text"}
+              size={16}
+            /><strong
+              >{sourceTab === "settings"
+                ? "Review settings"
+                : sourceTab === "evidence"
+                  ? (selectedFinding?.title ?? "Evidence")
+                  : (project?.name ?? "Project")}</strong
+            ><button class="icon-button" aria-label="Close source panel" onclick={closeSource}
+              ><ReviewIcon name="x" size={17} /></button
             >
           </header>
-          <div class="source-tabs">
-            <button
-              class:current={sourceTab === "evidence"}
-              onclick={() => (sourceTab = "evidence")}>Evidence</button
-            >
-            <button class:current={sourceTab === "sheets"} onclick={() => (sourceTab = "sheets")}
-              >Sheets</button
-            >
-            <button
-              class:current={sourceTab === "revision"}
-              onclick={() => (sourceTab = "revision")}>Revision</button
-            >
-          </div>
+          {#if sourceTab !== "settings"}<div class="source-tabs">
+              <button
+                class={{ current: sourceTab === "evidence" }}
+                disabled={busy || !selectedFinding}
+                onclick={() => {
+                  if (selectedFinding === null) return;
+                  sourceTab = "evidence";
+                  void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
+                }}>Evidence</button
+              ><button
+                disabled={busy}
+                class={{ current: sourceTab === "sheets" }}
+                onclick={() => (sourceTab = "sheets")}>Sheets</button
+              ><button
+                class={{ current: sourceTab === "revision" }}
+                disabled={busy}
+                onclick={() => (sourceTab = "revision")}>Revision</button
+              >
+            </div>{/if}
           <div class="source-scroll">
-            {#if sourceTab === "evidence"}
-              {#if sourceImageUrl}
-                <SourceViewer
+            {#if sourceTab === "settings"}
+              <section class="settings-section">
+                <h2>Model connection</h2>
+                {#if setup}<p>
+                    {setup.configured
+                      ? setup.provider + " · " + setup.model
+                      : "No provider configured"}
+                  </p>
+                  <p class="muted">
+                    Use File → Import provider credential configuration… to select your
+                    configuration and restart. Credentials stay in the trusted desktop and backend.
+                  </p>{:else}<p role="status">Loading configuration…</p>{/if}
+              </section>
+              <section class="settings-section">
+                <h2>Inspection limit</h2>
+                <label
+                  >Maximum calls per inspection<select bind:value={callLimit}
+                    ><option value={4}>4 calls</option><option value={8}>8 calls</option><option
+                      value={12}>12 calls</option
+                    ></select
+                  ></label
+                >
+                <p class="muted">
+                  The selection resets to 12 on restart. Includes at most 2 SAM requests when
+                  available. Each model request reserves up to 64,000 text-input tokens and 4,096
+                  output tokens. Billing and image-token usage are unknown. Nothing starts
+                  automatically on reopen.
+                </p>
+              </section>
+              <section class="settings-section">
+                <h2>Review boundary</h2>
+                <p>
+                  This beta inspects one drawn-to-schedule count check at a time using its selected
+                  PDF sheets. It does not complete a permit or discipline review.
+                </p>
+                <p class="muted">
+                  Governing code is unverified: there is no browser or verified code library in this
+                  runtime. Jurisdiction, adopted editions, permit stage, supporting calculations and
+                  prior comments remain Needs input where relevant. Confirm them independently.
+                </p>
+                <p class="muted">
+                  {setup?.segmentation
+                    ? "SAM is available for proposed object locations."
+                    : "SAM is unavailable for this provider route."} Only you accept facts, confirm coverage
+                  and close findings.
+                </p>
+              </section>
+              {#if setup}<section class="settings-section provenance">
+                  <h2>Moke instructions</h2>
+                  <p>{setup.promptVersion}</p>
+                  <p>skills revision {setup.instructionRevision}</p>
+                </section>{/if}
+            {:else if sourceTab === "sheets"}
+              {#if sourceLoading}<p class="muted" role="status">
+                  Rendering source…
+                </p>{:else if sourceImageUrl && previewedSheet}<SourceViewer
+                  imageUrl={sourceImageUrl}
+                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
+                  label="Original source render"
+                />{/if}
+              <SheetSetup
+                {sheets}
+                busy={busy || sourceLoading}
+                bind:createOpen={createFindingOpen}
+                onConfirm={confirmSheet}
+                onPreview={(sheet) => {
+                  void loadSheetSource(sheet, 96);
+                }}
+                onCreate={createFinding}
+              />
+            {:else if sourceTab === "evidence" && selectedFinding}
+              {#if sourceLoading}<p class="muted" role="status">
+                  Rendering source…
+                </p>{:else if sourceImageUrl}<SourceViewer
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
                   label="Original source render"
-                />
-              {:else}
-                <p role="status">Rendering source…</p>
-              {/if}
-              {#key selectedFinding.id}
-                <ExecutionControls
-                  {client}
-                  finding={selectedFinding}
-                  onProgress={() => refresh()}
-                />
-                <FindingInspector
+                />{/if}
+              {#if previewedSheet && sourceArtifact}<div class="source-provenance">
+                  <strong>{previewedSheet.label}</strong><span
+                    >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page
+                    {previewedSheet.pageIndex + 1} · {sourceArtifact.dpi} DPI</span
+                  ><span
+                    >Source SHA {revisions
+                      .find((item) => item.id === previewedSheet?.revisionId)
+                      ?.sha256.slice(0, 16)}</span
+                  >
+                </div>{/if}
+              {#key selectedFinding.id}<FindingInspector
                   finding={selectedFinding}
                   {sheets}
                   {facts}
@@ -978,83 +1297,10 @@
                   {busy}
                   onAccept={acceptCount}
                   onEvaluate={evaluateFinding}
-                  onCorrect={() => {}}
                   onStatus={setFindingStatus}
                   onRequestDetail={requestDetail}
-                />
-              {/key}
-            {:else if sourceTab === "sheets"}
-              <ul class="sheet-list" data-testid="sheet-list">
-                {#each sheets as sheet (sheet.id)}
-                  <li>
-                    <strong>{sheetCaption(sheet)}</strong>
-                    <label>Label<input data-sheet-label={sheet.id} value={sheet.label} /></label>
-                    <label
-                      >Coverage<select data-sheet-coverage={sheet.id} value={sheet.coverage}>
-                        <option value="unreviewed">Unreviewed</option>
-                        <option value="partial">Partial</option>
-                        <option value="reviewer_complete">Reviewer complete</option>
-                      </select></label
-                    >
-                    <button
-                      type="button"
-                      data-testid={`confirm-sheet-${sheet.id}`}
-                      disabled={busy}
-                      onclick={(event) => {
-                        const row = (event.currentTarget as HTMLButtonElement).closest("li");
-                        const label =
-                          row?.querySelector<HTMLInputElement>(`[data-sheet-label="${sheet.id}"]`)
-                            ?.value ?? sheet.label;
-                        const coverage =
-                          (row?.querySelector<HTMLSelectElement>(
-                            `[data-sheet-coverage="${sheet.id}"]`,
-                          )?.value as Sheet["coverage"]) ?? sheet.coverage;
-                        void confirmSheet(sheet, label, coverage);
-                      }}>Confirm sheet</button
-                    >
-                  </li>
-                {/each}
-              </ul>
-              <button
-                type="button"
-                class="primary"
-                data-testid="open-create-finding"
-                onclick={() => (createFindingOpen = true)}>Create coordination finding</button
-              >
-              {#if createFindingOpen}
-                <form
-                  class="finding-form"
-                  data-testid="create-finding-form"
-                  onsubmit={createFinding}
-                >
-                  <label>Title<input bind:value={findingTitle} required /></label>
-                  <label>Object class<input bind:value={findingObjectClass} required /></label>
-                  <label
-                    >Drawn sheet<select bind:value={findingDrawnSheet} required>
-                      <option value="">Select…</option>
-                      {#each sheets.filter((s) => s.confirmed) as sheet (sheet.id)}
-                        <option value={sheet.id}>{sheet.label}</option>
-                      {/each}
-                    </select></label
-                  >
-                  <label
-                    >Scheduled sheet<select bind:value={findingScheduledSheet} required>
-                      <option value="">Select…</option>
-                      {#each sheets.filter((s) => s.confirmed) as sheet (sheet.id)}
-                        <option value={sheet.id}>{sheet.label}</option>
-                      {/each}
-                    </select></label
-                  >
-                  <label class="checkbox"
-                    ><input type="checkbox" bind:checked={findingApplicability} />Applicability
-                    confirmed</label
-                  >
-                  <button type="submit" data-testid="create-finding-submit" disabled={busy}
-                    >Create finding</button
-                  >
-                </form>
-              {/if}
-            {:else}
+                />{/key}
+            {:else if sourceTab === "revision"}
               {#if revisions.length >= 2}
                 {@const latest = revisions.at(-1)}
                 {@const previous = revisions.at(-2)}
@@ -1146,44 +1392,39 @@
         </aside>
       {/if}
     </div>
-
     <section
       id="review-findings"
       class="findings-bubble"
       popover="auto"
       bind:this={findingsBubble}
       aria-label="Workspace findings"
-      ontoggle={(event) => {
-        popoverOpen = event.newState === "open";
-      }}
+      ontoggle={(event) => (popoverOpen = event.newState === "open")}
     >
-      {#if project}
-        <div class="bubble-context">
+      {#if project}<div class="bubble-context">
           <ReviewIcon name="folder" size={17} /><strong>{project.name}</strong>
         </div>
         <div class="bubble-results">
-          {#each findings as finding (finding.id)}
-            <button
-              class="finding-row"
-              class:selected={selectedFindingId === finding.id}
-              data-testid={`finding-row-${finding.id}`}
+          {#each findings as finding (finding.id)}<button
+              class={["finding-row", { selected: selectedFindingId === finding.id }]}
+              data-testid={"finding-row-" + finding.id}
               onclick={() => openFinding(finding)}
               title={findingSubtitle(finding, sheets)}
-            >
-              <ReviewIcon name="file-text" size={16} /><span>{finding.title}</span><span
-                class="outcome">{formatOutcome(finding.outcome)}</span
-              ><ReviewIcon name="chevron-right" size={14} />
-            </button>
-          {/each}
-        </div>
-      {/if}
+              ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
+                >{finding.title}</span
+              ><span class="outcome">{formatOutcome(finding.outcome)}</span><ReviewIcon
+                name="chevron-right"
+                size={14}
+              /></button
+            >{:else}<p class="menu-empty">
+              No findings yet. Define a coordination check to begin.
+            </p>{/each}
+        </div>{/if}
     </section>
-
-    {#if searchOpen}
-      <section class="search-panel" aria-label="Search findings">
+    {#if searchOpen}<section class="search-panel" aria-label="Search findings">
         <div class="search-field">
           <ReviewIcon name="search" size={18} /><input
             aria-label="Search findings"
+            bind:this={searchInput}
             bind:value={findQuery}
           /><button
             class="icon-button"
@@ -1192,13 +1433,15 @@
           >
         </div>
         <div class="search-results">
-          {#each visibleFindings as finding (finding.id)}
-            <button class="finding-row" onclick={() => openFinding(finding)}>{finding.title}</button
-            >
-          {/each}
+          {#each visibleFindings as finding (finding.id)}<button
+              class="finding-row"
+              onclick={() => openFinding(finding)}
+              >{finding.title}<span class="outcome">{formatOutcome(finding.outcome)}</span></button
+            >{:else}<p class="menu-empty">
+              {findQuery ? "No matching findings." : "No findings in this project."}
+            </p>{/each}
         </div>
-      </section>
-    {/if}
+      </section>{/if}
   </div>
 </div>
 
@@ -1214,23 +1457,22 @@
       BlinkMacSystemFont,
       "Segoe UI",
       sans-serif;
-    min-height: 100vh;
-    background: var(--nd-shell);
-    color: var(--nd-ink);
+    font-size: 13px;
   }
   .desktop {
     --nd-shell: #141414;
     --nd-panel: #1b1b1b;
     --nd-raised: #262626;
-    --nd-raised-hover: #2e2e2e;
-    --nd-hairline: #2b2b2b;
-    --nd-hairline-strong: #3b3b3b;
+    --nd-raised-hover: #303030;
+    --nd-hairline: #2c2c2c;
+    --nd-hairline-strong: #424242;
     --nd-ink: #ededed;
-    --nd-ink-muted: #a6a6a6;
-    --nd-focus: #ededed;
-    --sidebar-width: 240px;
-    --source-width: min(420px, 42vw);
-    height: 100vh;
+    --nd-ink-muted: #aaa;
+    --nd-focus: #d8d8d8;
+    --nd-warning: #edbc68;
+    --sidebar-width: 224px;
+    --source-width: min(420px, 40vw);
+    height: 100dvh;
     overflow: hidden;
     background: var(--nd-shell);
     color: var(--nd-ink);
@@ -1242,15 +1484,57 @@
     --nd-shell: #fdfdfd;
     --nd-panel: #f6f6f6;
     --nd-raised: #ededed;
-    --nd-raised-hover: #e6e6e6;
-    --nd-hairline: #e6e6e6;
-    --nd-hairline-strong: #d4d4d4;
+    --nd-raised-hover: #e7e7e7;
+    --nd-hairline: #e2e2e2;
+    --nd-hairline-strong: #cecece;
     --nd-ink: #252525;
-    --nd-ink-muted: #686868;
+    --nd-ink-muted: #626262;
+    --nd-focus: #444;
+    --nd-warning: #885509;
     color-scheme: light;
+  }
+  .desktop :global(::selection) {
+    background: var(--nd-hairline-strong);
+    color: var(--nd-ink);
+  }
+  .desktop :global(*) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--nd-hairline-strong) transparent;
+  }
+  .desktop :global(:focus-visible) {
+    outline: 2px solid var(--nd-focus);
+    outline-offset: 3px;
+  }
+  .desktop :global(input),
+  .desktop :global(select),
+  .desktop :global(textarea) {
+    font: inherit;
+    color: inherit;
+  }
+  .desktop :global(button:disabled) {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .desktop :global(button:not(:disabled):hover) {
+    filter: brightness(1.12);
+  }
+  .desktop :global(input),
+  .desktop :global(select),
+  .desktop :global(textarea) {
+    accent-color: var(--nd-ink-muted);
+    caret-color: var(--nd-ink);
+  }
+  .desktop :global(input::placeholder),
+  .desktop :global(textarea::placeholder) {
+    color: var(--nd-ink-muted);
+    opacity: 1;
+  }
+  .desktop :global(p) {
+    overflow-wrap: anywhere;
   }
   .window-bar {
     height: 52px;
+    min-height: 52px;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -1259,6 +1543,7 @@
   }
   .brand-slot {
     width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1269,12 +1554,18 @@
   }
   .brand-name {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 650;
+  }
+  button {
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
   }
   .icon-button,
   .ghost,
   .findings-trigger,
-  .theme-picker {
+  .theme-picker,
+  .text-button {
     border: 0;
     background: transparent;
     color: inherit;
@@ -1283,6 +1574,7 @@
   }
   .icon-button {
     display: inline-flex;
+    flex-shrink: 0;
     width: 30px;
     height: 30px;
     align-items: center;
@@ -1292,7 +1584,10 @@
   }
   .icon-button:hover,
   .ghost:hover,
-  .findings-trigger:hover {
+  .findings-trigger:hover,
+  .nav-action:hover,
+  .project-heading:hover,
+  .threads button:hover {
     background: var(--nd-raised-hover);
   }
   .breadcrumbs {
@@ -1302,16 +1597,25 @@
     gap: 12px;
     min-width: 0;
   }
+  .breadcrumbs strong,
+  .project-crumb > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .breadcrumbs strong {
+    font-weight: 500;
+  }
   .project-crumb {
     display: inline-flex;
     gap: 7px;
     align-items: center;
     color: var(--nd-ink-muted);
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    max-width: 200px;
+    min-width: 40px;
   }
   .project-monogram {
+    flex-shrink: 0;
     width: 18px;
     height: 18px;
     display: grid;
@@ -1321,62 +1625,56 @@
     font-size: 10px;
     font-weight: 600;
   }
+  .breadcrumb-divider {
+    color: var(--nd-ink-muted);
+  }
   .window-actions {
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-shrink: 0;
+  }
+  .theme-picker {
+    color: var(--nd-ink-muted);
+    padding: 7px 5px;
   }
   .ghost,
   .findings-trigger {
     display: inline-flex;
     gap: 6px;
     align-items: center;
-    padding: 6px 10px;
-    border-radius: 8px;
+    padding: 7px 10px;
+    border-radius: 7px;
     border: 1px solid var(--nd-hairline);
     background: var(--nd-panel);
     font-size: 13px;
   }
   .finding-count {
     background: var(--nd-raised);
-    padding: 0 6px;
-    border-radius: 999px;
+    padding: 1px 6px;
+    border-radius: 5px;
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
   }
   .app-body {
     flex: 1;
     display: grid;
-    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     min-height: 0;
   }
   .desktop.source-open .app-body {
-    grid-template-columns: var(--sidebar-width) 1fr var(--source-width);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--source-width);
   }
   .desktop.sidebar-closed .app-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .desktop.sidebar-closed.source-open .app-body {
-    grid-template-columns: 1fr var(--source-width);
-  }
-  .package-actions {
-    margin-top: auto;
-    display: grid;
-    gap: 8px;
-    padding-top: 16px;
-  }
-  .package-actions button {
-    font: inherit;
-    color: inherit;
-    background: var(--nd-raised);
-    border: 1px solid var(--nd-hairline);
-    border-radius: 6px;
-    padding: 8px;
-    cursor: pointer;
+    grid-template-columns: minmax(0, 1fr) var(--source-width);
   }
   .sidebar {
     background: var(--nd-panel);
     border-right: 1px solid var(--nd-hairline);
-    padding: 12px;
+    padding: 20px 12px 12px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1385,23 +1683,92 @@
   }
   .new-chat,
   .project-heading,
-  .threads button {
+  .threads button,
+  .nav-action {
     width: 100%;
     text-align: left;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
-    border-radius: 8px;
+    min-height: 34px;
+    border-radius: 7px;
     border: 0;
     background: transparent;
     color: inherit;
     cursor: pointer;
     font: inherit;
   }
-  .threads button.current,
-  .finding-row.selected {
+  .new-chat {
+    border: 1px solid var(--nd-hairline-strong);
+    margin-bottom: 3px;
+  }
+  .nav-action {
+    color: var(--nd-ink-muted);
+  }
+  .nav-action kbd {
+    margin-left: auto;
+    font: inherit;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .projects {
+    margin-top: 20px;
+    display: grid;
+    gap: 20px;
+  }
+  .project-heading {
+    padding-left: 4px;
+    color: var(--nd-ink-muted);
+  }
+  .project-heading span,
+  .threads button span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .project-heading :global(svg),
+  .threads :global(svg) {
+    flex-shrink: 0;
+  }
+  .threads {
+    margin: 3px 0 0 9px;
+    padding-left: 10px;
+    border-left: 1px solid var(--nd-hairline);
+    display: grid;
+    gap: 2px;
+  }
+  .threads button.current {
     background: var(--nd-raised);
+  }
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 24px;
+  }
+  .connection-dot {
+    margin-left: auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    border: 1px solid var(--nd-ink-muted);
+  }
+  .connection-dot.connected {
+    background: var(--nd-ink-muted);
+  }
+  .package-actions {
+    border-top: 1px solid var(--nd-hairline);
+    margin-top: 10px;
+    padding-top: 8px;
+    display: grid;
+  }
+  .package-actions button {
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
   }
   .chat {
     display: flex;
@@ -1411,78 +1778,223 @@
   }
   .chat-scroll {
     flex: 1;
-    overflow: auto;
-    padding: 24px;
+    overflow-y: auto;
+    min-height: 100px;
+    padding: 44px 28px 20px;
+  }
+  .conversation-content {
+    max-width: 68ch;
+    margin: 0 auto;
   }
   .message {
-    max-width: 42rem;
-    margin-bottom: 16px;
+    margin-bottom: 28px;
     font-size: 15px;
     line-height: 1.75;
   }
-  .application-message {
-    color: var(--nd-ink-muted);
+  .message p {
+    margin: 8px 0 0;
+    white-space: pre-wrap;
   }
   .byline {
     display: flex;
     gap: 8px;
     align-items: center;
     font-size: 13px;
-    margin-bottom: 4px;
+    line-height: 22px;
   }
-  .user-mark {
+  .byline strong {
+    font-weight: 500;
+  }
+  .user-mark,
+  .moke-mark {
     width: 22px;
     height: 22px;
     display: grid;
     place-items: center;
-    border-radius: 999px;
-    background: var(--nd-raised);
+    border-radius: 5px;
     font-size: 11px;
   }
-  .composer {
-    border-top: 1px solid var(--nd-hairline);
-    padding: 12px 16px;
-    display: flex;
-    gap: 8px;
+  .user-mark {
+    background: var(--nd-raised);
+    color: var(--nd-ink-muted);
   }
-  .composer textarea {
+  .message-provenance {
+    font-size: 11px;
+    color: var(--nd-ink-muted);
+    margin-left: auto;
+  }
+  .message-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 10px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--nd-ink-muted);
+    font-size: 12px;
+  }
+  .composer-region {
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 10px 24px 16px;
+  }
+  .scope-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .scope-select {
+    min-width: 0;
     flex: 1;
-    resize: vertical;
-    min-height: 44px;
-    font: inherit;
-    padding: 10px 12px;
-    border-radius: 10px;
+  }
+  .scope-select select {
+    max-width: 100%;
+    width: 100%;
+    border: 0;
+    background: var(--nd-shell);
+    color: var(--nd-ink-muted);
+    padding: 4px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    color: var(--nd-ink-muted);
+    padding: 4px 0;
+  }
+  .composer {
     border: 1px solid var(--nd-hairline-strong);
     background: var(--nd-panel);
+    border-radius: 11px;
+    padding: 12px;
+  }
+  .composer textarea {
+    display: block;
+    width: 100%;
+    resize: none;
+    min-height: 56px;
+    border: 0;
+    background: transparent;
+    padding: 3px 2px 10px;
     color: inherit;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .composer textarea:focus-visible {
+    outline-offset: 0;
+    border-radius: 4px;
+  }
+  .composer-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .composer-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .composer-options select {
+    min-width: 0;
+    max-width: 180px;
+    border: 0;
+    border-radius: 5px;
+    padding: 5px 3px;
+    background: var(--nd-panel);
+    color: var(--nd-ink-muted);
+    font-size: 12px;
   }
   .send {
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
     border: 0;
     background: var(--nd-ink);
     color: var(--nd-shell);
     display: grid;
     place-items: center;
-    cursor: pointer;
+  }
+  .composer-help {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--nd-ink-muted);
+    margin-top: 8px;
+    min-height: 18px;
+  }
+  .composer-help .text-button {
+    font-size: 12px;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .chat-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin: 12vh auto 32px;
+    max-width: 42ch;
+    text-align: center;
+  }
+  .chat-empty h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 550;
+  }
+  .chat-empty p {
+    color: var(--nd-ink-muted);
+    line-height: 1.7;
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+  .banner,
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+    margin: 0;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--nd-hairline);
+    line-height: 1.5;
+  }
+  .banner {
+    color: var(--nd-warning);
+    background: var(--nd-panel);
+  }
+  .notice {
+    color: var(--nd-ink-muted);
   }
   .source-panel {
     border-left: 1px solid var(--nd-hairline);
     background: var(--nd-panel);
     display: flex;
     flex-direction: column;
+    min-width: 0;
     min-height: 0;
   }
   .source-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px;
+    padding: 10px 12px;
+    min-height: 51px;
     border-bottom: 1px solid var(--nd-hairline);
   }
-  .spacer {
+  .source-header strong {
     flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 550;
   }
   .source-tabs {
     display: flex;
@@ -1505,20 +2017,70 @@
   }
   .source-scroll {
     flex: 1;
-    overflow: auto;
-    padding: 12px;
+    overflow-y: auto;
+    padding: 16px;
     display: flex;
     flex-direction: column;
+    gap: 18px;
+  }
+  .source-provenance {
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .source-provenance strong {
+    color: var(--nd-ink);
+  }
+  .settings-section {
+    display: grid;
     gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .settings-section h2 {
+    font-size: 16px;
+    font-weight: 550;
+    margin: 0;
+  }
+  .settings-section p {
+    font-size: 13px;
+    line-height: 1.65;
+    margin: 0;
+  }
+  .muted {
+    color: var(--nd-ink-muted);
+  }
+  .provenance {
+    overflow-wrap: anywhere;
   }
   .findings-bubble {
     margin: 0;
     padding: 16px;
     border: 1px solid var(--nd-hairline-strong);
-    border-radius: 14px;
+    border-radius: 16px;
     background: var(--nd-panel);
     color: var(--nd-ink);
-    box-shadow: 0 18px 40px rgb(0 0 0 / 0.35);
+    box-shadow: 0 18px 40px rgb(0 0 0 / 0.25);
+    overflow-y: auto;
+  }
+  .bubble-context {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 16px;
+    color: var(--nd-ink-muted);
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .bubble-context strong {
+    font-weight: 450;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bubble-results {
+    padding-top: 8px;
   }
   .finding-row {
     width: 100%;
@@ -1535,111 +2097,204 @@
     font: inherit;
     text-align: left;
   }
-  .finding-row span.outcome {
+  .finding-row:hover,
+  .finding-row.selected {
+    background: var(--nd-raised);
+  }
+  .finding-row :global(svg) {
+    flex-shrink: 0;
+  }
+  .finding-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .finding-row .outcome {
     margin-left: auto;
-    font-size: 12px;
+    font-size: 11px;
+    color: var(--nd-ink-muted);
+    max-width: 94px;
+  }
+  .menu-empty {
+    padding: 8px 12px;
+    line-height: 1.6;
     color: var(--nd-ink-muted);
   }
-  .banner {
+  .create-project {
+    display: grid;
+    gap: 12px;
+    padding: 12px 2px;
+  }
+  .create-project h2 {
     margin: 0;
-    padding: 10px 16px;
-    background: #5a1f1f;
-    color: #ffe8e8;
+    font-size: 15px;
   }
-  .chat-empty {
+  .actions {
     display: flex;
-    flex-direction: column;
-    align-items: center;
     gap: 8px;
-    padding: 48px 16px;
-    text-align: center;
+    justify-content: flex-end;
   }
-  .chat-empty h1 {
-    margin: 0;
-    font-size: 22px;
+  .create-project label,
+  .settings-section label,
+  .sheet-list label {
+    display: grid;
+    gap: 6px;
   }
-  .create-project,
-  .finding-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .sheet-list input,
-  .sheet-list select,
   .create-project input,
-  .finding-form input,
-  .finding-form select {
-    font: inherit;
-    padding: 8px;
-    border-radius: 6px;
+  .settings-section select,
+  .sheet-list select {
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--nd-hairline-strong);
+    border-radius: 6px;
     background: var(--nd-shell);
-    color: inherit;
+    padding: 8px;
+  }
+  .actions button,
+  .source-scroll > button,
+  .create-project button {
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--nd-raised);
+  }
+  button.primary {
+    background: var(--nd-ink);
+    color: var(--nd-shell);
   }
   .sheet-list {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: grid;
+    gap: 14px;
   }
   .sheet-list li {
-    padding: 10px;
+    display: grid;
+    gap: 10px;
     border: 1px solid var(--nd-hairline);
     border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .sheet-setup h2 {
-    margin: 0 0 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--nd-ink-muted);
-  }
-  .sheet-list.compact li {
-    padding: 8px;
-    font-size: 12px;
-  }
-  button.primary {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 0;
-    background: var(--nd-ink);
-    color: var(--nd-shell);
-    cursor: pointer;
-    font: inherit;
-  }
-  .progress-row {
-    font-size: 12px;
-    color: var(--nd-ink-muted);
-    padding: 4px 0;
+    padding: 12px;
   }
   .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
+    padding: 0;
+    margin: -1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .search-panel {
     position: fixed;
-    inset: 80px 20% auto;
+    inset: 80px max(16px, calc((100vw - 560px) / 2)) auto;
+    max-height: calc(100dvh - 100px);
+    overflow-y: auto;
     background: var(--nd-panel);
-    border: 1px solid var(--nd-hairline);
+    border: 1px solid var(--nd-hairline-strong);
     border-radius: 12px;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 0.2);
     padding: 12px;
     z-index: 20;
   }
-  @media (max-width: 900px) {
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 4px 10px;
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 6px;
+  }
+  @media (max-width: 1180px) and (min-width: 701px) {
     .desktop.source-open .app-body {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr) var(--source-width);
+    }
+    .desktop.source-open .sidebar {
+      display: none;
+    }
+    .desktop.source-open.mobile-navigation-open .sidebar {
+      display: flex;
+      position: fixed;
+      inset: 52px auto 0 0;
+      width: var(--sidebar-width);
+      z-index: 15;
+      box-shadow: 12px 0 28px rgb(0 0 0 / 0.15);
+    }
+    .project-crumb {
+      max-width: 150px;
+    }
+  }
+  @media (max-width: 900px) {
+    .project-crumb {
+      display: none;
+    }
+    .breadcrumb-divider {
+      display: none;
+    }
+    .sheets-trigger {
+      display: none;
+    }
+  }
+  @media (max-width: 700px) {
+    .desktop .app-body,
+    .desktop.source-open .app-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .brand-slot {
+      width: auto;
+      min-width: 86px;
+      border-right: 0;
+      background: transparent;
+      padding-left: 8px;
+      gap: 4px;
+    }
+    .window-bar {
+      gap: 8px;
+      padding-right: 8px;
+    }
+    .breadcrumbs {
+      display: none;
+    }
+    .window-actions {
+      margin-left: auto;
+      gap: 3px;
+    }
+    .ghost,
+    .findings-trigger {
+      padding: 7px;
+      gap: 4px;
+    }
+    .sidebar {
+      position: fixed;
+      inset: 52px auto 0 0;
+      width: 240px;
+      z-index: 15;
+      visibility: hidden;
+      box-shadow: 12px 0 28px rgb(0 0 0 / 0.15);
+    }
+    .desktop.mobile-navigation-open .sidebar {
+      visibility: visible;
     }
     .source-panel {
       position: fixed;
       inset: 52px 0 0;
       z-index: 10;
+    }
+    .chat-scroll {
+      padding: 28px 20px 16px;
+    }
+    .composer-region {
+      padding: 10px 16px 14px;
+    }
+    .chat-empty {
+      margin-top: 8vh;
     }
   }
 </style>

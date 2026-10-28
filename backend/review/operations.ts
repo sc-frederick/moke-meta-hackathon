@@ -5,6 +5,7 @@ import {
   ArtifactChunk,
   ArtifactId,
   CommandId,
+  type FindingId,
   OperationId,
   Affine,
   RenderSource,
@@ -26,7 +27,7 @@ import {
 } from "./store.ts";
 
 /** Domain SQL is scoped by the application, while processing stays outside its query permit. */
-export interface ReviewOperationsConfiguration {
+interface ReviewOperationsConfiguration {
   readonly query: <A>(
     operation: Effect.Effect<A, typeof ReviewError.Type, ReviewStore>,
   ) => Effect.Effect<A, typeof ReviewError.Type>;
@@ -80,8 +81,15 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
       request.dpi,
     );
 
-    const artifact = new Artifact({
-      ...result,
+    return new Artifact({
+      sha256: result.sha256,
+      byteLength: result.byteLength,
+      width: result.width,
+      height: result.height,
+      region: result.region,
+      dpi: result.dpi,
+      pdfToPixels: result.pdfToPixels,
+      pixelsToPdf: result.pixelsToPdf,
       id: Schema.decodeUnknownSync(ArtifactId)(randomUUID()),
       projectId: request.projectId,
       revisionId: original.id,
@@ -89,8 +97,6 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
       mediaType: "image/png",
       operationId: request.operationId,
     });
-
-    return artifact;
   });
 
   const source = (request: typeof RenderSource.Type) =>
@@ -181,7 +187,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
 
   const verifyEvidence = Effect.fn("Review.verifyEvidence")(function* (
     projectId: Artifact["projectId"],
-    findingId: Artifact["id"] | string,
+    findingId: typeof FindingId.Type,
   ) {
     if (config.documents === undefined) return yield* unavailable();
     const state = yield* snapshot(projectId, 0);
@@ -333,16 +339,30 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
               message: "The finding is outside the selected project.",
             });
           const allowed = new Set([finding.drawnSheetId, finding.scheduledSheetId]);
+          const request = selection.reviewRequest;
+
+          const instruction =
+            request === undefined
+              ? undefined
+              : state.messages.find(
+                  (message) =>
+                    message.id === request.messageId &&
+                    message.conversationId === request.conversationId &&
+                    message.role === "reviewer",
+                );
+
+          if (request !== undefined && instruction === undefined)
+            return yield* new ReviewInputError({
+              message:
+                "The reviewer request does not belong to the selected conversation and project.",
+            });
 
           return new ExecutionEvidence({
             sourceVersion: project.sourceVersion,
             factVersion: project.factVersion,
             finding,
             sheets: state.sheets.filter((sheet) => allowed.has(sheet.id)),
-            reviewerInstructions: state.messages
-              .filter((message) => message.role === "reviewer")
-              .slice(-8)
-              .map((message) => message.text),
+            reviewerInstructions: instruction === undefined ? [] : [instruction.text],
             facts: state.facts.filter((fact) => fact.findingId === finding.id),
             checks: state.checks.filter((check) => check.findingId === finding.id),
             artifacts: state.artifacts.filter(

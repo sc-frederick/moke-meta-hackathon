@@ -1,8 +1,7 @@
 # Data lifecycle
 
 Application queries use Effect SQL. Parse rows with Effect Schema before returning
-domain values. Do not assume D1 supports the same transaction APIs as local SQLite;
-use its atomic batch primitive for fixed multi-statement operations.
+domain values.
 
 ## Desktop
 
@@ -47,6 +46,8 @@ to checkpoint and leave WAL mode, replaces the database, and restarts the deskto
 app. SQLite manages its journal files; never remove live WAL files manually.
 Failed restores leave the backend usable and preserve the current database.
 A migration or restore failure must never reset or delete user data.
+The obsolete notes UI and RPC are removed. Migration `0001_notes.sql` remains
+immutable, and legacy notes are still preserved by database and package recovery.
 
 ## Complete review packages
 
@@ -64,19 +65,6 @@ persistent historical engine marker and cannot resume their copied Pi journals;
 no model or SAM work starts on reopen. Uncertain model and SAM counts are retained.
 See [package recovery](research/review-packages.md) and
 [execution safety](research/pi-runtime.md) for exact contracts and limitations.
-
-## Web
-
-Alchemy owns D1 provisioning and migration application through the migrations
-property in alchemy.run.ts. Commit reviewed SQL before deploying. Do not run a
-second migration tracker through Wrangler or an application startup hook. Separate
-statements inside a web migration file with `--> statement-breakpoint`, which the
-local smoke runner and Alchemy migration parser both recognize.
-
-Development, staging, and production have separate databases. Set up an explicit
-export/restore procedure before destructive production schema changes. Schema
-changes must remain compatible with the currently deployed app during rollout;
-an app rollback does not reverse a database migration.
 
 ## Sync
 

@@ -46,6 +46,18 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByTestId("review-workbench")).toBeVisible();
     await page.getByTestId("project-name-input").fill("Lighting coordination");
     await page.getByTestId("create-project-button").click();
+    await expect(page.getByTestId("import-pdf")).toBeEnabled();
+
+    await page.getByRole("button", { name: "Review settings" }).click();
+    const callLimit = page.getByLabel("Maximum calls per inspection");
+    await expect(callLimit).toHaveValue("12");
+
+    for (const limit of ["4", "8", "12"]) {
+      await callLimit.selectOption(limit);
+      await expect(callLimit).toHaveValue(limit);
+    }
+
+    await page.getByRole("button", { name: "Close source panel" }).click();
     await page.getByTestId("import-pdf").click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
 
@@ -88,7 +100,8 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await form.locator("select").nth(1).selectOption({ index: 2 });
       await form.locator('input[type="checkbox"]').check();
       await page.getByTestId("create-finding-submit").click();
-      await openFinding(title);
+      await expect(page.getByTestId("finding-inspector")).toContainText(title);
+      await expect(page.getByTestId("evaluate-finding")).toBeEnabled();
     };
 
     const accept = async (side: "drawn" | "scheduled", count: number, rationale: string) => {
@@ -111,6 +124,21 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await createFinding("Room 101 type A");
 
+    await expect(
+      page.getByRole("region", { name: "Original source render" }).locator("img"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Sheets", exact: true }).click();
+    const otherSheet = page.getByTestId("sheet-list").locator("details").nth(1);
+
+    if ((await otherSheet.getAttribute("open")) === null)
+      await otherSheet.locator("summary").click();
+    await otherSheet.getByRole("button", { name: "View sheet" }).click();
+    await expect(
+      page.getByRole("region", { name: "Original source render" }).locator("img"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Evidence", exact: true }).click();
+    await expect(page.locator(".source-provenance")).toContainText("page 1");
+
     if (live) {
       await page.getByTestId("start-inspection").click();
       await expect(page.getByTestId("execution-status")).toHaveText(
@@ -129,6 +157,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await accept("drawn", 2, "Counted the two type A symbols within Room 101 on L-101.");
     await accept("scheduled", 3, "Read the Room 101 row on L-601.");
+    await expect(page.getByRole("region", { name: "Proposed observations" })).toHaveCount(0);
     await evaluate("Supported issue");
     await expect(page.getByTestId("check-history")).toContainText("2 drawn");
     await expect(page.getByTestId("check-history")).toContainText("3 scheduled");
@@ -214,6 +243,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       controlId ?? "missing",
     );
 
+    await page.getByLabel("Message action").selectOption("note");
     await page
       .getByLabel("Message", { exact: true })
       .fill("Rechecked Revision B; keep the original issue and correction history.");
@@ -224,13 +254,22 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await page.locator(".source-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
+    await expect(sourceImage).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("review-workbench.png") });
     const packageParent = test.info().outputPath("packages");
     await mkdir(packageParent, { recursive: true });
     await app.evaluate(({ dialog }, parent) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [parent] });
     }, packageParent);
-    await page.getByRole("button", { name: "Export complete package", exact: true }).click();
+
+    const exportPackage = page.getByRole("button", {
+      name: "Export complete package",
+      exact: true,
+    });
+
+    if (!(await exportPackage.isVisible()))
+      await page.getByRole("button", { name: "Toggle conversation sidebar" }).click();
+    await exportPackage.click();
     await expect
       .poll(
         async () =>

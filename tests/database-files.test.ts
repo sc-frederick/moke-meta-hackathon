@@ -1,19 +1,19 @@
 import { Effect } from "effect";
 import { constants, Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "bun:test";
 import { exportDatabase, migrateDatabase, restoreDatabase } from "../backend/database-files.ts";
+import { DatabaseFileError } from "#lib/backend-rpc.ts";
 
 test("an upgrade backs up real data; export and restore recover it", async () => {
   const root = await mkdtemp(join(tmpdir(), "database-files-"));
   const migrations = join(root, "migrations");
   const backups = join(root, "backups");
   const filename = join(root, "app.sqlite");
-  const { mkdir } = await import("node:fs/promises");
   await mkdir(migrations);
   await copyFile("migrations/0001_notes.sql", join(migrations, "0001_notes.sql"));
 
@@ -48,7 +48,11 @@ test("an upgrade backs up real data; export and restore recover it", async () =>
     restored.close();
     const applied = await readFile(join(migrations, "0002_add_settings.sql"), "utf8");
     await writeFile(join(migrations, "0002_add_settings.sql"), applied + " -- edited");
-    expect(migrate()).rejects.toThrow();
+    expect(
+      await Effect.runPromise(
+        Effect.scoped(migrateDatabase(filename, migrations, backups)).pipe(Effect.flip),
+      ),
+    ).toBeInstanceOf(DatabaseFileError);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -59,7 +63,6 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
   const migrations = join(root, "migrations");
   const backups = join(root, "backups");
   const filename = join(root, "app.sqlite");
-  const { mkdir } = await import("node:fs/promises");
   await mkdir(migrations);
   await copyFile("migrations/0001_notes.sql", join(migrations, "0001_notes.sql"));
 
@@ -70,8 +73,10 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
       "CREATE TABLE partial (id INTEGER); THIS IS NOT SQL;",
     );
     expect(
-      Effect.runPromise(Effect.scoped(migrateDatabase(filename, migrations, backups))),
-    ).rejects.toThrow();
+      await Effect.runPromise(
+        Effect.scoped(migrateDatabase(filename, migrations, backups)).pipe(Effect.flip),
+      ),
+    ).toBeInstanceOf(DatabaseFileError);
     const database = new DatabaseSync(filename);
     expect(database.prepare("SELECT name FROM sqlite_master WHERE name = 'partial'").all()).toEqual(
       [],
@@ -80,8 +85,10 @@ test("failed migrations roll back and corrupt restore files leave data intact", 
     const corrupt = join(root, "bad.sqlite");
     await writeFile(corrupt, "invalid database");
     expect(
-      Effect.runPromise(Effect.scoped(restoreDatabase(filename, corrupt, migrations, backups))),
-    ).rejects.toThrow();
+      await Effect.runPromise(
+        Effect.scoped(restoreDatabase(filename, corrupt, migrations, backups)).pipe(Effect.flip),
+      ),
+    ).toBeInstanceOf(DatabaseFileError);
     const preserved = new DatabaseSync(filename);
     expect(
       preserved.prepare("SELECT count(*) AS count FROM __project_kit_migrations").get(),

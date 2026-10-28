@@ -29,7 +29,7 @@ export function canvasNativeFileName(platform = process.platform, arch = process
 }
 
 /** Copy pdfjs and native canvas binaries into `dist/backend/pdf-assets`. */
-export function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url)), "..")) {
+function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url)), "..")) {
   const outputRoot = join(root, "dist/backend/pdf-assets");
   const pdfjsSource = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
   const nativePackage = canvasNativePackage();

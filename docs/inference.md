@@ -31,15 +31,28 @@ blank `.env.example` template. Keep that template free of credentials.
 | `BASETEN_API_BASE_URL`    | `https://inference.baseten.co/v1`                             |
 | `BASETEN_MODEL`           | `meta-models/muse-spark-open-1026`, required by the hackathon |
 
-These entries establish configuration for the upcoming inference integration.
-The application does not call the providers yet. Bun loads the root `.env` during
-local development; restart `bun run dev` after editing it. Provider requests and
-key access belong in the Bun backend. Keep keys out of Svelte components, the
-renderer bridge, logs, and variables prefixed with `PUBLIC_` or `VITE_`.
+The desktop now runs bounded reviews through Pi Durable. Bun loads the root
+`.env` during local development; restart `bun run dev` after editing it. Meta is
+the default route. Set `MOKE_PROVIDER=baseten` to select Baseten explicitly.
+Baseten's crop acceptance remains unverified.
 
-The packaged backend disables automatic dotenv loading. This local file is not
-packaged credential delivery; that needs explicit backend configuration when
-inference is integrated.
+The desktop accepts the canonical endpoint/model pair for each provider listed
+above. The other model IDs describe the available catalog, not implemented app
+features. Template endpoint and model variables do not override the desktop's
+canonical route; individual experiment scripts may read them.
+
+In the app, import and confirm sheets, create a drawn-to-schedule count check,
+then select that check and discipline in the composer. **Review with Moke** saves
+the request and starts an inspection with an explicit call limit. **Save note**
+does not call a model. Proposed counts need reviewer acceptance and confirmed
+coverage. Governing-code claims remain unverified. See the
+[beta workflow](research/beta-implementation.md).
+
+Provider requests and key access belong in the Bun backend. Keep keys out of
+Svelte components, the renderer bridge, logs, and variables prefixed with
+`PUBLIC_` or `VITE_`. Packaged builds do not load `.env`; use the desktop's File
+menu to import an encrypted credential configuration, or select a private
+session-only file as described in [deployment](deployment.md#provider-credentials-in-a-packaged-launch).
 
 ## Manual checks after adding keys
 

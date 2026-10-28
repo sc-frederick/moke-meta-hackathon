@@ -1,6 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { CheckRun, CountFact, Finding, Region, Sheet } from "#lib/review/contracts.ts";
+  import { Schema } from "effect";
+  import {
+    Region,
+    type CheckRun,
+    type CountFact,
+    type Finding,
+    type Sheet,
+  } from "#lib/review/contracts.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import { checksForFinding, formatOutcome, latestAcceptedFact } from "./review-format.ts";
 
@@ -12,7 +19,6 @@
     busy = false,
     onAccept,
     onEvaluate,
-    onCorrect,
     onStatus,
     onRequestDetail,
   }: {
@@ -32,7 +38,6 @@
       },
     ) => void;
     onEvaluate: () => void;
-    onCorrect: (side: "drawn" | "scheduled") => void;
     onStatus: (closed: boolean, taskCompleted: boolean) => void;
     onRequestDetail: (side: "drawn" | "scheduled", region: Region) => void;
   } = $props();
@@ -43,48 +48,75 @@
   const drawnFact = $derived(latestAcceptedFact(facts, finding.id, "drawn"));
   const scheduledFact = $derived(latestAcceptedFact(facts, finding.id, "scheduled"));
 
-  let drawnValue = $state(0);
-  let scheduledValue = $state(0);
-  let drawnStatement = $state("");
-  let scheduledStatement = $state("");
-  let drawnRationale = $state("");
-  let scheduledRationale = $state("");
-  let drawnCoverage = $state(false);
-  let scheduledCoverage = $state(false);
-
-  let drawnRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
-  let scheduledRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
+  let drawnInput: HTMLInputElement | undefined = $state();
+  let scheduledInput: HTMLInputElement | undefined = $state();
   const drawnIdentity = $derived(`${finding.drawnSheetId}:${drawnFact?.id ?? ""}`);
   const scheduledIdentity = $derived(`${finding.scheduledSheetId}:${scheduledFact?.id ?? ""}`);
 
   const proposals = $derived(
-    facts.filter((fact) => fact.findingId === finding.id && fact.state === "proposed"),
+    facts.filter(
+      (fact) =>
+        fact.findingId === finding.id &&
+        fact.state === "proposed" &&
+        fact.evidence.sheetId ===
+          (fact.side === "drawn" ? finding.drawnSheetId : finding.scheduledSheetId) &&
+        fact.version > ((fact.side === "drawn" ? drawnFact : scheduledFact)?.version ?? 0),
+    ),
   );
 
-  $effect(() => {
+  // Unrelated snapshot refreshes must preserve drafts; accepted evidence or sheet changes reset them.
+  const drawnDefaults = $derived.by(() => {
     const identity = drawnIdentity;
-    untrack(() => {
+
+    return untrack(() => {
       const fact = facts.find((entry) => `${finding.drawnSheetId}:${entry.id}` === identity);
-      drawnValue = fact?.value ?? 0;
-      drawnStatement = fact?.evidence.statement ?? "";
-      drawnRationale = fact?.rationale ?? "";
-      drawnCoverage = fact?.evidence.sheetId === finding.drawnSheetId && fact.coverageConfirmed;
-      drawnRegion = { ...(fact?.evidence.region ?? defaultRegion(drawnSheet)) };
+
+      return {
+        value: fact?.value ?? 0,
+        statement: fact?.evidence.statement ?? "",
+        rationale: fact?.rationale ?? "",
+        coverage: fact?.evidence.sheetId === finding.drawnSheetId && fact.coverageConfirmed,
+        region: fact?.evidence.region ?? defaultRegion(drawnSheet),
+      };
     });
   });
 
-  $effect(() => {
+  const scheduledDefaults = $derived.by(() => {
     const identity = scheduledIdentity;
-    untrack(() => {
+
+    return untrack(() => {
       const fact = facts.find((entry) => `${finding.scheduledSheetId}:${entry.id}` === identity);
-      scheduledValue = fact?.value ?? 0;
-      scheduledStatement = fact?.evidence.statement ?? "";
-      scheduledRationale = fact?.rationale ?? "";
-      scheduledCoverage =
-        fact?.evidence.sheetId === finding.scheduledSheetId && fact.coverageConfirmed;
-      scheduledRegion = { ...(fact?.evidence.region ?? defaultRegion(scheduledSheet)) };
+
+      return {
+        value: fact?.value ?? 0,
+        statement: fact?.evidence.statement ?? "",
+        rationale: fact?.rationale ?? "",
+        coverage: fact?.evidence.sheetId === finding.scheduledSheetId && fact.coverageConfirmed,
+        region: fact?.evidence.region ?? defaultRegion(scheduledSheet),
+      };
     });
   });
+
+  let drawnValue = $derived(drawnDefaults.value);
+  let scheduledValue = $derived(scheduledDefaults.value);
+  let drawnStatement = $derived(drawnDefaults.statement);
+  let scheduledStatement = $derived(scheduledDefaults.statement);
+  let drawnRationale = $derived(drawnDefaults.rationale);
+  let scheduledRationale = $derived(scheduledDefaults.rationale);
+  let drawnCoverage = $derived(drawnDefaults.coverage);
+  let scheduledCoverage = $derived(scheduledDefaults.coverage);
+
+  function editableRegion({ x, y, width, height }: Region) {
+    const region = $state({ x, y, width, height });
+
+    return region;
+  }
+
+  let drawnRegion = $derived(editableRegion(drawnDefaults.region));
+  let scheduledRegion = $derived(editableRegion(scheduledDefaults.region));
+  const RegionInput = Schema.Struct(Region.fields);
+  const drawnRegionValid = $derived(Schema.is(RegionInput)(drawnRegion));
+  const scheduledRegionValid = $derived(Schema.is(RegionInput)(scheduledRegion));
 
   function defaultRegion(sheet: Sheet | undefined): Region {
     if (sheet === undefined) return { x: 0, y: 0, width: 100, height: 100 };
@@ -107,7 +139,21 @@
         {#if proposal.origin}<p class="meta">
             {proposal.origin.route} · {proposal.origin.provider} / {proposal.origin.model} · response
             {proposal.origin.responseId ?? "ID unavailable"}
+          </p>
+          <p class="meta">
+            {proposal.origin.promptVersion} · {proposal.origin.discipline?.replaceAll("_", " ") ??
+              "general"} · skills {proposal.origin.instructionRevision?.slice(0, 12) ?? "legacy"}
           </p>{/if}
+        <p class="meta">
+          {sheets.find((sheet) => sheet.id === proposal.evidence.sheetId)?.label} · PDF region {proposal
+            .evidence.region.x}, {proposal.evidence.region.y}, {proposal.evidence.region.width} × {proposal
+            .evidence.region.height}
+        </p>
+        <button
+          disabled={busy}
+          onclick={() => onRequestDetail(proposal.side, proposal.evidence.region)}
+          >View proposal evidence</button
+        >
         <button
           disabled={busy}
           onclick={() => {
@@ -115,13 +161,13 @@
               drawnValue = proposal.value;
               drawnStatement = proposal.evidence.statement;
               drawnRationale = proposal.rationale;
-              drawnRegion = { ...proposal.evidence.region };
+              drawnRegion = editableRegion(proposal.evidence.region);
               drawnCoverage = false;
             } else {
               scheduledValue = proposal.value;
               scheduledStatement = proposal.evidence.statement;
               scheduledRationale = proposal.rationale;
-              scheduledRegion = { ...proposal.evidence.region };
+              scheduledRegion = editableRegion(proposal.evidence.region);
               scheduledCoverage = false;
             }
           }}>Use proposal as draft</button
@@ -133,7 +179,8 @@
     <h3>Drawn count</h3>
     <p class="sheet-line">{drawnSheet ? drawnSheet.label : "Missing sheet"}</p>
     {#if drawnFact && drawnFact.evidence.sheetId !== finding.drawnSheetId}<p class="warn">
-        Accepted input cites an earlier revision. Inspect and accept fresh evidence.
+        Accepted input cites an earlier revision. Confirm unchanged correspondence or accept fresh
+        evidence.
       </p>{/if}
     {#if drawnSheet && !drawnSheet.confirmed}
       <p class="warn" role="status">Confirm this sheet before accepting evidence.</p>
@@ -143,7 +190,9 @@
         disabled={busy}
         type="number"
         min="0"
+        max="100000"
         bind:value={drawnValue}
+        bind:this={drawnInput}
         data-testid="drawn-count-input"
       /></label
     >
@@ -186,6 +235,7 @@
       >Visible statement<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={drawnStatement}
         data-testid="drawn-statement-input"></textarea></label
     >
@@ -193,6 +243,7 @@
       >Rationale<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={drawnRationale}
         data-testid="drawn-rationale-input"></textarea></label
     >
@@ -213,8 +264,8 @@
           !drawnRationale.trim() ||
           !Number.isInteger(drawnValue) ||
           drawnValue < 0 ||
-          drawnRegion.width <= 0 ||
-          drawnRegion.height <= 0}
+          drawnValue > 100000 ||
+          !drawnRegionValid}
         data-testid="accept-drawn-count"
         onclick={() =>
           onAccept("drawn", {
@@ -227,7 +278,7 @@
       >
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !drawnRegionValid}
         data-testid="detail-drawn"
         onclick={() => onRequestDetail("drawn", drawnRegion)}>300 DPI detail</button
       >
@@ -235,7 +286,10 @@
           type="button"
           disabled={busy}
           data-testid="correct-drawn"
-          onclick={() => onCorrect("drawn")}>Correct drawn</button
+          onclick={() => {
+            drawnInput?.scrollIntoView({ block: "center" });
+            drawnInput?.focus();
+          }}>Correct drawn</button
         >{/if}
     </div>
     {#if drawnFact}<p class="fact-id">
@@ -260,7 +314,9 @@
         disabled={busy}
         type="number"
         min="0"
+        max="100000"
         bind:value={scheduledValue}
+        bind:this={scheduledInput}
         data-testid="scheduled-count-input"
       /></label
     >
@@ -303,6 +359,7 @@
       >Visible statement<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={scheduledStatement}
         data-testid="scheduled-statement-input"></textarea></label
     >
@@ -310,6 +367,7 @@
       >Rationale<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={scheduledRationale}
         data-testid="scheduled-rationale-input"></textarea></label
     >
@@ -330,8 +388,8 @@
           !scheduledRationale.trim() ||
           !Number.isInteger(scheduledValue) ||
           scheduledValue < 0 ||
-          scheduledRegion.width <= 0 ||
-          scheduledRegion.height <= 0}
+          scheduledValue > 100000 ||
+          !scheduledRegionValid}
         data-testid="accept-scheduled-count"
         onclick={() =>
           onAccept("scheduled", {
@@ -344,7 +402,7 @@
       >
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !scheduledRegionValid}
         data-testid="detail-scheduled"
         onclick={() => onRequestDetail("scheduled", scheduledRegion)}>300 DPI detail</button
       >
@@ -352,7 +410,10 @@
           type="button"
           disabled={busy}
           data-testid="correct-scheduled"
-          onclick={() => onCorrect("scheduled")}>Correct scheduled</button
+          onclick={() => {
+            scheduledInput?.scrollIntoView({ block: "center" });
+            scheduledInput?.focus();
+          }}>Correct scheduled</button
         >{/if}
     </div>
     {#if scheduledFact}<p class="fact-id">
@@ -372,17 +433,15 @@
       ><input
         type="checkbox"
         checked={finding.closed}
-        onchange={(event) =>
-          onStatus((event.currentTarget as HTMLInputElement).checked, finding.taskCompleted)}
+        onchange={(event) => onStatus(event.currentTarget.checked, finding.taskCompleted)}
       />Reviewer closed</label
     >
     <label class="checkbox"
       ><input
         type="checkbox"
         checked={finding.taskCompleted}
-        onchange={(event) =>
-          onStatus(finding.closed, (event.currentTarget as HTMLInputElement).checked)}
-      />Task complete</label
+        onchange={(event) => onStatus(finding.closed, event.currentTarget.checked)}
+      />Completed task</label
     >
   </div>
 
@@ -474,7 +533,7 @@
     color: inherit;
   }
   .warn {
-    color: #e8a020;
+    color: var(--nd-warning);
     margin: 0;
   }
   .sheet-line {

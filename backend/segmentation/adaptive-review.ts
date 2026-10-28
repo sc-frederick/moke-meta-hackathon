@@ -156,10 +156,6 @@ const pixelBox = Effect.fn("readVisionPixelBox")(function* (
   );
 });
 
-function html(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
-}
-
 /** Run a bounded local evidence-seeking review through real Meta tool calls. */
 export const runAdaptiveReview = Effect.fn("runAdaptiveReview")(function* (options: {
   readonly fixtures: string;
@@ -395,13 +391,15 @@ export const runAdaptiveReview = Effect.fn("runAdaptiveReview")(function* (optio
 
       const values = [...new Set(assertions.map((a) => a.value))];
 
-      return values.length ? values.map((v) => html(v ?? "Unknown")).join(" / ") : "Unknown";
+      return values.length
+        ? values.map((v) => Bun.escapeHTML(v ?? "Unknown")).join(" / ")
+        : "Unknown";
     };
 
     const rowMarkup = data.rows
       .map(
         (row) =>
-          `<tr><th>${html(row.id)}</th><td>${html(row.status)}</td><td>${label(row, "room")}</td><td>${label(row, "panel")}</td><td>${label(row, "circuit")}</td><td>${label(row, "protection")}</td><td><details><summary>Source assertions</summary><pre>${html(JSON.stringify(row.assertions, null, 2))}</pre></details></td></tr>`,
+          `<tr><th>${Bun.escapeHTML(row.id)}</th><td>${Bun.escapeHTML(row.status)}</td><td>${label(row, "room")}</td><td>${label(row, "panel")}</td><td>${label(row, "circuit")}</td><td>${label(row, "protection")}</td><td><details><summary>Source assertions</summary><pre>${Bun.escapeHTML(JSON.stringify(row.assertions, null, 2))}</pre></details></td></tr>`,
       )
       .join("");
 
@@ -421,14 +419,14 @@ export const runAdaptiveReview = Effect.fn("runAdaptiveReview")(function* (optio
       .filter((i) => i.id !== "base")
       .map(
         (i) =>
-          `<figure><img src="data:image/png;base64,${Buffer.from(i.bytes).toString("base64")}" alt="${html(i.id)}"/><figcaption>${html(i.id)}</figcaption></figure>`,
+          `<figure><img src="data:image/png;base64,${Buffer.from(i.bytes).toString("base64")}" alt="${Bun.escapeHTML(i.id)}"/><figcaption>${Bun.escapeHTML(i.id)}</figcaption></figure>`,
       )
       .toArray()
       .join("");
 
     yield* write(
       resolve(options.output, "report.html"),
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Adaptive Meta electrical review</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:1450px;margin:auto;padding:24px;background:#f4f6f8;color:#172033}table{border-collapse:collapse;width:100%;background:white}td,th{text-align:left;padding:10px;border-bottom:1px solid #ccd5df}img{max-width:100%;max-height:750px;object-fit:contain}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}figure,details{background:white;padding:16px;border:1px solid #ccd5df}.note{border-left:4px solid #b45309;padding:12px;background:white}</style><h1>Meta · Evidence-seeking electrical review</h1><p>${html(options.scenario.task)}</p><p class="note">Status: ${html(status)}. ${html(summary)} All rows are proposed evidence pending reviewer verification. “GFI” means visible notation, not verified protection or compliance. Agreement does not establish coverage.</p><p>SAM shapes: ${data.counts.samRaw ?? "—"} → classified receptacles: ${data.counts.samClassified ?? "—"}; independent Muse proposals: ${data.counts.blindProposals ?? "—"}; current rows: ${data.counts.proposedRows}; unresolved: ${data.counts.unresolved}; corrections: ${data.counts.corrections}.</p><h2>Source and proposed locations</h2><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}" alt="Original source with proposed instance boxes"/><h2>Room, circuit and visible notation</h2><div style="overflow:auto"><table><thead><tr><th>Instance</th><th>Evidence state</th><th>Room</th><th>Panel</th><th>Circuit</th><th>Visible protection</th><th>Evidence</th></tr></thead><tbody>${rowMarkup}</tbody></table></div><h2>Model-requested evidence operations</h2>${trace.map((t) => `<details open><summary>${t.turn}. ${html(t.action)}</summary><pre>${html(t.arguments)}</pre><pre>${html(JSON.stringify(t.result, null, 2))}</pre></details>`).join("")}<h2>Inspections and segmentation feedback</h2><div class="gallery">${extraImages}</div></html>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Adaptive Meta electrical review</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:1450px;margin:auto;padding:24px;background:#f4f6f8;color:#172033}table{border-collapse:collapse;width:100%;background:white}td,th{text-align:left;padding:10px;border-bottom:1px solid #ccd5df}img{max-width:100%;max-height:750px;object-fit:contain}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}figure,details{background:white;padding:16px;border:1px solid #ccd5df}.note{border-left:4px solid #b45309;padding:12px;background:white}</style><h1>Meta · Evidence-seeking electrical review</h1><p>${Bun.escapeHTML(options.scenario.task)}</p><p class="note">Status: ${Bun.escapeHTML(status)}. ${Bun.escapeHTML(summary)} All rows are proposed evidence pending reviewer verification. “GFI” means visible notation, not verified protection or compliance. Agreement does not establish coverage.</p><p>SAM shapes: ${data.counts.samRaw ?? "—"} → classified receptacles: ${data.counts.samClassified ?? "—"}; independent Muse proposals: ${data.counts.blindProposals ?? "—"}; current rows: ${data.counts.proposedRows}; unresolved: ${data.counts.unresolved}; corrections: ${data.counts.corrections}.</p><h2>Source and proposed locations</h2><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}" alt="Original source with proposed instance boxes"/><h2>Room, circuit and visible notation</h2><div style="overflow:auto"><table><thead><tr><th>Instance</th><th>Evidence state</th><th>Room</th><th>Panel</th><th>Circuit</th><th>Visible protection</th><th>Evidence</th></tr></thead><tbody>${rowMarkup}</tbody></table></div><h2>Model-requested evidence operations</h2>${trace.map((t) => `<details open><summary>${t.turn}. ${Bun.escapeHTML(t.action)}</summary><pre>${Bun.escapeHTML(t.arguments)}</pre><pre>${Bun.escapeHTML(JSON.stringify(t.result, null, 2))}</pre></details>`).join("")}<h2>Inspections and segmentation feedback</h2><div class="gallery">${extraImages}</div></html>`,
     );
 
     return data;

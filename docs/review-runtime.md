@@ -1,8 +1,8 @@
 # Review runtime and cloud handoff
 
-Decision recorded October 27, 2026: use **Pi Durable for agent execution**, behind an Effect application service. Reviews execute locally by default. An explicit **Continue in cloud** action transfers a review to a **Modal Sandbox** running the same versioned engine. Effect continues to own application contracts, project operations, PDF and SAM tools, accepted facts, calculations and dependency invalidation.
+Decision recorded October 27, 2026: use **Pi Durable for agent execution**, behind an Effect application service. Reviews execute locally by default. The planned **Continue in cloud** action would transfer a review to a **Modal Sandbox** running the same versioned engine. Effect continues to own application contracts, project operations, PDF and SAM tools, accepted facts, calculations and dependency invalidation.
 
-This selects the architecture. Pi's Bun integration, provider behavior, storage adapter and packaged handoff still require implementation and validation. The [SDK comparison](research/agent-harness-comparison.md) records the alternatives and independent critique.
+The local engine, persistent journal, provider integration, and packaged desktop are implemented. The [beta workflow](research/beta-implementation.md) describes the connected prompts and UI; [core validation](research/core-validation.md) records earlier runtime proof. Modal handoff remains deferred and optional. The cloud sections below describe its proposed contract. The [SDK comparison](research/agent-harness-comparison.md) records the alternatives and independent critique.
 
 ## Local and cloud responsibilities
 
@@ -14,7 +14,7 @@ This selects the architecture. Pi's Bun integration, provider behavior, storage 
 | Source evidence | Original PDFs, selected sheets, crops, transforms and content hashes | Explicitly transferred source package sufficient for subsequent crop requests        |
 | Model calls     | Meta Model API or eligible partner inference                         | Same selected model route unless the user explicitly changes it                      |
 
-Local execution describes the engine and project state. The planned Meta/Baseten model calls still send selected evidence to hosted inference. Moving inference weights onto the user's hardware is a separate choice. Modal runs the review engine; moving the engine does not itself require moving model serving.
+Local execution describes the engine and project state. Meta/Baseten model calls still send selected evidence to hosted inference. Moving inference weights onto the user's hardware is a separate choice. The planned Modal path hosts the review engine; moving the engine does not itself require moving model serving.
 
 Cloudflare PiHarness is an alternative considered during research, not the selected cloud path. Modal is the selected provider for this handoff. A local review does not require a running Modal Sandbox or a permanent cloud copy of the project.
 

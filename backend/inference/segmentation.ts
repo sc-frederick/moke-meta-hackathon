@@ -31,7 +31,7 @@ const maxResponseBytes = 8 * 1024 * 1024;
 export type SamTransport = (url: string, init: RequestInit) => Promise<Response>;
 
 /** Parent-owned source loading and bounded image encoding run outside the SQL semaphore. */
-export interface ReviewSegmentationConfiguration {
+interface ReviewSegmentationConfiguration {
   readonly dataDirectory: string;
   readonly queries: Semaphore.Semaphore;
   readonly owner: DataDirectoryOwnership["Service"];

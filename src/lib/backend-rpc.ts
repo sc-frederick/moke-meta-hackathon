@@ -1,6 +1,5 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { NotesRpc } from "./notes.ts";
 import { ReviewFilesRpc, ReviewRpc } from "./review/contracts.ts";
 import { ExecutionRpc } from "./review/execution.ts";
 import { ReviewPackageFilesRpc } from "./review/packages.ts";
@@ -24,7 +23,7 @@ export class BackendUnavailable extends Schema.TaggedError<BackendUnavailable>()
 const Path = Schema.String.check(Schema.isMinLength(1));
 
 /** Private PDF processing paths are chosen by Electron, never renderer arguments. */
-export const ProcessingConfiguration = Schema.Struct({
+const ProcessingConfiguration = Schema.Struct({
   workerCommand: Schema.NonEmptyArray(Path),
   assetsDirectory: Path,
   nativeLibraryPath: Path,
@@ -57,7 +56,7 @@ export class BackendReady extends Schema.Class<BackendReady>("BackendReady")({
 }) {}
 
 /** Database operations available only to the trusted desktop shell. */
-export class DatabaseRpc extends RpcGroup.make(
+class DatabaseRpc extends RpcGroup.make(
   Rpc.make("ExportDatabase", {
     payload: { destination: Path },
     success: Schema.String,
@@ -71,8 +70,7 @@ export class DatabaseRpc extends RpcGroup.make(
 ) {}
 
 /** Application API served by Bun; Electron exposes restricted review and chooser contracts to its trusted renderer. */
-export class BackendRpc extends NotesRpc.merge(DatabaseRpc)
-  .merge(ReviewRpc)
+export class BackendRpc extends DatabaseRpc.merge(ReviewRpc)
   .merge(ReviewFilesRpc)
   .merge(ExecutionRpc)
   .merge(ReviewPackageFilesRpc) {}

@@ -1,4 +1,4 @@
-import { ProjectId } from "#lib/review/contracts.ts";
+import { CommandId, ProjectId, ReviewCommand } from "#lib/review/contracts.ts";
 import { Database } from "bun:sqlite";
 import { Schema, Stream } from "effect";
 import { expect, test } from "bun:test";
@@ -22,6 +22,12 @@ test("Bun owns typed APIs, authenticated access, recovery, persistence, and proc
   await writeFile(corrupt, "This is not a database.");
   let pid = 0;
 
+  const legacyNotes = () => {
+    using database = new Database(join(dataDirectory, "app.sqlite"));
+
+    return database.query("SELECT text FROM notes ORDER BY id").all();
+  };
+
   try {
     await Effect.runPromise(
       Effect.scoped(
@@ -39,35 +45,64 @@ test("Bun owns typed APIs, authenticated access, recovery, persistence, and proc
 
           expect(browser.status).toBe(403);
 
-          const saved = yield* backend.api.AddNote({ text: "Kept in Bun" });
+          expect(
+            (yield* backend.api.ReviewSnapshot({ projectId: null, afterSequence: 0 })).projects,
+          ).toEqual([]);
+          {
+            using database = new Database(join(dataDirectory, "app.sqlite"));
+            database.run("INSERT INTO notes(text) VALUES ('Legacy data')");
+          }
+
           yield* backend.api.ExportDatabase({ destination: backup });
-          yield* backend.api.AddNote({ text: "After backup" });
+          {
+            using database = new Database(join(dataDirectory, "app.sqlite"));
+            database.run("INSERT INTO notes(text) VALUES ('After backup')");
+          }
+
           yield* backend.api.RestoreDatabase({ source: backup });
-          expect(yield* backend.api.ListNotes()).toEqual([saved]);
+          expect(legacyNotes()).toEqual([{ text: "Legacy data" }]);
 
           const failure = yield* Effect.exit(backend.api.RestoreDatabase({ source: corrupt }));
           expect(Exit.isFailure(failure)).toBe(true);
-          expect(yield* backend.api.ListNotes()).toEqual([saved]);
-          const invalid = yield* Effect.exit(backend.api.AddNote({ text: "" }));
+          expect(legacyNotes()).toEqual([{ text: "Legacy data" }]);
+
+          const command = ReviewCommand.cases.CreateProject.make({
+            commandId: Schema.decodeUnknownSync(CommandId)(crypto.randomUUID()),
+            name: "Kept in Bun",
+          });
+
+          const saved = yield* backend.api.ReviewCommand({ command });
+
+          const invalid = yield* Effect.exit(
+            backend.api.ReviewCommand({ command: { ...command, name: "" } }),
+          );
+
           expect(Exit.isFailure(invalid)).toBe(true);
-          expect(yield* backend.api.ListNotes()).toEqual([saved]);
+
+          const snapshot = yield* backend.api.ReviewSnapshot({
+            projectId: saved.projectId,
+            afterSequence: 0,
+          });
+
+          expect(snapshot.projects.map((project) => project.name)).toEqual(["Kept in Bun"]);
         }).pipe(Effect.provide(launch)),
       ),
     );
 
     expect(() => process.kill(pid, 0)).toThrow();
 
-    const notes = await Effect.runPromise(
+    const snapshot = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const { api } = yield* BackendApi;
 
-          return yield* api.ListNotes();
+          return yield* api.ReviewSnapshot({ projectId: null, afterSequence: 0 });
         }).pipe(Effect.provide(launch)),
       ),
     );
 
-    expect(notes.map((note) => note.text)).toEqual(["Kept in Bun"]);
+    expect(snapshot.projects.map((project) => project.name)).toEqual(["Kept in Bun"]);
+    expect(legacyNotes()).toEqual([{ text: "Legacy data" }]);
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }
@@ -93,7 +128,7 @@ test("missing migrations fail backend startup and preserve existing files", asyn
       ),
     );
 
-    expect(Effect.runPromise(program)).rejects.toThrow();
+    expect(Exit.isFailure(await Effect.runPromiseExit(program))).toBe(true);
     expect(await readFile(filename, "utf8")).toBe("Existing data must remain untouched.");
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
@@ -110,7 +145,11 @@ test("a backend crash reports a failed typed call and notifies its owner", async
         Effect.gen(function* () {
           const { api, ready } = yield* BackendApi;
           yield* Effect.sync(() => process.kill(ready.pid, "SIGKILL"));
-          const result = yield* Effect.exit(api.ListNotes());
+
+          const result = yield* Effect.exit(
+            api.ReviewSnapshot({ projectId: null, afterSequence: 0 }),
+          );
+
           expect(Exit.isFailure(result)).toBe(true);
           yield* Effect.promise(() => crashed.promise);
         }).pipe(
