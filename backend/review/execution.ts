@@ -56,7 +56,6 @@ type ProjectKey = typeof ProjectId.Type;
 type Runtime = {
   readonly harness: Harness;
   readonly root: Conversation;
-  readonly settled: Promise<void>;
 };
 
 const failure = (reason: ExecutionError["reason"], message: string) =>
@@ -124,8 +123,6 @@ export class ReviewExecution extends Context.Service<
       projectId: ProjectKey,
       afterSequence: number,
     ) => Effect.Effect<ReadonlyArray<ExecutionEvent>, ExecutionError>;
-    /** Block restore while any live operation or unresolved attempt exists. */
-    readonly assertRecoverable: Effect.Effect<void, ExecutionError>;
     /** Bounded close persists pause/uncertainty first; false means the process must exit holding ownership. */
     readonly close: Effect.Effect<boolean, ExecutionError>;
     /** Drain and close journals for a consistent package, then admit only explicitly requested new work. */
@@ -654,7 +651,7 @@ export class ReviewExecution extends Context.Service<
               BACKGROUND_CONTEXT,
             );
 
-            const settled = submission
+            void submission
               .wait(BACKGROUND_CONTEXT)
               .then(async (result) => {
                 // A terminal answer is still only conversation prose. Preserve it when the model
@@ -751,7 +748,7 @@ export class ReviewExecution extends Context.Service<
                 wake();
               });
 
-            runtimes.set(run.run_id, { harness, root, settled });
+            runtimes.set(run.run_id, { harness, root });
           } catch (error) {
             await runPromise(
               store.query(
@@ -805,7 +802,9 @@ export class ReviewExecution extends Context.Service<
 
           if (closing) return yield* failure("cancelled", "Execution is closing.");
 
-          if (configuration.provider === undefined)
+          const provider = configuration.provider;
+
+          if (provider === undefined)
             return yield* failure(
               "unavailable",
               "Configure a supported provider credential before starting a live inspection.",
@@ -856,8 +855,7 @@ export class ReviewExecution extends Context.Service<
                   "Resolve the existing execution before starting another attempt.",
                 );
               const runId = Schema.decodeUnknownSync(RunId)(randomUUID());
-              const provider = configuration.provider;
-              const providerName = provider?.provider ?? "meta";
+              const providerName = provider.provider ?? "meta";
 
               const run = {
                 run_id: runId,
@@ -868,9 +866,9 @@ export class ReviewExecution extends Context.Service<
                 owner_generation: owner.generation,
                 source_version: evidence.sourceVersion,
                 fact_version: evidence.factVersion,
-                state: provider === undefined ? ("paused" as const) : ("running" as const),
+                state: "running" as const,
                 version: 0,
-                route: provider?.route ?? ("offline" as const),
+                route: provider.route,
                 provider: providerName,
                 model:
                   providerName === "meta" ? "muse-spark-1.3" : "meta-models/muse-spark-open-1026",
@@ -1137,25 +1135,6 @@ export class ReviewExecution extends Context.Service<
           return complete;
         }).pipe(Effect.tapError(() => Effect.sync(owner.retainUntilExit)));
 
-        const assertRecoverable = store.query(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-
-            const blockers =
-              yield* sql`SELECT run_id FROM review_execution_runs WHERE state IN ('running','pausing','paused','uncertain') OR EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=review_execution_runs.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=review_execution_runs.run_id AND s.status='uncertain') LIMIT 1`;
-
-            if (
-              blockers.length > 0 ||
-              launching.size > 0 ||
-              [...active.values()].some((count) => count > 0)
-            )
-              return yield* failure(
-                "conflict",
-                "Execution or unresolved provider evidence blocks recovery.",
-              );
-          }),
-        );
-
         const quiesce = close.pipe(
           Effect.flatMap((complete) => {
             if (!complete)
@@ -1246,7 +1225,6 @@ export class ReviewExecution extends Context.Service<
           events: (projectId, afterSequence) => store.query(store.events(projectId, afterSequence)),
           close,
           quiesce,
-          assertRecoverable,
         });
       }),
     );

@@ -48,22 +48,8 @@
   const drawnFact = $derived(latestAcceptedFact(facts, finding.id, "drawn"));
   const scheduledFact = $derived(latestAcceptedFact(facts, finding.id, "scheduled"));
 
-  let drawnValue = $state(0);
-  let scheduledValue = $state(0);
-  let drawnStatement = $state("");
-  let scheduledStatement = $state("");
-  let drawnRationale = $state("");
-  let scheduledRationale = $state("");
-  let drawnCoverage = $state(false);
-  let scheduledCoverage = $state(false);
   let drawnInput: HTMLInputElement | undefined = $state();
   let scheduledInput: HTMLInputElement | undefined = $state();
-
-  let drawnRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
-  let scheduledRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
-  const RegionInput = Schema.Struct(Region.fields);
-  const drawnRegionValid = $derived(Schema.is(RegionInput)(drawnRegion));
-  const scheduledRegionValid = $derived(Schema.is(RegionInput)(scheduledRegion));
   const drawnIdentity = $derived(`${finding.drawnSheetId}:${drawnFact?.id ?? ""}`);
   const scheduledIdentity = $derived(`${finding.scheduledSheetId}:${scheduledFact?.id ?? ""}`);
 
@@ -71,30 +57,59 @@
     facts.filter((fact) => fact.findingId === finding.id && fact.state === "proposed"),
   );
 
-  $effect(() => {
+  // Unrelated snapshot refreshes must preserve drafts; accepted evidence or sheet changes reset them.
+  const drawnDefaults = $derived.by(() => {
     const identity = drawnIdentity;
-    untrack(() => {
+
+    return untrack(() => {
       const fact = facts.find((entry) => `${finding.drawnSheetId}:${entry.id}` === identity);
-      drawnValue = fact?.value ?? 0;
-      drawnStatement = fact?.evidence.statement ?? "";
-      drawnRationale = fact?.rationale ?? "";
-      drawnCoverage = fact?.evidence.sheetId === finding.drawnSheetId && fact.coverageConfirmed;
-      drawnRegion = { ...(fact?.evidence.region ?? defaultRegion(drawnSheet)) };
+
+      return {
+        value: fact?.value ?? 0,
+        statement: fact?.evidence.statement ?? "",
+        rationale: fact?.rationale ?? "",
+        coverage: fact?.evidence.sheetId === finding.drawnSheetId && fact.coverageConfirmed,
+        region: fact?.evidence.region ?? defaultRegion(drawnSheet),
+      };
     });
   });
 
-  $effect(() => {
+  const scheduledDefaults = $derived.by(() => {
     const identity = scheduledIdentity;
-    untrack(() => {
+
+    return untrack(() => {
       const fact = facts.find((entry) => `${finding.scheduledSheetId}:${entry.id}` === identity);
-      scheduledValue = fact?.value ?? 0;
-      scheduledStatement = fact?.evidence.statement ?? "";
-      scheduledRationale = fact?.rationale ?? "";
-      scheduledCoverage =
-        fact?.evidence.sheetId === finding.scheduledSheetId && fact.coverageConfirmed;
-      scheduledRegion = { ...(fact?.evidence.region ?? defaultRegion(scheduledSheet)) };
+
+      return {
+        value: fact?.value ?? 0,
+        statement: fact?.evidence.statement ?? "",
+        rationale: fact?.rationale ?? "",
+        coverage: fact?.evidence.sheetId === finding.scheduledSheetId && fact.coverageConfirmed,
+        region: fact?.evidence.region ?? defaultRegion(scheduledSheet),
+      };
     });
   });
+
+  let drawnValue = $derived(drawnDefaults.value);
+  let scheduledValue = $derived(scheduledDefaults.value);
+  let drawnStatement = $derived(drawnDefaults.statement);
+  let scheduledStatement = $derived(scheduledDefaults.statement);
+  let drawnRationale = $derived(drawnDefaults.rationale);
+  let scheduledRationale = $derived(scheduledDefaults.rationale);
+  let drawnCoverage = $derived(drawnDefaults.coverage);
+  let scheduledCoverage = $derived(scheduledDefaults.coverage);
+
+  function editableRegion({ x, y, width, height }: Region) {
+    const region = $state({ x, y, width, height });
+
+    return region;
+  }
+
+  let drawnRegion = $derived(editableRegion(drawnDefaults.region));
+  let scheduledRegion = $derived(editableRegion(scheduledDefaults.region));
+  const RegionInput = Schema.Struct(Region.fields);
+  const drawnRegionValid = $derived(Schema.is(RegionInput)(drawnRegion));
+  const scheduledRegionValid = $derived(Schema.is(RegionInput)(scheduledRegion));
 
   function defaultRegion(sheet: Sheet | undefined): Region {
     if (sheet === undefined) return { x: 0, y: 0, width: 100, height: 100 };
@@ -139,13 +154,13 @@
               drawnValue = proposal.value;
               drawnStatement = proposal.evidence.statement;
               drawnRationale = proposal.rationale;
-              drawnRegion = { ...proposal.evidence.region };
+              drawnRegion = editableRegion(proposal.evidence.region);
               drawnCoverage = false;
             } else {
               scheduledValue = proposal.value;
               scheduledStatement = proposal.evidence.statement;
               scheduledRationale = proposal.rationale;
-              scheduledRegion = { ...proposal.evidence.region };
+              scheduledRegion = editableRegion(proposal.evidence.region);
               scheduledCoverage = false;
             }
           }}>Use proposal as draft</button

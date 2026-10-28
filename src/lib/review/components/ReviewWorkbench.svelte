@@ -826,11 +826,15 @@
 
 <div class="workbench-root" data-theme={theme}>
   <div
-    class="desktop"
+    class={[
+      "desktop",
+      {
+        "sidebar-closed": !sidebarOpen,
+        "source-open": panelOpen,
+        "mobile-navigation-open": mobileNavigationOpen,
+      },
+    ]}
     data-testid="review-workbench"
-    class:sidebar-closed={!sidebarOpen}
-    class:source-open={panelOpen}
-    class:mobile-navigation-open={mobileNavigationOpen}
   >
     <header class="window-bar">
       <div class="brand-slot">
@@ -870,10 +874,9 @@
             ></button
           >
           <button
-            class="findings-trigger"
+            class={["findings-trigger", { expanded: popoverOpen }]}
             disabled={busy}
             bind:this={findingsButton}
-            class:expanded={popoverOpen}
             aria-label="Open findings"
             aria-expanded={popoverOpen}
             popovertarget="review-findings"
@@ -947,7 +950,7 @@
                   <div class="threads">
                     {#each projectConversations[entry.id] ?? [] as thread (thread.id)}
                       <button
-                        class:current={selectedConversationId === thread.id}
+                        class={{ current: selectedConversationId === thread.id }}
                         disabled={busy}
                         aria-current={selectedConversationId === thread.id ? "page" : undefined}
                         data-testid={"conversation-" + thread.id}
@@ -968,8 +971,7 @@
             >
             <button class="nav-action" onclick={() => openSetup("settings")}
               ><ReviewIcon name="settings" size={16} /><span>Review settings</span><span
-                class="connection-dot"
-                class:connected={setup?.configured}
+                class={["connection-dot", { connected: setup?.configured }]}
                 title={setup?.configured ? "Provider configured" : "Provider not configured"}
               ></span></button
             >
@@ -1052,7 +1054,9 @@
               </div>
             {/if}
             {#each conversationMessages as message (message.id)}
-              <article class="message" class:application-message={message.role === "application"}>
+              <article
+                class={["message", { "application-message": message.role === "application" }]}
+              >
                 <div class="byline">
                   {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
                       class="moke-mark">{@render mark(16)}</span
@@ -1178,15 +1182,15 @@
           </header>
           {#if sourceTab !== "settings"}<div class="source-tabs">
               <button
-                class:current={sourceTab === "evidence"}
+                class={{ current: sourceTab === "evidence" }}
                 disabled={busy || !selectedFinding}
                 onclick={() => (sourceTab = "evidence")}>Evidence</button
               ><button
                 disabled={busy}
-                class:current={sourceTab === "sheets"}
+                class={{ current: sourceTab === "sheets" }}
                 onclick={() => (sourceTab = "sheets")}>Sheets</button
               ><button
-                class:current={sourceTab === "revision"}
+                class={{ current: sourceTab === "revision" }}
                 disabled={busy}
                 onclick={() => (sourceTab = "revision")}>Revision</button
               >
@@ -1401,8 +1405,7 @@
         </div>
         <div class="bubble-results">
           {#each findings as finding (finding.id)}<button
-              class="finding-row"
-              class:selected={selectedFindingId === finding.id}
+              class={["finding-row", { selected: selectedFindingId === finding.id }]}
               data-testid={"finding-row-" + finding.id}
               onclick={() => openFinding(finding)}
               title={findingSubtitle(finding, sheets)}

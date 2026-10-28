@@ -140,7 +140,7 @@
 <section class="execution" aria-label="Review execution" data-testid="execution-controls">
   {#if status}
     <div class="status-line" role="status" data-testid="execution-status">
-      <span class:running={status.state === "running"} class="status-dot"></span><span
+      <span class={["status-dot", { running: status.state === "running" }]}></span><span
         >{status.provider === "meta" ? "Meta" : "Baseten"} · {status.state} · {status.admittedCalls} calls</span
       >
     </div>

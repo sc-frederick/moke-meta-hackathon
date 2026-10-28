@@ -30,7 +30,6 @@ import {
   type ReviewDiscipline,
 } from "#lib/review/execution.ts";
 import { sendReviewMessage } from "#lib/review/conversation.ts";
-import type { ReviewClientResult } from "#lib/review/client.ts";
 
 const id = () => Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
 const budget = new ExecutionBudget({ maxCalls: 2, maxInputTokens: 64000, maxOutputTokens: 256 });
@@ -132,12 +131,12 @@ async function fixture(transport?: ProviderTransport) {
 
   const call = async <A, E extends typeof ReviewError.Type | ExecutionError>(
     effect: Effect.Effect<A, E>,
-  ): Promise<ReviewClientResult<A>> => {
+  ) => {
     const result = await Effect.runPromise(Effect.result(effect));
 
     return Result.isSuccess(result)
-      ? { ok: true, value: result.success }
-      : { ok: false, error: result.failure };
+      ? { ok: true as const, value: result.success }
+      : { ok: false as const, error: result.failure };
   };
 
   const client = {
