@@ -1,0 +1,229 @@
+[
+  {
+    "id": "pendant-tight-box",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 638,
+        "top": 1975,
+        "right": 680,
+        "bottom": 2028
+      }
+    },
+    "purpose": "Correct the observed id11 floor mask by moving the box up to include whole P symbol and exclude lower floor."
+  },
+  {
+    "id": "pendant-click",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 658,
+          "y": 2002,
+          "label": "positive"
+        },
+        {
+          "x": 668,
+          "y": 2036,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Fresh click on P symbol and negative blank floor; test recovery without original box."
+  },
+  {
+    "id": "pendant-guided",
+    "crop": "a-lighting",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 638,
+        "top": 1975,
+        "right": 680,
+        "bottom": 2028
+      },
+      "points": [
+        {
+          "x": 658,
+          "y": 2002,
+          "label": "positive"
+        },
+        {
+          "x": 668,
+          "y": 2036,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Tighter box plus identical points; compare against the saved poor mask."
+  },
+  {
+    "id": "omitted-door-box",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 255,
+        "top": 498,
+        "right": 355,
+        "bottom": 590
+      }
+    },
+    "purpose": "Actual omitted master bathroom/living door; supplied by independent visual audit, not independent SAM discovery."
+  },
+  {
+    "id": "omitted-door-guided",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 255,
+        "top": 498,
+        "right": 355,
+        "bottom": 590
+      },
+      "points": [
+        {
+          "x": 300,
+          "y": 550,
+          "label": "positive"
+        },
+        {
+          "x": 420,
+          "y": 550,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Door swing correction with negative living-room floor point; assess leakage separately from candidate count."
+  },
+  {
+    "id": "bedroom-exclude-closet",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 300,
+          "y": 1450,
+          "label": "positive"
+        },
+        {
+          "x": 200,
+          "y": 1250,
+          "label": "negative"
+        },
+        {
+          "x": 900,
+          "y": 1450,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Can a negative closet click correct point-only floor leakage? Drawing geometry remains the source for any future area measurement."
+  },
+  {
+    "id": "duct-refine-sam-01-a-m2-revision-1",
+    "crop": "sam-01-a-m2-revision-1",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 470,
+        "top": 850,
+        "right": 1480,
+        "bottom": 1800
+      },
+      "points": [
+        {
+          "x": 595,
+          "y": 1250,
+          "label": "positive"
+        },
+        {
+          "x": 950,
+          "y": 900,
+          "label": "positive"
+        },
+        {
+          "x": 600,
+          "y": 1700,
+          "label": "positive"
+        },
+        {
+          "x": 900,
+          "y": 1250,
+          "label": "negative"
+        },
+        {
+          "x": 1400,
+          "y": 1400,
+          "label": "negative"
+        },
+        {
+          "x": 750,
+          "y": 1100,
+          "label": "negative"
+        },
+        {
+          "x": 1350,
+          "y": 1075,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Refine observed duct mask leakage on identical baseline/revision pixels; no area-delta claim unless masks isolate duct geometry."
+  },
+  {
+    "id": "duct-refine-sam-02-a-m2-baseline",
+    "crop": "sam-02-a-m2-baseline",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 470,
+        "top": 850,
+        "right": 1480,
+        "bottom": 1800
+      },
+      "points": [
+        {
+          "x": 595,
+          "y": 1250,
+          "label": "positive"
+        },
+        {
+          "x": 950,
+          "y": 900,
+          "label": "positive"
+        },
+        {
+          "x": 600,
+          "y": 1700,
+          "label": "positive"
+        },
+        {
+          "x": 900,
+          "y": 1250,
+          "label": "negative"
+        },
+        {
+          "x": 1400,
+          "y": 1400,
+          "label": "negative"
+        },
+        {
+          "x": 750,
+          "y": 1100,
+          "label": "negative"
+        },
+        {
+          "x": 1350,
+          "y": 1075,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Refine observed duct mask leakage on identical baseline/revision pixels; no area-delta claim unless masks isolate duct geometry."
+  }
+]

@@ -1,0 +1,330 @@
+{
+  "sourceRun": ".local/sam/iteration-3/holdouts/2026-10-27T22-01-02-479Z-ef65b046",
+  "method": "Exact captured half-open SAM pixel boxes; response-scoped IDs. Annotation timing and centers are separately recorded in holdout-expectations.json. No masks or model class assertions included.",
+  "cases": [
+    {
+      "caseId": "holdout-c-procedure-power-1",
+      "crop": "c-procedure-power",
+      "inputSha256": "1d8f4a9e55ec797dd7e9519b187826b75c8da8798348ecc0ebaef103cfddc9c0",
+      "pdfSha256": "751da47453fcf501287db162737f79e338bc5b920a073c55e55ee42b19325474",
+      "responseSha256": "af1bc9f55f338084707339dfb8be4ce54f9a38feff73f6f6efd25b6d022f41a3",
+      "objects": [
+        {
+          "id": "0",
+          "box": {
+            "left": 1213,
+            "top": 98,
+            "right": 1254,
+            "bottom": 138
+          }
+        },
+        {
+          "id": "1",
+          "box": {
+            "left": 324,
+            "top": 551,
+            "right": 365,
+            "bottom": 591
+          }
+        },
+        {
+          "id": "2",
+          "box": {
+            "left": 1213,
+            "top": 769,
+            "right": 1254,
+            "bottom": 808
+          }
+        },
+        {
+          "id": "3",
+          "box": {
+            "left": 441,
+            "top": 301,
+            "right": 478,
+            "bottom": 337
+          }
+        },
+        {
+          "id": "4",
+          "box": {
+            "left": 193,
+            "top": 102,
+            "right": 234,
+            "bottom": 140
+          }
+        },
+        {
+          "id": "5",
+          "box": {
+            "left": 1213,
+            "top": 379,
+            "right": 1254,
+            "bottom": 419
+          }
+        },
+        {
+          "id": "6",
+          "box": {
+            "left": 570,
+            "top": 1109,
+            "right": 609,
+            "bottom": 1150
+          }
+        },
+        {
+          "id": "7",
+          "box": {
+            "left": 324,
+            "top": 210,
+            "right": 364,
+            "bottom": 250
+          }
+        },
+        {
+          "id": "8",
+          "box": {
+            "left": 193,
+            "top": 414,
+            "right": 235,
+            "bottom": 454
+          }
+        },
+        {
+          "id": "9",
+          "box": {
+            "left": 324,
+            "top": 101,
+            "right": 365,
+            "bottom": 140
+          }
+        },
+        {
+          "id": "10",
+          "box": {
+            "left": 166,
+            "top": 636,
+            "right": 184,
+            "bottom": 654
+          }
+        },
+        {
+          "id": "11",
+          "box": {
+            "left": 324,
+            "top": 305,
+            "right": 365,
+            "bottom": 344
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "holdout-c-exam-power-1",
+      "crop": "c-exam-power",
+      "inputSha256": "9f2709501e6ac7b6adeb53d062f0c81a14baaa1c3a81243e93d19818fa920e34",
+      "pdfSha256": "751da47453fcf501287db162737f79e338bc5b920a073c55e55ee42b19325474",
+      "responseSha256": "e703a59728331c8ba074bdf4ed3c90bea7f224940a691e55d03145af752597ca",
+      "objects": [
+        {
+          "id": "0",
+          "box": {
+            "left": 557,
+            "top": 144,
+            "right": 575,
+            "bottom": 163
+          }
+        },
+        {
+          "id": "1",
+          "box": {
+            "left": 473,
+            "top": 212,
+            "right": 491,
+            "bottom": 231
+          }
+        },
+        {
+          "id": "2",
+          "box": {
+            "left": 63,
+            "top": 109,
+            "right": 74,
+            "bottom": 120
+          }
+        },
+        {
+          "id": "3",
+          "box": {
+            "left": 556,
+            "top": 279,
+            "right": 575,
+            "bottom": 298
+          }
+        },
+        {
+          "id": "4",
+          "box": {
+            "left": 555,
+            "top": 536,
+            "right": 594,
+            "bottom": 574
+          }
+        },
+        {
+          "id": "5",
+          "box": {
+            "left": 63,
+            "top": 83,
+            "right": 74,
+            "bottom": 95
+          }
+        },
+        {
+          "id": "6",
+          "box": {
+            "left": 387,
+            "top": 760,
+            "right": 427,
+            "bottom": 804
+          }
+        },
+        {
+          "id": "7",
+          "box": {
+            "left": 102,
+            "top": 94,
+            "right": 117,
+            "bottom": 109
+          }
+        },
+        {
+          "id": "8",
+          "box": {
+            "left": 31,
+            "top": 341,
+            "right": 53,
+            "bottom": 363
+          }
+        },
+        {
+          "id": "9",
+          "box": {
+            "left": 556,
+            "top": 193,
+            "right": 574,
+            "bottom": 213
+          }
+        },
+        {
+          "id": "10",
+          "box": {
+            "left": 474,
+            "top": 52,
+            "right": 513,
+            "bottom": 90
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "holdout-c-pre-recovery-lighting-1",
+      "crop": "c-pre-recovery-lighting",
+      "inputSha256": "79141fe1d1d2dcbf8132763321e49daa20dd927619679439e36c986203d0eff5",
+      "pdfSha256": "751da47453fcf501287db162737f79e338bc5b920a073c55e55ee42b19325474",
+      "responseSha256": "71f6503207fda0eb97f4a780adbcbdc6e6603d1ab007b6720e39e80a996a7bb6",
+      "objects": [
+        {
+          "id": "0",
+          "box": {
+            "left": 1460,
+            "top": 204,
+            "right": 1513,
+            "bottom": 257
+          }
+        },
+        {
+          "id": "1",
+          "box": {
+            "left": 560,
+            "top": 505,
+            "right": 614,
+            "bottom": 558
+          }
+        },
+        {
+          "id": "2",
+          "box": {
+            "left": 1460,
+            "top": 504,
+            "right": 1514,
+            "bottom": 558
+          }
+        },
+        {
+          "id": "3",
+          "box": {
+            "left": 260,
+            "top": 506,
+            "right": 314,
+            "bottom": 560
+          }
+        },
+        {
+          "id": "4",
+          "box": {
+            "left": 260,
+            "top": 206,
+            "right": 314,
+            "bottom": 260
+          }
+        },
+        {
+          "id": "5",
+          "box": {
+            "left": 561,
+            "top": 204,
+            "right": 614,
+            "bottom": 258
+          }
+        },
+        {
+          "id": "6",
+          "box": {
+            "left": 1159,
+            "top": 504,
+            "right": 1215,
+            "bottom": 558
+          }
+        },
+        {
+          "id": "7",
+          "box": {
+            "left": 860,
+            "top": 506,
+            "right": 915,
+            "bottom": 560
+          }
+        },
+        {
+          "id": "8",
+          "box": {
+            "left": 860,
+            "top": 206,
+            "right": 914,
+            "bottom": 260
+          }
+        },
+        {
+          "id": "9",
+          "box": {
+            "left": 1160,
+            "top": 204,
+            "right": 1214,
+            "bottom": 258
+          }
+        }
+      ]
+    }
+  ]
+}

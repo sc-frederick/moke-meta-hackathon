@@ -1,0 +1,140 @@
+[
+  {
+    "id": "wc-patient-points",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 472,
+          "y": 245,
+          "label": "positive"
+        },
+        {
+          "x": 590,
+          "y": 245,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: compare fresh clicks with the full manually checked toilet boundary; negative point must stay outside the returned mask."
+  },
+  {
+    "id": "wc-patient-full-box-points",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 380,
+        "top": 175,
+        "right": 565,
+        "bottom": 315
+      },
+      "points": [
+        {
+          "x": 472,
+          "y": 245,
+          "label": "positive"
+        },
+        {
+          "x": 590,
+          "y": 245,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: full manual box plus the same corrective points; compare boundary extent with the saved manual-box result."
+  },
+  {
+    "id": "wc-private-points",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 322,
+          "y": 585,
+          "label": "positive"
+        },
+        {
+          "x": 430,
+          "y": 585,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: compare fresh clicks with the full manually checked toilet boundary; negative point must stay outside the returned mask."
+  },
+  {
+    "id": "wc-private-full-box-points",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 235,
+        "top": 530,
+        "right": 410,
+        "bottom": 640
+      },
+      "points": [
+        {
+          "x": 322,
+          "y": 585,
+          "label": "positive"
+        },
+        {
+          "x": 430,
+          "y": 585,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: full manual box plus the same corrective points; compare boundary extent with the saved manual-box result."
+  },
+  {
+    "id": "wc-staff-points",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 265,
+          "y": 497,
+          "label": "positive"
+        },
+        {
+          "x": 385,
+          "y": 497,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: compare fresh clicks with the full manually checked toilet boundary; negative point must stay outside the returned mask."
+  },
+  {
+    "id": "wc-staff-full-box-points",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 170,
+        "top": 430,
+        "right": 360,
+        "bottom": 565
+      },
+      "points": [
+        {
+          "x": 265,
+          "y": 497,
+          "label": "positive"
+        },
+        {
+          "x": 385,
+          "y": 497,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Grok council probe: full manual box plus the same corrective points; compare boundary extent with the saved manual-box result."
+  }
+]

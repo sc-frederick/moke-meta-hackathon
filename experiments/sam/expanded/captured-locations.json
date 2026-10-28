@@ -1,0 +1,4505 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-27T23:30:55.567Z",
+  "method": "Localization-only maximum one-to-one matching of independently frozen source centers inside half-open pixel boxes, partitioned by semantic kind before matching. Source annotations unchanged. Manual controls are explicit. No mask IoU, count-only accuracy, engineering capacity or compliance inference.",
+  "annotationSources": [
+    {
+      "path": ".local/sam/iteration-5/electrical-audit/source-observations.json",
+      "sha256": "04232c4e5a26331ff8879d1cb37870799bba37d1c16c0a8664f06105c19c9a06"
+    },
+    {
+      "path": ".local/sam/iteration-5/structural-audit/observations.json",
+      "sha256": "686dba2719dffadffe4e96b4e44375e7cb8c4009f32a68f0ed50d5f0a9b25b25"
+    },
+    {
+      "path": ".local/sam/iteration-5/civil-audit/expectations.json",
+      "sha256": "9800415e05a54d66f381c4626afb5ff92c672788fc407d1c44b62b17e3e01a12"
+    }
+  ],
+  "endpointEvidence": [
+    {
+      "path": ".local/sam/iteration-5/vision/f-power-grounding-response.json",
+      "sha256": "c7318e6120f322f79d4dcccc7ac44cd1bf2195eaea2c18822841ae213771a4eb",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "b4e2e6f729c7c54d42bb68b79f443b2e8e24cb91ccf030bec929ae25ba8f1448"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/h-reference-resolution-response.json",
+      "sha256": "85d1f098631de3ed4120eb4504be41a5b44902aa593b2687c8514227a7ec388e",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "8bca88ff282347997e7fc1e587a2ea399afc9e3dc67c4a5b458966b89b1081b7"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/j-alarm-classification-response.json",
+      "sha256": "319b8ab867f527c89a3c08191dfb1fe9e414d08a7dd7958f021bc61c0c8f9dba",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "91bf4063e591805d8e75ca32a3a4a9d6d3a4a33e0917bbeee4758a565fdb2ad7"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/f-light-classification-response.json",
+      "sha256": "4f181115bea7f111b82a32daf65e2816071a176c0db7791b0d49231578bab75b",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "e6e5d376d68d90c12aaf3c023999a80f5de233f953a5908d5ce0f465801769bc"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/e-fixture-grounding-response.json",
+      "sha256": "cebe87110f1d256350d9835cd09e944186c39e6ec8a8df918087f9a6632d7e1f",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "d4b43d74379cfe11cb238fe948466ecad829789f9d0dff0081c774b66f35c51e"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/g-support-grounding-response.json",
+      "sha256": "0d2460695b5cc010f02a388ef32e21ee2e358bbbb90b5325964e268fa0035caf",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "0a0e4df71d7e4f144ae90af5b748fde54e39d6720330a15a1b94aea4e0e75186"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/civil-arrow-classification-response.json",
+      "sha256": "54e638c5939bee0ca58297009993b2df9962b051a0762182b8e5853e1cda069b",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "3e0d21650596bf25dd17c75861419651c07c506f23a451806bd42a121e61819a"
+    },
+    {
+      "path": ".local/sam/iteration-5/vision/d-fixture-grounding-response.json",
+      "sha256": "85d66e9f8c4dff90d9640efb380ab1821045b278e7e2a232568bf5ade2379f74",
+      "endpoint": "/chat/completions",
+      "model": "muse-spark-1.3",
+      "requestSha256": "fd84d213d75bf1d950c1d3c256e727ac54bfc24d488d1bd5d2b0c76817bebbaa"
+    }
+  ],
+  "runs": [
+    {
+      "caseId": "batch-d-fixture-grounding",
+      "family": "guided-live",
+      "crop": {
+        "id": "audit-d-baths-small-room",
+        "file": ".local/sam/iteration-5/electrical-audit/d-baths-small-room.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-d.pdf",
+        "page": 11,
+        "sheet": "E-2",
+        "pdf_rect_points": [744, 600, 1008, 912],
+        "dpi": 300,
+        "width_px": 1100,
+        "height_px": 1300,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [744, 600]
+        },
+        "purpose": "Small electrical lighting source region.",
+        "sha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3"
+      },
+      "inputSha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "77724d22acde526fa5838f5a4fc00ede638544e400ee7159bdfc87bd04a45e9a",
+      "responseSha256": "c05b1a9fe06dabd4edbf01924ba57448cc68a311005fd3019055e0e03beb5d03",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 128,
+            "top": 54,
+            "right": 259,
+            "bottom": 359
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 607,
+            "top": 113,
+            "right": 737,
+            "bottom": 422
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 280,
+            "top": 350,
+            "right": 363,
+            "bottom": 441
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 306,
+            "top": 546,
+            "right": 404,
+            "bottom": 634
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 129,
+            "top": 710,
+            "right": 259,
+            "bottom": 1015
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 598,
+            "top": 667,
+            "right": 736,
+            "bottom": 963
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 593,
+            "top": 940,
+            "right": 764,
+            "bottom": 1113
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "batch-e-fixture-grounding",
+      "family": "guided-live",
+      "crop": {
+        "id": "exp-e-lighting",
+        "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdf_rect_points": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [864, 714]
+        },
+        "purpose": "Fans and lighting symbols among furniture",
+        "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      },
+      "inputSha256": "78833c7c923b9f0e4006ab0449c9eda9adc40eb06bfe14538ea7db1cb4bc3bde",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "29baa43d236b2acfc6025132d20f9785957fec3a2a663e337419a09188112d17",
+      "responseSha256": "90e19243f935cb97c58fb669bad00d0f3833533c7b96fbdaa48e181b9773d5e8",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 366,
+            "top": 33,
+            "right": 594,
+            "bottom": 137
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 1385,
+            "top": 306,
+            "right": 1616,
+            "bottom": 416
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 323,
+            "top": 782,
+            "right": 389,
+            "bottom": 858
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 1102,
+            "top": 784,
+            "right": 1167,
+            "bottom": 850
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 318,
+            "top": 1606,
+            "right": 387,
+            "bottom": 1654
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 1103,
+            "top": 1593,
+            "right": 1168,
+            "bottom": 1658
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 243,
+            "top": 1223,
+            "right": 724,
+            "bottom": 1703
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "batch-f-power-grounding",
+      "family": "guided-live",
+      "crop": {
+        "id": "exp-f-power",
+        "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-f-power.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 204, 1188, 636],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 204]
+        },
+        "purpose": "Compact retail power plan",
+        "sha256": "ec333cf8d377eb3eab8d5c8d15914c254d7d3afab8018c69c4ad9f71056fa984"
+      },
+      "inputSha256": "84b9526c3f5a6a0fcf7bb840f3ac77766990062b1761ba833fca0905eade30f3",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "96a62c3a8ff3d93c3c4f164171a9d8b3c541416a5a6eda44160345529930a3b9",
+      "responseSha256": "20a77f913576054e7f3b8d4cc2da8b064b8802eca1a75216462235940ad8afc3",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 108,
+            "top": 126,
+            "right": 142,
+            "bottom": 166
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 164,
+            "top": 119,
+            "right": 206,
+            "bottom": 161
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 1043,
+            "top": 99,
+            "right": 1104,
+            "bottom": 148
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 468,
+            "top": 625,
+            "right": 562,
+            "bottom": 677
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 1152,
+            "top": 971,
+            "right": 1191,
+            "bottom": 1037
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 117,
+            "top": 1534,
+            "right": 159,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 1196,
+            "top": 1534,
+            "right": 1236,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "8",
+          "pixels": {
+            "left": 1466,
+            "top": 1534,
+            "right": 1506,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "9",
+          "pixels": {
+            "left": 1576,
+            "top": 1535,
+            "right": 1617,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "10",
+          "pixels": {
+            "left": 1702,
+            "top": 1535,
+            "right": 1743,
+            "bottom": 1601
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "batch-g-support-grounding",
+      "family": "guided-live",
+      "crop": {
+        "id": "audit-g-porch-supports",
+        "file": ".local/sam/iteration-5/structural-audit/g-porch-supports.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "page": 2,
+        "sheet": "S-2",
+        "pdf_rect_points": [432, 324, 960, 624],
+        "dpi": 300,
+        "width_px": 2200,
+        "height_px": 1250,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [432, 324]
+        },
+        "purpose": "Five visually certain porch support locations with column/footing marks; no capacity inference.",
+        "sha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112"
+      },
+      "inputSha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "cc15923948b544c386e7b21ecf936d6319166267c3fb139905494550d3eb9e95",
+      "responseSha256": "5bdfbe4d562c2b72d5808d520baf07004a537cece3e3d5ec7b773ddf48bd82f5",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 622,
+            "top": 169,
+            "right": 684,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 345,
+            "top": 552,
+            "right": 414,
+            "bottom": 619
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 340,
+            "top": 900,
+            "right": 425,
+            "bottom": 949
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 1559,
+            "top": 170,
+            "right": 1620,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 1561,
+            "top": 387,
+            "right": 1635,
+            "bottom": 424
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "civil-all-arrows",
+      "family": "civil-live",
+      "crop": {
+        "id": "exp-i-grading",
+        "file": "sam-crops-300dpi/exp-i-grading.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [630, 504, 1062, 936],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [630, 504]
+        },
+        "purpose": "Dimensioned building footprint, spot elevations and flow arrows",
+        "sha256": "5233689a0b476b84b9709aa59869e025c97c68264ce860d62b11825dca6d8539"
+      },
+      "inputSha256": "fa17748f6c35728c4ac42865b093852cd81345f58782d2d00afbef745a8e197e",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "e420cc9a51f4f121a331d9ec727fe9ffcaf99f84f2a03be36d13b4b6640c3c1e",
+      "responseSha256": "89e931acd6e3506478e3a0c009aa7d54a1f7eb145a3e065d900ec9d7901adfde",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 315,
+            "top": 1665,
+            "right": 369,
+            "bottom": 1706
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 1688,
+            "top": 152,
+            "right": 1800,
+            "bottom": 273
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 1376,
+            "top": 75,
+            "right": 1428,
+            "bottom": 114
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 1109,
+            "top": 340,
+            "right": 1163,
+            "bottom": 378
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 0,
+            "top": 141,
+            "right": 87,
+            "bottom": 248
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 713,
+            "top": 207,
+            "right": 766,
+            "bottom": 247
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 183,
+            "top": 206,
+            "right": 235,
+            "bottom": 244
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 921,
+            "top": 1175,
+            "right": 943,
+            "bottom": 1235
+          }
+        },
+        {
+          "id": "8",
+          "pixels": {
+            "left": 1509,
+            "top": 207,
+            "right": 1560,
+            "bottom": 246
+          }
+        },
+        {
+          "id": "9",
+          "pixels": {
+            "left": 1105,
+            "top": 1665,
+            "right": 1164,
+            "bottom": 1705
+          }
+        },
+        {
+          "id": "10",
+          "pixels": {
+            "left": 1590,
+            "top": 1318,
+            "right": 1643,
+            "bottom": 1358
+          }
+        },
+        {
+          "id": "11",
+          "pixels": {
+            "left": 712,
+            "top": 1267,
+            "right": 766,
+            "bottom": 1308
+          }
+        },
+        {
+          "id": "12",
+          "pixels": {
+            "left": 20,
+            "top": 990,
+            "right": 74,
+            "bottom": 1012
+          }
+        },
+        {
+          "id": "13",
+          "pixels": {
+            "left": 581,
+            "top": 340,
+            "right": 634,
+            "bottom": 378
+          }
+        },
+        {
+          "id": "14",
+          "pixels": {
+            "left": 315,
+            "top": 74,
+            "right": 367,
+            "bottom": 114
+          }
+        },
+        {
+          "id": "15",
+          "pixels": {
+            "left": 446,
+            "top": 1268,
+            "right": 499,
+            "bottom": 1306
+          }
+        },
+        {
+          "id": "16",
+          "pixels": {
+            "left": 1590,
+            "top": 1584,
+            "right": 1642,
+            "bottom": 1623
+          }
+        },
+        {
+          "id": "17",
+          "pixels": {
+            "left": 845,
+            "top": 74,
+            "right": 897,
+            "bottom": 115
+          }
+        },
+        {
+          "id": "18",
+          "pixels": {
+            "left": 447,
+            "top": 208,
+            "right": 499,
+            "bottom": 246
+          }
+        },
+        {
+          "id": "19",
+          "pixels": {
+            "left": 1783,
+            "top": 1362,
+            "right": 1800,
+            "bottom": 1569
+          }
+        },
+        {
+          "id": "20",
+          "pixels": {
+            "left": 447,
+            "top": 1534,
+            "right": 500,
+            "bottom": 1572
+          }
+        },
+        {
+          "id": "21",
+          "pixels": {
+            "left": 581,
+            "top": 1401,
+            "right": 634,
+            "bottom": 1439
+          }
+        },
+        {
+          "id": "22",
+          "pixels": {
+            "left": 978,
+            "top": 1533,
+            "right": 1031,
+            "bottom": 1573
+          }
+        },
+        {
+          "id": "23",
+          "pixels": {
+            "left": 66,
+            "top": 1412,
+            "right": 92,
+            "bottom": 1619
+          }
+        },
+        {
+          "id": "24",
+          "pixels": {
+            "left": 845,
+            "top": 340,
+            "right": 897,
+            "bottom": 379
+          }
+        },
+        {
+          "id": "25",
+          "pixels": {
+            "left": 1775,
+            "top": 214,
+            "right": 1800,
+            "bottom": 244
+          }
+        },
+        {
+          "id": "26",
+          "pixels": {
+            "left": 315,
+            "top": 340,
+            "right": 368,
+            "bottom": 379
+          }
+        },
+        {
+          "id": "27",
+          "pixels": {
+            "left": 1432,
+            "top": 1708,
+            "right": 1626,
+            "bottom": 1735
+          }
+        },
+        {
+          "id": "28",
+          "pixels": {
+            "left": 1376,
+            "top": 343,
+            "right": 1424,
+            "bottom": 385
+          }
+        },
+        {
+          "id": "29",
+          "pixels": {
+            "left": 920,
+            "top": 335,
+            "right": 943,
+            "bottom": 395
+          }
+        },
+        {
+          "id": "30",
+          "pixels": {
+            "left": 1325,
+            "top": 1319,
+            "right": 1378,
+            "bottom": 1357
+          }
+        },
+        {
+          "id": "31",
+          "pixels": {
+            "left": 577,
+            "top": 151,
+            "right": 708,
+            "bottom": 310
+          }
+        },
+        {
+          "id": "32",
+          "pixels": {
+            "left": 713,
+            "top": 1533,
+            "right": 766,
+            "bottom": 1573
+          }
+        },
+        {
+          "id": "33",
+          "pixels": {
+            "left": 846,
+            "top": 1665,
+            "right": 899,
+            "bottom": 1706
+          }
+        },
+        {
+          "id": "34",
+          "pixels": {
+            "left": 183,
+            "top": 1267,
+            "right": 235,
+            "bottom": 1309
+          }
+        },
+        {
+          "id": "35",
+          "pixels": {
+            "left": 51,
+            "top": 1665,
+            "right": 103,
+            "bottom": 1705
+          }
+        },
+        {
+          "id": "36",
+          "pixels": {
+            "left": 978,
+            "top": 1267,
+            "right": 1031,
+            "bottom": 1307
+          }
+        },
+        {
+          "id": "37",
+          "pixels": {
+            "left": 1750,
+            "top": 990,
+            "right": 1800,
+            "bottom": 1013
+          }
+        },
+        {
+          "id": "38",
+          "pixels": {
+            "left": 1640,
+            "top": 75,
+            "right": 1693,
+            "bottom": 114
+          }
+        },
+        {
+          "id": "39",
+          "pixels": {
+            "left": 877,
+            "top": 1636,
+            "right": 1800,
+            "bottom": 1771
+          }
+        },
+        {
+          "id": "40",
+          "pixels": {
+            "left": 1111,
+            "top": 1401,
+            "right": 1163,
+            "bottom": 1439
+          }
+        },
+        {
+          "id": "41",
+          "pixels": {
+            "left": 183,
+            "top": 1534,
+            "right": 235,
+            "bottom": 1573
+          }
+        },
+        {
+          "id": "42",
+          "pixels": {
+            "left": 582,
+            "top": 75,
+            "right": 633,
+            "bottom": 113
+          }
+        },
+        {
+          "id": "43",
+          "pixels": {
+            "left": 848,
+            "top": 1386,
+            "right": 873,
+            "bottom": 1593
+          }
+        },
+        {
+          "id": "44",
+          "pixels": {
+            "left": 1325,
+            "top": 1584,
+            "right": 1378,
+            "bottom": 1623
+          }
+        },
+        {
+          "id": "45",
+          "pixels": {
+            "left": 978,
+            "top": 207,
+            "right": 1031,
+            "bottom": 247
+          }
+        },
+        {
+          "id": "46",
+          "pixels": {
+            "left": 1109,
+            "top": 75,
+            "right": 1163,
+            "bottom": 114
+          }
+        },
+        {
+          "id": "47",
+          "pixels": {
+            "left": 1243,
+            "top": 207,
+            "right": 1296,
+            "bottom": 247
+          }
+        },
+        {
+          "id": "48",
+          "pixels": {
+            "left": 1640,
+            "top": 340,
+            "right": 1693,
+            "bottom": 379
+          }
+        },
+        {
+          "id": "49",
+          "pixels": {
+            "left": 500,
+            "top": 1687,
+            "right": 706,
+            "bottom": 1714
+          }
+        },
+        {
+          "id": "50",
+          "pixels": {
+            "left": 1773,
+            "top": 1269,
+            "right": 1800,
+            "bottom": 1304
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "civil-blue-arrows",
+      "family": "civil-live",
+      "crop": {
+        "id": "exp-i-grading",
+        "file": "sam-crops-300dpi/exp-i-grading.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [630, 504, 1062, 936],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [630, 504]
+        },
+        "purpose": "Dimensioned building footprint, spot elevations and flow arrows",
+        "sha256": "5233689a0b476b84b9709aa59869e025c97c68264ce860d62b11825dca6d8539"
+      },
+      "inputSha256": "fa17748f6c35728c4ac42865b093852cd81345f58782d2d00afbef745a8e197e",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "c0887f0a3fd3e831c75e27490b47ddacb2acdec1409d6176c0c845738ad452b7",
+      "responseSha256": "35790eec5e6e2beb2813ff94912a4b3f5518610bf68e5c811691f31b79f4570b",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 1688,
+            "top": 152,
+            "right": 1800,
+            "bottom": 273
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 1436,
+            "top": 1708,
+            "right": 1626,
+            "bottom": 1735
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 1782,
+            "top": 1362,
+            "right": 1800,
+            "bottom": 1569
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 66,
+            "top": 1412,
+            "right": 92,
+            "bottom": 1619
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 500,
+            "top": 1688,
+            "right": 706,
+            "bottom": 1714
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 0,
+            "top": 141,
+            "right": 87,
+            "bottom": 248
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 848,
+            "top": 1386,
+            "right": 873,
+            "bottom": 1593
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 577,
+            "top": 151,
+            "right": 709,
+            "bottom": 310
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "civil-full-footprint-box",
+      "family": "civil-live",
+      "crop": {
+        "id": "exp-i-full-footprint",
+        "file": ".local/sam/iteration-5/civil-audit/i-full-footprint.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [594, 552, 1110, 858],
+        "dpi": 300,
+        "width_px": 2150,
+        "height_px": 1275,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [594, 552]
+        },
+        "purpose": "Complete civil building outline with internal dimensions and adjacent source context.",
+        "sha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538"
+      },
+      "inputSha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "d7d4968e3364398056f7ffc8e959373ed522c0d41d2894a2c35a5fc9706e7a18",
+      "responseSha256": "d311fd29de3b9c90033a27259afa2d6f14df45e5c70ef5b941e7e43f3a666924",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 69,
+            "top": 191,
+            "right": 2076,
+            "bottom": 1047
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "civil-full-footprint-concept",
+      "family": "civil-live",
+      "crop": {
+        "id": "exp-i-full-footprint",
+        "file": ".local/sam/iteration-5/civil-audit/i-full-footprint.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [594, 552, 1110, 858],
+        "dpi": 300,
+        "width_px": 2150,
+        "height_px": 1275,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [594, 552]
+        },
+        "purpose": "Complete civil building outline with internal dimensions and adjacent source context.",
+        "sha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538"
+      },
+      "inputSha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "c1d0aef450b3fd793e6b93a9897072898bb781c64969e32e72d71df601b8469e",
+      "responseSha256": "b6cc203d17e63a2c1b6d4b89a69c1711cd22850edae4ee1bc5b65aa3b1700b5a",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "civil-full-footprint-points",
+      "family": "civil-live",
+      "crop": {
+        "id": "exp-i-full-footprint",
+        "file": ".local/sam/iteration-5/civil-audit/i-full-footprint.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [594, 552, 1110, 858],
+        "dpi": 300,
+        "width_px": 2150,
+        "height_px": 1275,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [594, 552]
+        },
+        "purpose": "Complete civil building outline with internal dimensions and adjacent source context.",
+        "sha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538"
+      },
+      "inputSha256": "eb58f88f7c8229ea33a24c54a6ac3560a37c7c494df26c9d902c83abba492538",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "7a11aaa26f0d77e59d99d8ea54bb756a0029112ac67a92e794b8bcfad995c020",
+      "responseSha256": "c5bb2ff8499d618dd471c282968974348fc05dbaf95a717301e4181c40aa1aa5",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 1074,
+            "top": 570,
+            "right": 1088,
+            "bottom": 690
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "exp-d-lighting",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-d-lighting",
+        "file": "sam-crops-300dpi/exp-d-lighting.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 11,
+        "sheet": "E-2",
+        "pdf_rect_points": [744, 600, 1176, 1032],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [744, 600]
+        },
+        "purpose": "Repeated lighting fixtures and controls",
+        "sha256": "e2223da5f57ee50bfc427be4b3b4f6cf9f3996a36dbd418744cf1d696e873e66"
+      },
+      "inputSha256": "f39a7d3a0943fd10660abe9f6387532a47c09c2be4b2b09fefb1359d04ab8e52",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "3bcffbec79fdd39cde21186b618178c25c9dededb807ecbec686c0beda1c2b5c",
+      "responseSha256": "34890e316a2016db13605146d1f1bbc6bf2cf680eaec8fa5ce00f882c3ff1382",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-d-power",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-d-power",
+        "file": "sam-crops-300dpi/exp-d-power.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 12,
+        "sheet": "E-3",
+        "pdf_rect_points": [756, 648, 1188, 1080],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 648]
+        },
+        "purpose": "Repeated equipment outlets and circuits",
+        "sha256": "af16bd68f0b7e4a06a1d2d9fc1cb8fa7389d43fd133bd5867c81b7f792bf40bb"
+      },
+      "inputSha256": "711b0e2c097005d6fda33bf420a2bcef6ed80301b0739b92ef43d66360b603be",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "7f4bff52e92e8355626fbaa96ee6eee4522d3dd50fb7978407d74cec59c0c6f1",
+      "responseSha256": "a7adba47e5aa77efdba788c0dd864929730fa542c1ceb0d954bba985e543c5ae",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-e-lighting",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-e-lighting",
+        "file": "sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdf_rect_points": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [864, 714]
+        },
+        "purpose": "Fans and lighting symbols among furniture",
+        "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      },
+      "inputSha256": "78833c7c923b9f0e4006ab0449c9eda9adc40eb06bfe14538ea7db1cb4bc3bde",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "d4d372f76ca00db02dc85da6b76bde8b9971c13335f28ae66ae240ecedb08b5b",
+      "responseSha256": "a21312291813aa01a10c5c2aec0eab3983354c2c4b9b915c3eb85476e7aaf021",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-e-power",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-e-power",
+        "file": "sam-crops-300dpi/exp-e-power.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 6,
+        "sheet": "E-3",
+        "pdf_rect_points": [588, 1116, 1020, 1548],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [588, 1116]
+        },
+        "purpose": "Electrical panel and nearby branch circuits",
+        "sha256": "4e13daaa76eb260a7a2e92deddbf36c95f2b641012c3c9f3105aa8d138f963b6"
+      },
+      "inputSha256": "cb1cce810f33b89648c85749d2ce2b19f3e5f5b485fb5300a0fc1bf6e897e76b",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "4ba77be52e952264eaa473587641fdfe70aa737322aec88ca70e5d8249e513c7",
+      "responseSha256": "ffa5c46194a218bb8e6d9fa7ab3ada4c78137e9d2c5e9f251064cdf3549b5dd7",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-e-riser",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-e-riser",
+        "file": "sam-crops-300dpi/exp-e-riser.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 9,
+        "sheet": "SP-3",
+        "pdf_rect_points": [564, 624, 996, 1056],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [564, 624]
+        },
+        "purpose": "Fire riser, flow/tamper switches and valve symbols",
+        "sha256": "6c19d8c3fb71c1ed7fab420e02ebe2254762eeb3ddc9460bfef144a7a966cc79"
+      },
+      "inputSha256": "fcdbc0afc3a777f03a3f2027077e2c844e7138bab8c87e8b7108f6fe79a21189",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "ac7811b0fbd90486e8511be4a2a12cc0fbbe8d9d6143e6b596267f6840590ab0",
+      "responseSha256": "3588da270a7dd0a5af4668cbf3875611e0ced3b5278076b080debb088c26a755",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-e-sprinklers",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-e-sprinklers",
+        "file": "sam-crops-300dpi/exp-e-sprinklers.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 8,
+        "sheet": "SP-2",
+        "pdf_rect_points": [1404, 324, 1836, 756],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1404, 324]
+        },
+        "purpose": "Sprinkler heads, branch pipes and spacing callouts",
+        "sha256": "8553ff4d97e2e32659bf67d370b5e5798caf4c17596920177e8e42e942abc55e"
+      },
+      "inputSha256": "454bfaee54a779a0a7b72fca41fd260eb97067bc9179b82869fd61e958298f6c",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "2c844619925fee1e6711684b924340c779fffdbf12a3dae88d7a6c8c783365ea",
+      "responseSha256": "3ff6d276a525ad67907b25466aa1bc1e6f8c124f03a9a54be4745a783e1a4770",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-f-lighting",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-f-lighting",
+        "file": "sam-crops-300dpi/exp-f-lighting.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 900, 1188, 1332],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 900]
+        },
+        "purpose": "Same tenant plan in the lighting view",
+        "sha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+      },
+      "inputSha256": "cc613337bba72295731a6738833466c620f599f13f0f3ae8bef6273b707acd09",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "5542baade20b66aca108dda5e8baa90ba3d4e7ea6f0b8b627450af65ec71757b",
+      "responseSha256": "65094a61dca38d04461367deccab8b60d59cadb922fa7c8f4ad99352f61bdbdf",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-f-power",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-f-power",
+        "file": "sam-crops-300dpi/exp-f-power.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 204, 1188, 636],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 204]
+        },
+        "purpose": "Compact retail power plan",
+        "sha256": "ec333cf8d377eb3eab8d5c8d15914c254d7d3afab8018c69c4ad9f71056fa984"
+      },
+      "inputSha256": "84b9526c3f5a6a0fcf7bb840f3ac77766990062b1761ba833fca0905eade30f3",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "031a1bb2e41bbf9eb4b2935215fd8ef75fd13308320c9561e6bea714de8f6917",
+      "responseSha256": "a6fa02aa1499bf8ca5ce2e4fb3c3b41eae8fd26c9d11ac9604871fc1a245abfb",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-g-footing-detail",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-g-footing-detail",
+        "file": "sam-crops-300dpi/exp-g-footing-detail.png",
+        "pdf": "pdfs/sample-g.pdf",
+        "page": 3,
+        "sheet": "S-3",
+        "pdf_rect_points": [36, 828, 468, 1260],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [36, 828]
+        },
+        "purpose": "Pad footing section with anchors and dimensions",
+        "sha256": "b75fd430baa092ad527a9d6f6325cc8092e41f28a275c81af1b152454febbdf3"
+      },
+      "inputSha256": "2f95d5083ca2375f3585e271ab7b098eac2da01ee502e8ffa049a37182e4e11b",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "df006d5be5d39ee5aff48adc0162ff892d000f5dd09a272e0f0894a8ec76f639",
+      "responseSha256": "330a22c879bcd6505116edbdb9c5bbeeecc04dd2ead54669bcf66710e1eed404",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-g-foundation",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-g-foundation",
+        "file": "sam-crops-300dpi/exp-g-foundation.png",
+        "pdf": "pdfs/sample-g.pdf",
+        "page": 2,
+        "sheet": "S-2",
+        "pdf_rect_points": [504, 324, 936, 756],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [504, 324]
+        },
+        "purpose": "Footing and column marks linked to schedules",
+        "sha256": "b16d437f19f46677c77c3737d401844471632c981432ddf6e266721df0805595"
+      },
+      "inputSha256": "428af564a50c5211b230cab020aa33c30b188a63756388efa52bdf1105b8cd05",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "f61db533fb891eefd9d39f057d8c5a241622c86df6f5bac9cdfa8b7f69925a3d",
+      "responseSha256": "2175c29f79b661d87ec5e827dce9f1ec6fea2f86f6318ec78513d44f88ebfeb2",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-h-trusses",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-h-trusses",
+        "file": "sam-crops-300dpi/exp-h-trusses.png",
+        "pdf": "pdfs/sample-h.pdf",
+        "page": 1,
+        "sheet": "S-1",
+        "pdf_rect_points": [1116, 684, 1548, 1116],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1116, 684]
+        },
+        "purpose": "Roof trusses and diagonal bracing",
+        "sha256": "eabcf2d0318c863589a147985c2900b433c31f1690406c86b2909a8ec016f886"
+      },
+      "inputSha256": "3468e144e3adb01ea34edaef6cbc2cc78ed8510ab7aac4b75a81230123c2f30f",
+      "pdfSha256": "7674e7bceced42e4c337ad8d1304d1b4e60e9e0d6637a9c11aae870b0796ba7e",
+      "requestSha256": "8d442d81aca3f5638534839ae120fce949cbf02bab35264987ba20d00d6af370",
+      "responseSha256": "4454c0d41d2bc7e99dfc81aded12c8bf2739dff77880363992fb8724ea85431e",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-i-grading",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-i-grading",
+        "file": "sam-crops-300dpi/exp-i-grading.png",
+        "pdf": "pdfs/sample-i.pdf",
+        "page": 3,
+        "sheet": "C-3",
+        "pdf_rect_points": [630, 504, 1062, 936],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [630, 504]
+        },
+        "purpose": "Dimensioned building footprint, spot elevations and flow arrows",
+        "sha256": "5233689a0b476b84b9709aa59869e025c97c68264ce860d62b11825dca6d8539"
+      },
+      "inputSha256": "fa17748f6c35728c4ac42865b093852cd81345f58782d2d00afbef745a8e197e",
+      "pdfSha256": "6643827644365d1184fde982c32a4759b6a3cde21bd9559b7231a62bb48eb64d",
+      "requestSha256": "2a42b440dfa567d2e80c23d3faa68d3842f8a9be0417e638e87810cf98c5e36d",
+      "responseSha256": "4708da1029dafbb34206a917bfd5510fb062d6f1500259b97f988a2e32194427",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "exp-j-alarm",
+      "family": "provided-live",
+      "crop": {
+        "id": "exp-j-alarm",
+        "file": "sam-crops-300dpi/exp-j-alarm.png",
+        "pdf": "pdfs/sample-j.pdf",
+        "page": 2,
+        "sheet": "FA-2",
+        "pdf_rect_points": [1344, 924, 1776, 1356],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1344, 924]
+        },
+        "purpose": "Alarm device symbols, rooms and circuit path",
+        "sha256": "e6f706dd49088ac83f1454c6bff606816fe1270490833eb7ab0bb7a15e4836d4"
+      },
+      "inputSha256": "7df90d53f14edfe586d70fe787a68d9e495e0203ab26e9068efea28e1e1f8f75",
+      "pdfSha256": "10fb185a2a2b1c57454c85c0de19428f4a89340b0e32fd21740560cd3868d55c",
+      "requestSha256": "8383ceba7e0073b0590d416b906fb23e1fb01ef23dc922ff29210165c2306c07",
+      "responseSha256": "1299026a49a54b26b4d5859183d09169b37b6e857d6448e6790466d36f9e12bd",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "g-hole-circle",
+      "family": "structural-live",
+      "crop": {
+        "id": "audit-g-baseplate-holes",
+        "file": ".local/sam/iteration-5/structural-audit/g-baseplate-context.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "page": 3,
+        "sheet": "S-3",
+        "pdf_rect_points": [72, 1248.12, 576, 1650.24],
+        "dpi": 200,
+        "width_px": 1400,
+        "height_px": 1117,
+        "pixel_to_pdf": {
+          "scale": 0.36,
+          "offset_points": [72, 1248.12]
+        },
+        "purpose": "Detail E: four full-plate and two half-plate open hole circles; schematic detail, not installed quantities.",
+        "sha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f"
+      },
+      "inputSha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "d7fe3ab9d2eb42d61920a9fde8aaa247d3c4db82fa17d92119600e48ed729c9f",
+      "responseSha256": "66465aa8f3432e1403f6093e535a983c7d916ccb01792f4a20bafff9c95de183",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 442,
+            "top": 200,
+            "right": 453,
+            "bottom": 210
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 523,
+            "top": 280,
+            "right": 534,
+            "bottom": 291
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 442,
+            "top": 696,
+            "right": 453,
+            "bottom": 707
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 66,
+            "top": 913,
+            "right": 252,
+            "bottom": 1097
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 524,
+            "top": 200,
+            "right": 535,
+            "bottom": 211
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 443,
+            "top": 280,
+            "right": 455,
+            "bottom": 291
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "g-hole-concept",
+      "family": "structural-live",
+      "crop": {
+        "id": "audit-g-baseplate-holes",
+        "file": ".local/sam/iteration-5/structural-audit/g-baseplate-context.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "page": 3,
+        "sheet": "S-3",
+        "pdf_rect_points": [72, 1248.12, 576, 1650.24],
+        "dpi": 200,
+        "width_px": 1400,
+        "height_px": 1117,
+        "pixel_to_pdf": {
+          "scale": 0.36,
+          "offset_points": [72, 1248.12]
+        },
+        "purpose": "Detail E: four full-plate and two half-plate open hole circles; schematic detail, not installed quantities.",
+        "sha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f"
+      },
+      "inputSha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "5f006ac13326cf7ba16ec1fdb0fe5e3314771ee136d0d222e3851e5dc4fc6e17",
+      "responseSha256": "099f6c97ef9a8233a968011cc7886375ae9c9db59e01dfd389959afb74009ffd",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "g-missed-hole-box",
+      "family": "structural-correction-live",
+      "crop": {
+        "id": "audit-g-baseplate-holes",
+        "file": ".local/sam/iteration-5/structural-audit/g-baseplate-context.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "page": 3,
+        "sheet": "S-3",
+        "pdf_rect_points": [72, 1248.12, 576, 1650.24],
+        "dpi": 200,
+        "width_px": 1400,
+        "height_px": 1117,
+        "pixel_to_pdf": {
+          "scale": 0.36,
+          "offset_points": [72, 1248.12]
+        },
+        "purpose": "Detail E: four full-plate and two half-plate open hole circles; schematic detail, not installed quantities.",
+        "sha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f"
+      },
+      "inputSha256": "8d2804a443144465469d2bce535eb3a3032f852130d39b2effc43ce20189226f",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "35a34560b64769e89dd38d606a57cbe779c5fec124d8cb4816adc884628b63a2",
+      "responseSha256": "b43a5f0d53ae121c97e75f992b1056ea024468c2e8b642ac745c73a66ed9d42d",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 523,
+            "top": 697,
+            "right": 535,
+            "bottom": 708
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "g-support-concept",
+      "family": "structural-live",
+      "crop": {
+        "id": "audit-g-porch-supports",
+        "file": ".local/sam/iteration-5/structural-audit/g-porch-supports.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "page": 2,
+        "sheet": "S-2",
+        "pdf_rect_points": [432, 324, 960, 624],
+        "dpi": 300,
+        "width_px": 2200,
+        "height_px": 1250,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [432, 324]
+        },
+        "purpose": "Five visually certain porch support locations with column/footing marks; no capacity inference.",
+        "sha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112"
+      },
+      "inputSha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "1fca684e9598475ac75749f1f8f5f3f625dbf7984dd4cbc7e533c24a52cc0f56",
+      "responseSha256": "5735fcb9a99e96fa62f70f299a58c09b6df7177da8ae756b03db7acebcd51016",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "h-diagonal-concept",
+      "family": "structural-live",
+      "crop": {
+        "id": "audit-h-diagonal-braces",
+        "file": ".local/sam/iteration-5/structural-audit/h-roof-braces.png",
+        "pdf": "Moke-Hackathon-Drawings/expanded/pdfs/sample-h.pdf",
+        "page": 1,
+        "sheet": "S-1",
+        "pdf_rect_points": [1080, 540, 1800, 1248],
+        "dpi": 150,
+        "width_px": 1500,
+        "height_px": 1475,
+        "pixel_to_pdf": {
+          "scale": 0.48,
+          "offset_points": [1080, 540]
+        },
+        "purpose": "Six visible diagonal brace bars on roof plan; not truss quantity or required bracing count.",
+        "sha256": "286301651203f5b21f5e828b148c7d65ba2d9947de4f310e10381c07027591c3"
+      },
+      "inputSha256": "286301651203f5b21f5e828b148c7d65ba2d9947de4f310e10381c07027591c3",
+      "pdfSha256": "7674e7bceced42e4c337ad8d1304d1b4e60e9e0d6637a9c11aae870b0796ba7e",
+      "requestSha256": "29aba7057e2b27de8f051a61218d66424d2e6145d38618343a9589b75d467191",
+      "responseSha256": "d3090b8582529a8342eae349435ac0962ccac93ef9c97f91207ea8c4513835f4",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "manual-e-fan",
+      "family": "manual-live",
+      "crop": {
+        "id": "exp-e-lighting",
+        "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdf_rect_points": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [864, 714]
+        },
+        "purpose": "Fans and lighting symbols among furniture",
+        "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      },
+      "inputSha256": "78833c7c923b9f0e4006ab0449c9eda9adc40eb06bfe14538ea7db1cb4bc3bde",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "29208dab6e913037150b9b8a6ddf383ad21d5a487d49bbd4529dc913012b070e",
+      "responseSha256": "a63cc57ed5856765593a58014ae8721163f9f7b0eb91879ffd2e06b74309bbbd",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 450,
+            "top": 1432,
+            "right": 515,
+            "bottom": 1494
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "manual-f-troffers",
+      "family": "manual-live",
+      "crop": {
+        "id": "exp-f-lighting",
+        "file": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-f-lighting.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 900, 1188, 1332],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 900]
+        },
+        "purpose": "Same tenant plan in the lighting view",
+        "sha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+      },
+      "inputSha256": "cc613337bba72295731a6738833466c620f599f13f0f3ae8bef6273b707acd09",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "6f3f123f18c8812b227cfeec7343bb6ac193a2560748ccdb4ed0fd191ce560cf",
+      "responseSha256": "8c495e78124852ea2624241027386f432b559c6baf2a7640f1d5891d9c6c94b4",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 221,
+            "top": 1227,
+            "right": 527,
+            "bottom": 1392
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 1121,
+            "top": 1320,
+            "right": 1429,
+            "bottom": 1475
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "manual-g-wall-post",
+      "family": "manual-live",
+      "crop": {
+        "id": "audit-g-porch-supports",
+        "file": ".local/sam/iteration-5/structural-audit/g-porch-supports.png",
+        "pdf": "pdfs/sample-g.pdf",
+        "page": 2,
+        "sheet": "S-2",
+        "pdf_rect_points": [432, 324, 960, 624],
+        "dpi": 300,
+        "width_px": 2200,
+        "height_px": 1250,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [432, 324]
+        },
+        "purpose": "Five visually certain porch support locations with column/footing marks; no capacity inference.",
+        "sha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112"
+      },
+      "inputSha256": "7c67334a387ba617b16c5af403f26b9969473c18dd9409ccdfc92ec5a8939112",
+      "pdfSha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa",
+      "requestSha256": "862ef23e05f7d032ad96c0c59130458d7115a4a7f145e476ce60eb3f7f1aa217",
+      "responseSha256": "af653a5ae7736a6bdfeae5f6eeaf9d1becabc4d13db4eb70a453f56d0bc96382",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "1",
+          "pixels": {
+            "left": 346,
+            "top": 948,
+            "right": 411,
+            "bottom": 999
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-d-fans",
+      "family": "shapes-live",
+      "crop": {
+        "id": "audit-d-baths-small-room",
+        "file": ".local/sam/iteration-5/electrical-audit/d-baths-small-room.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 11,
+        "sheet": "E-2",
+        "pdf_rect_points": [744, 600, 1008, 912],
+        "dpi": 300,
+        "width_px": 1100,
+        "height_px": 1300,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [744, 600]
+        },
+        "purpose": "Small electrical lighting source region.",
+        "sha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3"
+      },
+      "inputSha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "79119aab4435b160afac528c88d3180e53666a009cf030e3b9a11d3597eed8cc",
+      "responseSha256": "55e06840f3691c3a5d1d5ad90e6b65b28496457cfa0ca89cc394903ee7bda68a",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 954,
+            "top": 238,
+            "right": 1100,
+            "bottom": 431
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 959,
+            "top": 1241,
+            "right": 981,
+            "bottom": 1261
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 609,
+            "top": 21,
+            "right": 632,
+            "bottom": 45
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 754,
+            "top": 238,
+            "right": 947,
+            "bottom": 431
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-d-panels",
+      "family": "shapes-live",
+      "crop": {
+        "id": "audit-d-baths-small-room",
+        "file": ".local/sam/iteration-5/electrical-audit/d-baths-small-room.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 11,
+        "sheet": "E-2",
+        "pdf_rect_points": [744, 600, 1008, 912],
+        "dpi": 300,
+        "width_px": 1100,
+        "height_px": 1300,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [744, 600]
+        },
+        "purpose": "Small electrical lighting source region.",
+        "sha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3"
+      },
+      "inputSha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "027b5c251297107638a91896faf95b84447d6189a6586babd6317663037b1558",
+      "responseSha256": "5d274ce84ef2b0f127809a5eb3632e9539c044781b59d433b7d5e583c9a6d61a",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 285,
+            "top": 602,
+            "right": 366,
+            "bottom": 682
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 855,
+            "top": 927,
+            "right": 1059,
+            "bottom": 1103
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 0,
+            "top": 0,
+            "right": 31,
+            "bottom": 66
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 846,
+            "top": 696,
+            "right": 1069,
+            "bottom": 919
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 621,
+            "top": 1033,
+            "right": 744,
+            "bottom": 1114
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 283,
+            "top": 369,
+            "right": 362,
+            "bottom": 448
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 131,
+            "top": 713,
+            "right": 258,
+            "bottom": 1015
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 716,
+            "top": 1258,
+            "right": 1020,
+            "bottom": 1300
+          }
+        },
+        {
+          "id": "8",
+          "pixels": {
+            "left": 847,
+            "top": 464,
+            "right": 1067,
+            "bottom": 687
+          }
+        },
+        {
+          "id": "9",
+          "pixels": {
+            "left": 131,
+            "top": 55,
+            "right": 258,
+            "bottom": 357
+          }
+        },
+        {
+          "id": "10",
+          "pixels": {
+            "left": 607,
+            "top": 713,
+            "right": 735,
+            "bottom": 1016
+          }
+        },
+        {
+          "id": "11",
+          "pixels": {
+            "left": 380,
+            "top": 583,
+            "right": 433,
+            "bottom": 703
+          }
+        },
+        {
+          "id": "12",
+          "pixels": {
+            "left": 609,
+            "top": 115,
+            "right": 735,
+            "bottom": 416
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-d-power",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-d-power",
+        "file": "sam-crops-300dpi/exp-d-power.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 12,
+        "sheet": "E-3",
+        "pdf_rect_points": [756, 648, 1188, 1080],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 648]
+        },
+        "purpose": "Repeated equipment outlets and circuits",
+        "sha256": "af16bd68f0b7e4a06a1d2d9fc1cb8fa7389d43fd133bd5867c81b7f792bf40bb"
+      },
+      "inputSha256": "711b0e2c097005d6fda33bf420a2bcef6ed80301b0739b92ef43d66360b603be",
+      "pdfSha256": "52a9c6fdfeb414c943ccf952aaa0863a6aa51e5a85e090472aa8d73687e1dded",
+      "requestSha256": "f5ecdffc69d236197f223792e8c6790d2c097af3939b7ba40942b06bf2317995",
+      "responseSha256": "720722affbfc9b17e93791dd35802b0719c7afb1ad29d6da9181a2aa8e14768a",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 846,
+            "top": 977,
+            "right": 892,
+            "bottom": 1024
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 432,
+            "top": 112,
+            "right": 479,
+            "bottom": 158
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 324,
+            "top": 664,
+            "right": 371,
+            "bottom": 707
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 705,
+            "top": 41,
+            "right": 898,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 905,
+            "top": 42,
+            "right": 1098,
+            "bottom": 233
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-e-fan",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-e-lighting",
+        "file": "sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdf_rect_points": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [864, 714]
+        },
+        "purpose": "Fans and lighting symbols among furniture",
+        "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      },
+      "inputSha256": "78833c7c923b9f0e4006ab0449c9eda9adc40eb06bfe14538ea7db1cb4bc3bde",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "6d959b023f763dede37093dcfba8ab0675ec1eae956f4a90163ea280d2ba7f17",
+      "responseSha256": "781d372dd01f13587ea848e9fe6164240db48f260def197221a5f742d1adf1c1",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "shape-e-lights",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-e-lighting",
+        "file": "sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdf_rect_points": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [864, 714]
+        },
+        "purpose": "Fans and lighting symbols among furniture",
+        "sha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      },
+      "inputSha256": "78833c7c923b9f0e4006ab0449c9eda9adc40eb06bfe14538ea7db1cb4bc3bde",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "a6538301e5048800582edefad289cb1725de1c50e1041263f509c794f7d80cf0",
+      "responseSha256": "640af89dd72628d5bfa94e48a820c9ee78d2a1318b3f84d5d50aca657cfe6dab",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 495,
+            "top": 1423,
+            "right": 779,
+            "bottom": 1651
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 1619,
+            "top": 1422,
+            "right": 1800,
+            "bottom": 1652
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 495,
+            "top": 1001,
+            "right": 777,
+            "bottom": 1228
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 0,
+            "top": 31,
+            "right": 19,
+            "bottom": 136
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 1619,
+            "top": 1000,
+            "right": 1800,
+            "bottom": 1229
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 100,
+            "top": 1422,
+            "right": 386,
+            "bottom": 1652
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 100,
+            "top": 1001,
+            "right": 385,
+            "bottom": 1230
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 1058,
+            "top": 995,
+            "right": 1340,
+            "bottom": 1222
+          }
+        },
+        {
+          "id": "8",
+          "pixels": {
+            "left": 366,
+            "top": 30,
+            "right": 595,
+            "bottom": 136
+          }
+        },
+        {
+          "id": "9",
+          "pixels": {
+            "left": 1388,
+            "top": 303,
+            "right": 1616,
+            "bottom": 413
+          }
+        },
+        {
+          "id": "10",
+          "pixels": {
+            "left": 1057,
+            "top": 1418,
+            "right": 1340,
+            "bottom": 1644
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-f-lights",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-f-lighting",
+        "file": "sam-crops-300dpi/exp-f-lighting.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 900, 1188, 1332],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 900]
+        },
+        "purpose": "Same tenant plan in the lighting view",
+        "sha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+      },
+      "inputSha256": "cc613337bba72295731a6738833466c620f599f13f0f3ae8bef6273b707acd09",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "b12749e39a394c907d20475b40a5fa709851103c39d9230499f0042c27b1f57a",
+      "responseSha256": "f898324e39daabea79e57bc00d8435e132833a3bafb06e62cc7ab1aced44f243",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 979,
+            "top": 809,
+            "right": 1022,
+            "bottom": 851
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 1429,
+            "top": 508,
+            "right": 1471,
+            "bottom": 551
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 980,
+            "top": 508,
+            "right": 1022,
+            "bottom": 551
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 566,
+            "top": 186,
+            "right": 618,
+            "bottom": 237
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 1428,
+            "top": 208,
+            "right": 1472,
+            "bottom": 252
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 79,
+            "top": 809,
+            "right": 122,
+            "bottom": 852
+          }
+        },
+        {
+          "id": "6",
+          "pixels": {
+            "left": 421,
+            "top": 575,
+            "right": 452,
+            "bottom": 607
+          }
+        },
+        {
+          "id": "7",
+          "pixels": {
+            "left": 1540,
+            "top": 1036,
+            "right": 1583,
+            "bottom": 1078
+          }
+        },
+        {
+          "id": "8",
+          "pixels": {
+            "left": 529,
+            "top": 809,
+            "right": 572,
+            "bottom": 851
+          }
+        },
+        {
+          "id": "9",
+          "pixels": {
+            "left": 290,
+            "top": 376,
+            "right": 332,
+            "bottom": 420
+          }
+        },
+        {
+          "id": "10",
+          "pixels": {
+            "left": 978,
+            "top": 209,
+            "right": 1022,
+            "bottom": 252
+          }
+        },
+        {
+          "id": "11",
+          "pixels": {
+            "left": 515,
+            "top": 377,
+            "right": 557,
+            "bottom": 420
+          }
+        },
+        {
+          "id": "12",
+          "pixels": {
+            "left": 1240,
+            "top": 1036,
+            "right": 1282,
+            "bottom": 1079
+          }
+        },
+        {
+          "id": "13",
+          "pixels": {
+            "left": 940,
+            "top": 1036,
+            "right": 983,
+            "bottom": 1078
+          }
+        },
+        {
+          "id": "14",
+          "pixels": {
+            "left": 1429,
+            "top": 809,
+            "right": 1472,
+            "bottom": 852
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-f-power",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-f-power",
+        "file": "sam-crops-300dpi/exp-f-power.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 204, 1188, 636],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 204]
+        },
+        "purpose": "Compact retail power plan",
+        "sha256": "ec333cf8d377eb3eab8d5c8d15914c254d7d3afab8018c69c4ad9f71056fa984"
+      },
+      "inputSha256": "84b9526c3f5a6a0fcf7bb840f3ac77766990062b1761ba833fca0905eade30f3",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "edbab37e7b290178850b61a4da41ca69e9a16e6e1cb9c3ff85a44786c06129df",
+      "responseSha256": "d75adb7afd809dd2d984f21fe67f7925a932e0d0b79a2fbe66d0abff7b639d8d",
+      "endpoint": "/responses",
+      "objects": []
+    },
+    {
+      "caseId": "shape-f-troffers",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-f-lighting",
+        "file": "sam-crops-300dpi/exp-f-lighting.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdf_rect_points": [756, 900, 1188, 1332],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [756, 900]
+        },
+        "purpose": "Same tenant plan in the lighting view",
+        "sha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+      },
+      "inputSha256": "cc613337bba72295731a6738833466c620f599f13f0f3ae8bef6273b707acd09",
+      "pdfSha256": "c3e4cd10fc15413192a8308d036209ba144ea5d3b1f4b9db1a6c3a65eea13658",
+      "requestSha256": "7280b7de38a55fe8daa4e9824f338aed4b20937c749071e7817941c57552dbc8",
+      "responseSha256": "7d4c4a18da61e8c87b3ab554b951650c3565efedcc0be0903453032330d6bbe5",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 216,
+            "top": 1445,
+            "right": 530,
+            "bottom": 1572
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-j-alarm",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-j-alarm",
+        "file": "sam-crops-300dpi/exp-j-alarm.png",
+        "pdf": "pdfs/sample-j.pdf",
+        "page": 2,
+        "sheet": "FA-2",
+        "pdf_rect_points": [1344, 924, 1776, 1356],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1344, 924]
+        },
+        "purpose": "Alarm device symbols, rooms and circuit path",
+        "sha256": "e6f706dd49088ac83f1454c6bff606816fe1270490833eb7ab0bb7a15e4836d4"
+      },
+      "inputSha256": "7df90d53f14edfe586d70fe787a68d9e495e0203ab26e9068efea28e1e1f8f75",
+      "pdfSha256": "10fb185a2a2b1c57454c85c0de19428f4a89340b0e32fd21740560cd3868d55c",
+      "requestSha256": "7127335bf14accca3d71a5f13a5bb9eebc01f0a089706c881bba2be46111f415",
+      "responseSha256": "0abd1553e0b50f7ac506f479b81c1db48bc884b1e15d89b2f657e6609c053434",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 1389,
+            "top": 1056,
+            "right": 1503,
+            "bottom": 1171
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 640,
+            "top": 752,
+            "right": 756,
+            "bottom": 867
+          }
+        },
+        {
+          "id": "2",
+          "pixels": {
+            "left": 640,
+            "top": 866,
+            "right": 755,
+            "bottom": 980
+          }
+        },
+        {
+          "id": "3",
+          "pixels": {
+            "left": 834,
+            "top": 606,
+            "right": 952,
+            "bottom": 718
+          }
+        },
+        {
+          "id": "4",
+          "pixels": {
+            "left": 1395,
+            "top": 922,
+            "right": 1512,
+            "bottom": 1035
+          }
+        },
+        {
+          "id": "5",
+          "pixels": {
+            "left": 1275,
+            "top": 1055,
+            "right": 1389,
+            "bottom": 1170
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-j-hexagons",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-j-alarm",
+        "file": "sam-crops-300dpi/exp-j-alarm.png",
+        "pdf": "pdfs/sample-j.pdf",
+        "page": 2,
+        "sheet": "FA-2",
+        "pdf_rect_points": [1344, 924, 1776, 1356],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1344, 924]
+        },
+        "purpose": "Alarm device symbols, rooms and circuit path",
+        "sha256": "e6f706dd49088ac83f1454c6bff606816fe1270490833eb7ab0bb7a15e4836d4"
+      },
+      "inputSha256": "7df90d53f14edfe586d70fe787a68d9e495e0203ab26e9068efea28e1e1f8f75",
+      "pdfSha256": "10fb185a2a2b1c57454c85c0de19428f4a89340b0e32fd21740560cd3868d55c",
+      "requestSha256": "5004efbe54b4030a42f41c70031cec767ef31365ced77f1ced4f4022fbdba4d7",
+      "responseSha256": "1030021b858f352bf64c4e24a9e24dc00823a62bf4220d123c5b95b41994ba9a",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 439,
+            "top": 776,
+            "right": 577,
+            "bottom": 899
+          }
+        },
+        {
+          "id": "1",
+          "pixels": {
+            "left": 438,
+            "top": 583,
+            "right": 577,
+            "bottom": 706
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-sprinkler-circles",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-e-sprinklers",
+        "file": "sam-crops-300dpi/exp-e-sprinklers.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 8,
+        "sheet": "SP-2",
+        "pdf_rect_points": [1404, 324, 1836, 756],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1404, 324]
+        },
+        "purpose": "Sprinkler heads, branch pipes and spacing callouts",
+        "sha256": "8553ff4d97e2e32659bf67d370b5e5798caf4c17596920177e8e42e942abc55e"
+      },
+      "inputSha256": "454bfaee54a779a0a7b72fca41fd260eb97067bc9179b82869fd61e958298f6c",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "f85c03fec165df2e9dceb8f63226b888cde44d96ebf8173d50b54e1d604d42d7",
+      "responseSha256": "20282e8682a4c94ef5211f9e4462a27623dc5a794e7aeb83fbf9a3f93f4b6585",
+      "endpoint": "/responses",
+      "objects": [
+        {
+          "id": "0",
+          "pixels": {
+            "left": 789,
+            "top": 1397,
+            "right": 832,
+            "bottom": 1440
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "shape-sprinkler-dotcircles",
+      "family": "shapes-live",
+      "crop": {
+        "id": "exp-e-sprinklers",
+        "file": "sam-crops-300dpi/exp-e-sprinklers.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 8,
+        "sheet": "SP-2",
+        "pdf_rect_points": [1404, 324, 1836, 756],
+        "dpi": 300,
+        "width_px": 1800,
+        "height_px": 1800,
+        "pixel_to_pdf": {
+          "scale": 0.24,
+          "offset_points": [1404, 324]
+        },
+        "purpose": "Sprinkler heads, branch pipes and spacing callouts",
+        "sha256": "8553ff4d97e2e32659bf67d370b5e5798caf4c17596920177e8e42e942abc55e"
+      },
+      "inputSha256": "454bfaee54a779a0a7b72fca41fd260eb97067bc9179b82869fd61e958298f6c",
+      "pdfSha256": "f35484f46a36c186ba529591e7a126e991a7f5fd0b7d0cd2cce32a9f3b9e3429",
+      "requestSha256": "cc5afab4c287881a5810e58205f16095cfa01289e18933640ec5568f828c0fc4",
+      "responseSha256": "35ee96d29e40d24178fdae7b62967a414f8fdd26a318fabe761c3506b207902c",
+      "endpoint": "/responses",
+      "objects": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "j-alarm-typed",
+      "role": "SAM-discovery-plus-Muse-classification",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "heat-detector-HD-0",
+          "kind": "heat-detector-HD",
+          "x": 508,
+          "y": 644
+        },
+        {
+          "id": "heat-detector-HD-1",
+          "kind": "heat-detector-HD",
+          "x": 508,
+          "y": 838
+        },
+        {
+          "id": "door-holder-DH-0",
+          "kind": "door-holder-DH",
+          "x": 696,
+          "y": 810
+        },
+        {
+          "id": "control-relay-CR-0",
+          "kind": "control-relay-CR",
+          "x": 696,
+          "y": 922
+        },
+        {
+          "id": "control-relay-CR-1",
+          "kind": "control-relay-CR",
+          "x": 1334,
+          "y": 1112
+        },
+        {
+          "id": "time-delay-TD-0",
+          "kind": "time-delay-TD",
+          "x": 1446,
+          "y": 1112
+        },
+        {
+          "id": "manual-pull-F-0",
+          "kind": "manual-pull-F",
+          "x": 1452,
+          "y": 978
+        },
+        {
+          "id": "wall-strobe-V-0",
+          "kind": "wall-strobe-V",
+          "x": 892,
+          "y": 662
+        }
+      ],
+      "predictions": [
+        {
+          "id": "shape-j-alarm-0",
+          "kind": "time-delay-TD",
+          "box": {
+            "left": 1389,
+            "top": 1056,
+            "right": 1503,
+            "bottom": 1171
+          }
+        },
+        {
+          "id": "shape-j-alarm-1",
+          "kind": "door-holder-DH",
+          "box": {
+            "left": 640,
+            "top": 752,
+            "right": 756,
+            "bottom": 867
+          }
+        },
+        {
+          "id": "shape-j-alarm-2",
+          "kind": "control-relay-CR",
+          "box": {
+            "left": 640,
+            "top": 866,
+            "right": 755,
+            "bottom": 980
+          }
+        },
+        {
+          "id": "shape-j-alarm-3",
+          "kind": "wall-strobe-V",
+          "box": {
+            "left": 834,
+            "top": 606,
+            "right": 952,
+            "bottom": 718
+          }
+        },
+        {
+          "id": "shape-j-alarm-4",
+          "kind": "manual-pull-F",
+          "box": {
+            "left": 1395,
+            "top": 922,
+            "right": 1512,
+            "bottom": 1035
+          }
+        },
+        {
+          "id": "shape-j-alarm-5",
+          "kind": "control-relay-CR",
+          "box": {
+            "left": 1275,
+            "top": 1055,
+            "right": 1389,
+            "bottom": 1170
+          }
+        },
+        {
+          "id": "shape-j-hexagons-0",
+          "kind": "heat-detector-HD",
+          "box": {
+            "left": 439,
+            "top": 776,
+            "right": 577,
+            "bottom": 899
+          }
+        },
+        {
+          "id": "shape-j-hexagons-1",
+          "kind": "heat-detector-HD",
+          "box": {
+            "left": 438,
+            "top": 583,
+            "right": 577,
+            "bottom": 706
+          }
+        }
+      ],
+      "sourceCases": ["shape-j-alarm", "shape-j-hexagons"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/vision/j-alarm-classification-joined.json",
+          "sha256": "98e6ffea34456a1dcc97aa8b79153e68084e7ffc2ca73bb45ac8f12f7b8e9999"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/j-alarm-classification-response.json",
+          "sha256": "319b8ab867f527c89a3c08191dfb1fe9e414d08a7dd7958f021bc61c0c8f9dba"
+        }
+      ]
+    },
+    {
+      "id": "f-tag-a-classified",
+      "role": "SAM-discovery-plus-Muse-classification",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "round-fixture-tag-A-0",
+          "kind": "round-fixture-tag-A",
+          "x": 310,
+          "y": 398
+        },
+        {
+          "id": "round-fixture-tag-A-1",
+          "kind": "round-fixture-tag-A",
+          "x": 536,
+          "y": 398
+        },
+        {
+          "id": "round-fixture-tag-A-2",
+          "kind": "round-fixture-tag-A",
+          "x": 1000,
+          "y": 230
+        },
+        {
+          "id": "round-fixture-tag-A-3",
+          "kind": "round-fixture-tag-A",
+          "x": 1450,
+          "y": 230
+        },
+        {
+          "id": "round-fixture-tag-A-4",
+          "kind": "round-fixture-tag-A",
+          "x": 1000,
+          "y": 530
+        },
+        {
+          "id": "round-fixture-tag-A-5",
+          "kind": "round-fixture-tag-A",
+          "x": 1450,
+          "y": 530
+        },
+        {
+          "id": "round-fixture-tag-A-6",
+          "kind": "round-fixture-tag-A",
+          "x": 100,
+          "y": 830
+        },
+        {
+          "id": "round-fixture-tag-A-7",
+          "kind": "round-fixture-tag-A",
+          "x": 550,
+          "y": 830
+        },
+        {
+          "id": "round-fixture-tag-A-8",
+          "kind": "round-fixture-tag-A",
+          "x": 1000,
+          "y": 830
+        },
+        {
+          "id": "round-fixture-tag-A-9",
+          "kind": "round-fixture-tag-A",
+          "x": 1450,
+          "y": 830
+        },
+        {
+          "id": "round-fixture-tag-A-10",
+          "kind": "round-fixture-tag-A",
+          "x": 962,
+          "y": 1056
+        },
+        {
+          "id": "round-fixture-tag-A-11",
+          "kind": "round-fixture-tag-A",
+          "x": 1260,
+          "y": 1056
+        },
+        {
+          "id": "round-fixture-tag-A-12",
+          "kind": "round-fixture-tag-A",
+          "x": 1560,
+          "y": 1056
+        }
+      ],
+      "predictions": [
+        {
+          "id": "shape-f-lights-0",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 979,
+            "top": 809,
+            "right": 1022,
+            "bottom": 851
+          }
+        },
+        {
+          "id": "shape-f-lights-1",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 1429,
+            "top": 508,
+            "right": 1471,
+            "bottom": 551
+          }
+        },
+        {
+          "id": "shape-f-lights-2",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 980,
+            "top": 508,
+            "right": 1022,
+            "bottom": 551
+          }
+        },
+        {
+          "id": "shape-f-lights-4",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 1428,
+            "top": 208,
+            "right": 1472,
+            "bottom": 252
+          }
+        },
+        {
+          "id": "shape-f-lights-5",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 79,
+            "top": 809,
+            "right": 122,
+            "bottom": 852
+          }
+        },
+        {
+          "id": "shape-f-lights-7",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 1540,
+            "top": 1036,
+            "right": 1583,
+            "bottom": 1078
+          }
+        },
+        {
+          "id": "shape-f-lights-8",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 529,
+            "top": 809,
+            "right": 572,
+            "bottom": 851
+          }
+        },
+        {
+          "id": "shape-f-lights-9",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 290,
+            "top": 376,
+            "right": 332,
+            "bottom": 420
+          }
+        },
+        {
+          "id": "shape-f-lights-10",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 978,
+            "top": 209,
+            "right": 1022,
+            "bottom": 252
+          }
+        },
+        {
+          "id": "shape-f-lights-11",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 515,
+            "top": 377,
+            "right": 557,
+            "bottom": 420
+          }
+        },
+        {
+          "id": "shape-f-lights-12",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 1240,
+            "top": 1036,
+            "right": 1282,
+            "bottom": 1079
+          }
+        },
+        {
+          "id": "shape-f-lights-13",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 940,
+            "top": 1036,
+            "right": 983,
+            "bottom": 1078
+          }
+        },
+        {
+          "id": "shape-f-lights-14",
+          "kind": "round-fixture-tag-A",
+          "box": {
+            "left": 1429,
+            "top": 809,
+            "right": 1472,
+            "bottom": 852
+          }
+        }
+      ],
+      "sourceCases": ["shape-f-lights", "shape-f-troffers"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/vision/f-light-classification-joined.json",
+          "sha256": "d98c1ed61e6522eb3e8ff31ba4f9faad83f32f6fd355dfe98c30ed51d4298386"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/f-light-classification-response.json",
+          "sha256": "4f181115bea7f111b82a32daf65e2816071a176c0db7791b0d49231578bab75b"
+        }
+      ]
+    },
+    {
+      "id": "civil-complete-arrows-classified",
+      "role": "SAM-discovery-plus-Muse-classification",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "civil-arrow-0",
+          "kind": "complete-blue-flow-arrow",
+          "x": 1521,
+          "y": 1722
+        },
+        {
+          "id": "civil-arrow-1",
+          "kind": "complete-blue-flow-arrow",
+          "x": 79,
+          "y": 1515
+        },
+        {
+          "id": "civil-arrow-2",
+          "kind": "complete-blue-flow-arrow",
+          "x": 859,
+          "y": 1489
+        },
+        {
+          "id": "civil-arrow-3",
+          "kind": "complete-blue-flow-arrow",
+          "x": 642,
+          "y": 229
+        },
+        {
+          "id": "civil-arrow-4",
+          "kind": "complete-blue-flow-arrow",
+          "x": 602,
+          "y": 1700
+        }
+      ],
+      "predictions": [
+        {
+          "id": "civil-blue-arrows-1",
+          "kind": "complete-blue-flow-arrow",
+          "box": {
+            "left": 1436,
+            "top": 1708,
+            "right": 1626,
+            "bottom": 1735
+          }
+        },
+        {
+          "id": "civil-blue-arrows-3",
+          "kind": "complete-blue-flow-arrow",
+          "box": {
+            "left": 66,
+            "top": 1412,
+            "right": 92,
+            "bottom": 1619
+          }
+        },
+        {
+          "id": "civil-blue-arrows-4",
+          "kind": "complete-blue-flow-arrow",
+          "box": {
+            "left": 500,
+            "top": 1688,
+            "right": 706,
+            "bottom": 1714
+          }
+        },
+        {
+          "id": "civil-blue-arrows-6",
+          "kind": "complete-blue-flow-arrow",
+          "box": {
+            "left": 848,
+            "top": 1386,
+            "right": 873,
+            "bottom": 1593
+          }
+        },
+        {
+          "id": "civil-blue-arrows-7",
+          "kind": "complete-blue-flow-arrow",
+          "box": {
+            "left": 577,
+            "top": 151,
+            "right": 709,
+            "bottom": 310
+          }
+        }
+      ],
+      "sourceCases": ["civil-blue-arrows"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/vision/civil-arrow-classification-joined.json",
+          "sha256": "a386090f0138273b3e5d0a277fdd4641b55cfe288778ad68972bdc00da9fcb3f"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/civil-arrow-classification-response.json",
+          "sha256": "54e638c5939bee0ca58297009993b2df9962b051a0762182b8e5853e1cda069b"
+        }
+      ]
+    },
+    {
+      "id": "g-holes-direct",
+      "role": "SAM-geometric-discovery",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "full-nw",
+          "kind": "hole",
+          "x": 448,
+          "y": 205
+        },
+        {
+          "id": "full-ne",
+          "kind": "hole",
+          "x": 529,
+          "y": 205
+        },
+        {
+          "id": "full-sw",
+          "kind": "hole",
+          "x": 449,
+          "y": 285
+        },
+        {
+          "id": "full-se",
+          "kind": "hole",
+          "x": 529,
+          "y": 285
+        },
+        {
+          "id": "half-west",
+          "kind": "hole",
+          "x": 448,
+          "y": 702
+        },
+        {
+          "id": "half-east",
+          "kind": "hole",
+          "x": 529,
+          "y": 702
+        }
+      ],
+      "predictions": [
+        {
+          "id": "g-hole-circle-0",
+          "kind": "hole",
+          "box": {
+            "left": 442,
+            "top": 200,
+            "right": 453,
+            "bottom": 210
+          }
+        },
+        {
+          "id": "g-hole-circle-1",
+          "kind": "hole",
+          "box": {
+            "left": 523,
+            "top": 280,
+            "right": 534,
+            "bottom": 291
+          }
+        },
+        {
+          "id": "g-hole-circle-2",
+          "kind": "hole",
+          "box": {
+            "left": 442,
+            "top": 696,
+            "right": 453,
+            "bottom": 707
+          }
+        },
+        {
+          "id": "g-hole-circle-3",
+          "kind": "hole",
+          "box": {
+            "left": 66,
+            "top": 913,
+            "right": 252,
+            "bottom": 1097
+          }
+        },
+        {
+          "id": "g-hole-circle-4",
+          "kind": "hole",
+          "box": {
+            "left": 524,
+            "top": 200,
+            "right": 535,
+            "bottom": 211
+          }
+        },
+        {
+          "id": "g-hole-circle-5",
+          "kind": "hole",
+          "box": {
+            "left": 443,
+            "top": 280,
+            "right": 455,
+            "bottom": 291
+          }
+        }
+      ],
+      "sourceCases": ["g-hole-circle"],
+      "evidence": []
+    },
+    {
+      "id": "g-holes-manual-correction",
+      "role": "manual-source-guidance-control",
+      "notes": "Source-guided correction drops giant E detail-bubble false positive and supplies the missing half-plate hole box; not autonomous discovery.",
+      "annotations": [
+        {
+          "id": "full-nw",
+          "kind": "hole",
+          "x": 448,
+          "y": 205
+        },
+        {
+          "id": "full-ne",
+          "kind": "hole",
+          "x": 529,
+          "y": 205
+        },
+        {
+          "id": "full-sw",
+          "kind": "hole",
+          "x": 449,
+          "y": 285
+        },
+        {
+          "id": "full-se",
+          "kind": "hole",
+          "x": 529,
+          "y": 285
+        },
+        {
+          "id": "half-west",
+          "kind": "hole",
+          "x": 448,
+          "y": 702
+        },
+        {
+          "id": "half-east",
+          "kind": "hole",
+          "x": 529,
+          "y": 702
+        }
+      ],
+      "predictions": [
+        {
+          "id": "g-hole-circle-0",
+          "kind": "hole",
+          "box": {
+            "left": 442,
+            "top": 200,
+            "right": 453,
+            "bottom": 210
+          }
+        },
+        {
+          "id": "g-hole-circle-1",
+          "kind": "hole",
+          "box": {
+            "left": 523,
+            "top": 280,
+            "right": 534,
+            "bottom": 291
+          }
+        },
+        {
+          "id": "g-hole-circle-2",
+          "kind": "hole",
+          "box": {
+            "left": 442,
+            "top": 696,
+            "right": 453,
+            "bottom": 707
+          }
+        },
+        {
+          "id": "g-hole-circle-4",
+          "kind": "hole",
+          "box": {
+            "left": 524,
+            "top": 200,
+            "right": 535,
+            "bottom": 211
+          }
+        },
+        {
+          "id": "g-hole-circle-5",
+          "kind": "hole",
+          "box": {
+            "left": 443,
+            "top": 280,
+            "right": 455,
+            "bottom": 291
+          }
+        },
+        {
+          "id": "g-missed-hole-box-1",
+          "kind": "hole",
+          "box": {
+            "left": 523,
+            "top": 697,
+            "right": 535,
+            "bottom": 708
+          }
+        }
+      ],
+      "sourceCases": ["g-hole-circle", "g-missed-hole-box"],
+      "evidence": []
+    },
+    {
+      "id": "g-posts-guided",
+      "role": "Muse-grounding-plus-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "g-c2-northwest",
+          "kind": "post",
+          "x": 648,
+          "y": 202
+        },
+        {
+          "id": "g-c2-northeast",
+          "kind": "post",
+          "x": 1596,
+          "y": 202
+        },
+        {
+          "id": "g-c1-west-middle",
+          "kind": "post",
+          "x": 379,
+          "y": 585
+        },
+        {
+          "id": "g-c3-west-wall",
+          "kind": "post",
+          "x": 379,
+          "y": 974
+        },
+        {
+          "id": "g-c3-east-wall",
+          "kind": "post",
+          "x": 1597,
+          "y": 415
+        }
+      ],
+      "predictions": [
+        {
+          "id": "batch-g-support-grounding-1",
+          "kind": "post",
+          "box": {
+            "left": 622,
+            "top": 169,
+            "right": 684,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-2",
+          "kind": "post",
+          "box": {
+            "left": 345,
+            "top": 552,
+            "right": 414,
+            "bottom": 619
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-3",
+          "kind": "post",
+          "box": {
+            "left": 340,
+            "top": 900,
+            "right": 425,
+            "bottom": 949
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-4",
+          "kind": "post",
+          "box": {
+            "left": 1559,
+            "top": 170,
+            "right": 1620,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-5",
+          "kind": "post",
+          "box": {
+            "left": 1561,
+            "top": 387,
+            "right": 1635,
+            "bottom": 424
+          }
+        }
+      ],
+      "sourceCases": ["batch-g-support-grounding"],
+      "evidence": []
+    },
+    {
+      "id": "g-posts-manual-replacement",
+      "role": "manual-source-guidance-control",
+      "notes": "Replace misplaced west-wall C3 proposal using source-guided fresh geometry; not autonomous recovery.",
+      "annotations": [
+        {
+          "id": "g-c2-northwest",
+          "kind": "post",
+          "x": 648,
+          "y": 202
+        },
+        {
+          "id": "g-c2-northeast",
+          "kind": "post",
+          "x": 1596,
+          "y": 202
+        },
+        {
+          "id": "g-c1-west-middle",
+          "kind": "post",
+          "x": 379,
+          "y": 585
+        },
+        {
+          "id": "g-c3-west-wall",
+          "kind": "post",
+          "x": 379,
+          "y": 974
+        },
+        {
+          "id": "g-c3-east-wall",
+          "kind": "post",
+          "x": 1597,
+          "y": 415
+        }
+      ],
+      "predictions": [
+        {
+          "id": "batch-g-support-grounding-1",
+          "kind": "post",
+          "box": {
+            "left": 622,
+            "top": 169,
+            "right": 684,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-2",
+          "kind": "post",
+          "box": {
+            "left": 345,
+            "top": 552,
+            "right": 414,
+            "bottom": 619
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-4",
+          "kind": "post",
+          "box": {
+            "left": 1559,
+            "top": 170,
+            "right": 1620,
+            "bottom": 234
+          }
+        },
+        {
+          "id": "batch-g-support-grounding-5",
+          "kind": "post",
+          "box": {
+            "left": 1561,
+            "top": 387,
+            "right": 1635,
+            "bottom": 424
+          }
+        },
+        {
+          "id": "manual-g-wall-post-1",
+          "kind": "post",
+          "box": {
+            "left": 346,
+            "top": 948,
+            "right": 411,
+            "bottom": 999
+          }
+        }
+      ],
+      "sourceCases": ["batch-g-support-grounding", "manual-g-wall-post"],
+      "evidence": []
+    },
+    {
+      "id": "d-fixture-grounding-sam-typed",
+      "role": "Muse-grounding-plus-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "LED-panel-light-0",
+          "kind": "LED-panel-light",
+          "x": 194,
+          "y": 206
+        },
+        {
+          "id": "LED-panel-light-1",
+          "kind": "LED-panel-light",
+          "x": 673,
+          "y": 266
+        },
+        {
+          "id": "LED-panel-light-2",
+          "kind": "LED-panel-light",
+          "x": 194,
+          "y": 865
+        },
+        {
+          "id": "LED-panel-light-3",
+          "kind": "LED-panel-light",
+          "x": 673,
+          "y": 865
+        },
+        {
+          "id": "exhaust-fan-0",
+          "kind": "exhaust-fan",
+          "x": 324,
+          "y": 409
+        },
+        {
+          "id": "exhaust-fan-1",
+          "kind": "exhaust-fan",
+          "x": 324,
+          "y": 644
+        },
+        {
+          "id": "exit-and-emergency-combination-0",
+          "kind": "exit-and-emergency-combination",
+          "x": 682,
+          "y": 1052
+        }
+      ],
+      "predictions": [
+        {
+          "id": "batch-d-fixture-grounding-1",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 128,
+            "top": 54,
+            "right": 259,
+            "bottom": 359
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-2",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 607,
+            "top": 113,
+            "right": 737,
+            "bottom": 422
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-3",
+          "kind": "exhaust-fan",
+          "box": {
+            "left": 280,
+            "top": 350,
+            "right": 363,
+            "bottom": 441
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-4",
+          "kind": "exhaust-fan",
+          "box": {
+            "left": 306,
+            "top": 546,
+            "right": 404,
+            "bottom": 634
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-5",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 129,
+            "top": 710,
+            "right": 259,
+            "bottom": 1015
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-6",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 598,
+            "top": 667,
+            "right": 736,
+            "bottom": 963
+          }
+        },
+        {
+          "id": "batch-d-fixture-grounding-7",
+          "kind": "exit-and-emergency-combination",
+          "box": {
+            "left": 593,
+            "top": 940,
+            "right": 764,
+            "bottom": 1113
+          }
+        }
+      ],
+      "sourceCases": ["batch-d-fixture-grounding"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/d-fixture-grounding-response.json",
+          "sha256": "85d66e9f8c4dff90d9640efb380ab1821045b278e7e2a232568bf5ade2379f74"
+        }
+      ]
+    },
+    {
+      "id": "d-fixture-grounding-grounding-typed",
+      "role": "Muse-grounding-before-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "LED-panel-light-0",
+          "kind": "LED-panel-light",
+          "x": 194,
+          "y": 206
+        },
+        {
+          "id": "LED-panel-light-1",
+          "kind": "LED-panel-light",
+          "x": 673,
+          "y": 266
+        },
+        {
+          "id": "LED-panel-light-2",
+          "kind": "LED-panel-light",
+          "x": 194,
+          "y": 865
+        },
+        {
+          "id": "LED-panel-light-3",
+          "kind": "LED-panel-light",
+          "x": 673,
+          "y": 865
+        },
+        {
+          "id": "exhaust-fan-0",
+          "kind": "exhaust-fan",
+          "x": 324,
+          "y": 409
+        },
+        {
+          "id": "exhaust-fan-1",
+          "kind": "exhaust-fan",
+          "x": 324,
+          "y": 644
+        },
+        {
+          "id": "exit-and-emergency-combination-0",
+          "kind": "exit-and-emergency-combination",
+          "x": 682,
+          "y": 1052
+        }
+      ],
+      "predictions": [
+        {
+          "id": "d-fixture-grounding-1",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 129,
+            "top": 52,
+            "right": 261,
+            "bottom": 357
+          }
+        },
+        {
+          "id": "d-fixture-grounding-2",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 581,
+            "top": 106,
+            "right": 739,
+            "bottom": 427
+          }
+        },
+        {
+          "id": "d-fixture-grounding-3",
+          "kind": "exhaust-fan",
+          "box": {
+            "left": 281,
+            "top": 338,
+            "right": 365,
+            "bottom": 429
+          }
+        },
+        {
+          "id": "d-fixture-grounding-4",
+          "kind": "exhaust-fan",
+          "box": {
+            "left": 312,
+            "top": 544,
+            "right": 399,
+            "bottom": 639
+          }
+        },
+        {
+          "id": "d-fixture-grounding-5",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 130,
+            "top": 669,
+            "right": 260,
+            "bottom": 981
+          }
+        },
+        {
+          "id": "d-fixture-grounding-6",
+          "kind": "LED-panel-light",
+          "box": {
+            "left": 581,
+            "top": 668,
+            "right": 739,
+            "bottom": 949
+          }
+        },
+        {
+          "id": "d-fixture-grounding-7",
+          "kind": "exit-and-emergency-combination",
+          "box": {
+            "left": 576,
+            "top": 936,
+            "right": 763,
+            "bottom": 1082
+          }
+        }
+      ],
+      "sourceCases": [],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/d-fixture-grounding-response.json",
+          "sha256": "85d66e9f8c4dff90d9640efb380ab1821045b278e7e2a232568bf5ade2379f74"
+        }
+      ]
+    },
+    {
+      "id": "e-fixture-grounding-sam-typed",
+      "role": "Muse-grounding-plus-SAM",
+      "notes": "Kind-preserving strict scoring prevents large fan7 rescuing highbay5. Highbay5 bottom=1654 excludes source center y=1654 exactly; report separate one-pixel annotation-tolerance sensitivity without changing truth.",
+      "annotations": [
+        {
+          "id": "RBAY17-highbay-0",
+          "kind": "RBAY17-highbay",
+          "x": 354,
+          "y": 810
+        },
+        {
+          "id": "RBAY17-highbay-1",
+          "kind": "RBAY17-highbay",
+          "x": 1134,
+          "y": 810
+        },
+        {
+          "id": "RBAY17-highbay-2",
+          "kind": "RBAY17-highbay",
+          "x": 354,
+          "y": 1654
+        },
+        {
+          "id": "RBAY17-highbay-3",
+          "kind": "RBAY17-highbay",
+          "x": 1134,
+          "y": 1654
+        },
+        {
+          "id": "2x4-LED-panel-0",
+          "kind": "2x4-LED-panel",
+          "x": 478,
+          "y": 86
+        },
+        {
+          "id": "2x4-LED-panel-1",
+          "kind": "2x4-LED-panel",
+          "x": 1500,
+          "y": 360
+        },
+        {
+          "id": "BAF-1-eight-blade-fan-0",
+          "kind": "BAF-1-eight-blade-fan",
+          "x": 480,
+          "y": 1464
+        }
+      ],
+      "predictions": [
+        {
+          "id": "batch-e-fixture-grounding-1",
+          "kind": "2x4-LED-panel",
+          "box": {
+            "left": 366,
+            "top": 33,
+            "right": 594,
+            "bottom": 137
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-2",
+          "kind": "2x4-LED-panel",
+          "box": {
+            "left": 1385,
+            "top": 306,
+            "right": 1616,
+            "bottom": 416
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-3",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 323,
+            "top": 782,
+            "right": 389,
+            "bottom": 858
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-4",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 1102,
+            "top": 784,
+            "right": 1167,
+            "bottom": 850
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-5",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 318,
+            "top": 1606,
+            "right": 387,
+            "bottom": 1654
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-6",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 1103,
+            "top": 1593,
+            "right": 1168,
+            "bottom": 1658
+          }
+        },
+        {
+          "id": "batch-e-fixture-grounding-7",
+          "kind": "BAF-1-eight-blade-fan",
+          "box": {
+            "left": 243,
+            "top": 1223,
+            "right": 724,
+            "bottom": 1703
+          }
+        }
+      ],
+      "sourceCases": ["batch-e-fixture-grounding"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/e-fixture-grounding-response.json",
+          "sha256": "cebe87110f1d256350d9835cd09e944186c39e6ec8a8df918087f9a6632d7e1f"
+        }
+      ],
+      "tolerancePixels": 1
+    },
+    {
+      "id": "e-fixture-grounding-grounding-typed",
+      "role": "Muse-grounding-before-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "RBAY17-highbay-0",
+          "kind": "RBAY17-highbay",
+          "x": 354,
+          "y": 810
+        },
+        {
+          "id": "RBAY17-highbay-1",
+          "kind": "RBAY17-highbay",
+          "x": 1134,
+          "y": 810
+        },
+        {
+          "id": "RBAY17-highbay-2",
+          "kind": "RBAY17-highbay",
+          "x": 354,
+          "y": 1654
+        },
+        {
+          "id": "RBAY17-highbay-3",
+          "kind": "RBAY17-highbay",
+          "x": 1134,
+          "y": 1654
+        },
+        {
+          "id": "2x4-LED-panel-0",
+          "kind": "2x4-LED-panel",
+          "x": 478,
+          "y": 86
+        },
+        {
+          "id": "2x4-LED-panel-1",
+          "kind": "2x4-LED-panel",
+          "x": 1500,
+          "y": 360
+        },
+        {
+          "id": "BAF-1-eight-blade-fan-0",
+          "kind": "BAF-1-eight-blade-fan",
+          "x": 480,
+          "y": 1464
+        }
+      ],
+      "predictions": [
+        {
+          "id": "e-fixture-grounding-1",
+          "kind": "2x4-LED-panel",
+          "box": {
+            "left": 367,
+            "top": 52,
+            "right": 594,
+            "bottom": 139
+          }
+        },
+        {
+          "id": "e-fixture-grounding-2",
+          "kind": "2x4-LED-panel",
+          "box": {
+            "left": 1357,
+            "top": 313,
+            "right": 1617,
+            "bottom": 416
+          }
+        },
+        {
+          "id": "e-fixture-grounding-3",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 322,
+            "top": 801,
+            "right": 389,
+            "bottom": 870
+          }
+        },
+        {
+          "id": "e-fixture-grounding-4",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 1099,
+            "top": 802,
+            "right": 1167,
+            "bottom": 870
+          }
+        },
+        {
+          "id": "e-fixture-grounding-5",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 322,
+            "top": 1596,
+            "right": 387,
+            "bottom": 1662
+          }
+        },
+        {
+          "id": "e-fixture-grounding-6",
+          "kind": "RBAY17-highbay",
+          "box": {
+            "left": 1101,
+            "top": 1596,
+            "right": 1169,
+            "bottom": 1662
+          }
+        },
+        {
+          "id": "e-fixture-grounding-7",
+          "kind": "BAF-1-eight-blade-fan",
+          "box": {
+            "left": 239,
+            "top": 1256,
+            "right": 724,
+            "bottom": 1700
+          }
+        }
+      ],
+      "sourceCases": [],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/e-fixture-grounding-response.json",
+          "sha256": "cebe87110f1d256350d9835cd09e944186c39e6ec8a8df918087f9a6632d7e1f"
+        }
+      ]
+    },
+    {
+      "id": "f-power-grounding-sam-typed",
+      "role": "Muse-grounding-plus-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "f-power-0",
+          "kind": "complete-receptacle-symbol",
+          "x": 88,
+          "y": 170
+        },
+        {
+          "id": "f-power-1",
+          "kind": "complete-receptacle-symbol",
+          "x": 160,
+          "y": 170
+        },
+        {
+          "id": "f-power-2",
+          "kind": "complete-receptacle-symbol",
+          "x": 1062,
+          "y": 124
+        },
+        {
+          "id": "f-power-3",
+          "kind": "complete-receptacle-symbol",
+          "x": 496,
+          "y": 652
+        },
+        {
+          "id": "f-power-4",
+          "kind": "complete-receptacle-symbol",
+          "x": 1174,
+          "y": 994
+        },
+        {
+          "id": "f-power-5",
+          "kind": "complete-receptacle-symbol",
+          "x": 138,
+          "y": 1580
+        },
+        {
+          "id": "f-power-6",
+          "kind": "complete-receptacle-symbol",
+          "x": 1216,
+          "y": 1580
+        },
+        {
+          "id": "f-power-7",
+          "kind": "complete-receptacle-symbol",
+          "x": 1486,
+          "y": 1580
+        },
+        {
+          "id": "f-power-8",
+          "kind": "complete-receptacle-symbol",
+          "x": 1598,
+          "y": 1580
+        },
+        {
+          "id": "f-power-9",
+          "kind": "complete-receptacle-symbol",
+          "x": 1724,
+          "y": 1580
+        }
+      ],
+      "predictions": [
+        {
+          "id": "batch-f-power-grounding-1",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 108,
+            "top": 126,
+            "right": 142,
+            "bottom": 166
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-2",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 164,
+            "top": 119,
+            "right": 206,
+            "bottom": 161
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-3",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1043,
+            "top": 99,
+            "right": 1104,
+            "bottom": 148
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-4",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 468,
+            "top": 625,
+            "right": 562,
+            "bottom": 677
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-5",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1152,
+            "top": 971,
+            "right": 1191,
+            "bottom": 1037
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-6",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 117,
+            "top": 1534,
+            "right": 159,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-7",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1196,
+            "top": 1534,
+            "right": 1236,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-8",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1466,
+            "top": 1534,
+            "right": 1506,
+            "bottom": 1603
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-9",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1576,
+            "top": 1535,
+            "right": 1617,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "batch-f-power-grounding-10",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1702,
+            "top": 1535,
+            "right": 1743,
+            "bottom": 1601
+          }
+        }
+      ],
+      "sourceCases": ["batch-f-power-grounding"],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/f-power-grounding-response.json",
+          "sha256": "c7318e6120f322f79d4dcccc7ac44cd1bf2195eaea2c18822841ae213771a4eb"
+        }
+      ]
+    },
+    {
+      "id": "f-power-grounding-grounding-typed",
+      "role": "Muse-grounding-before-SAM",
+      "notes": "Strict half-open center hits; no pixel-mask accuracy or compliance inference.",
+      "annotations": [
+        {
+          "id": "f-power-0",
+          "kind": "complete-receptacle-symbol",
+          "x": 88,
+          "y": 170
+        },
+        {
+          "id": "f-power-1",
+          "kind": "complete-receptacle-symbol",
+          "x": 160,
+          "y": 170
+        },
+        {
+          "id": "f-power-2",
+          "kind": "complete-receptacle-symbol",
+          "x": 1062,
+          "y": 124
+        },
+        {
+          "id": "f-power-3",
+          "kind": "complete-receptacle-symbol",
+          "x": 496,
+          "y": 652
+        },
+        {
+          "id": "f-power-4",
+          "kind": "complete-receptacle-symbol",
+          "x": 1174,
+          "y": 994
+        },
+        {
+          "id": "f-power-5",
+          "kind": "complete-receptacle-symbol",
+          "x": 138,
+          "y": 1580
+        },
+        {
+          "id": "f-power-6",
+          "kind": "complete-receptacle-symbol",
+          "x": 1216,
+          "y": 1580
+        },
+        {
+          "id": "f-power-7",
+          "kind": "complete-receptacle-symbol",
+          "x": 1486,
+          "y": 1580
+        },
+        {
+          "id": "f-power-8",
+          "kind": "complete-receptacle-symbol",
+          "x": 1598,
+          "y": 1580
+        },
+        {
+          "id": "f-power-9",
+          "kind": "complete-receptacle-symbol",
+          "x": 1724,
+          "y": 1580
+        }
+      ],
+      "predictions": [
+        {
+          "id": "f-power-grounding-1",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 104,
+            "top": 129,
+            "right": 139,
+            "bottom": 164
+          }
+        },
+        {
+          "id": "f-power-grounding-2",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 169,
+            "top": 126,
+            "right": 204,
+            "bottom": 162
+          }
+        },
+        {
+          "id": "f-power-grounding-3",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1069,
+            "top": 73,
+            "right": 1102,
+            "bottom": 143
+          }
+        },
+        {
+          "id": "f-power-grounding-4",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 469,
+            "top": 626,
+            "right": 553,
+            "bottom": 677
+          }
+        },
+        {
+          "id": "f-power-grounding-5",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1150,
+            "top": 975,
+            "right": 1188,
+            "bottom": 1037
+          }
+        },
+        {
+          "id": "f-power-grounding-6",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 117,
+            "top": 1530,
+            "right": 157,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "f-power-grounding-7",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1198,
+            "top": 1533,
+            "right": 1237,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "f-power-grounding-8",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1465,
+            "top": 1531,
+            "right": 1505,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "f-power-grounding-9",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1576,
+            "top": 1533,
+            "right": 1617,
+            "bottom": 1601
+          }
+        },
+        {
+          "id": "f-power-grounding-10",
+          "kind": "complete-receptacle-symbol",
+          "box": {
+            "left": 1704,
+            "top": 1533,
+            "right": 1745,
+            "bottom": 1601
+          }
+        }
+      ],
+      "sourceCases": [],
+      "evidence": [
+        {
+          "path": ".local/sam/iteration-5/guided-proposals.json",
+          "sha256": "cdb9c53be681eaefae3950ebb135741cc72f34697a1b1a38d244ebcbc3ad39f7"
+        },
+        {
+          "path": ".local/sam/iteration-5/vision/f-power-grounding-response.json",
+          "sha256": "c7318e6120f322f79d4dcccc7ac44cd1bf2195eaea2c18822841ae213771a4eb"
+        }
+      ]
+    },
+    {
+      "id": "f-troffers-manual",
+      "role": "manual-source-guidance-control",
+      "notes": "Two manual source boxes; not independent discovery, localization only.",
+      "annotations": [
+        {
+          "id": "complete-rectangular-troffer-symbol-0",
+          "kind": "complete-rectangular-troffer-symbol",
+          "x": 374,
+          "y": 1308
+        },
+        {
+          "id": "complete-rectangular-troffer-symbol-1",
+          "kind": "complete-rectangular-troffer-symbol",
+          "x": 1274,
+          "y": 1400
+        }
+      ],
+      "predictions": [
+        {
+          "id": "manual-f-troffers-1",
+          "kind": "complete-rectangular-troffer-symbol",
+          "box": {
+            "left": 221,
+            "top": 1227,
+            "right": 527,
+            "bottom": 1392
+          }
+        },
+        {
+          "id": "manual-f-troffers-2",
+          "kind": "complete-rectangular-troffer-symbol",
+          "box": {
+            "left": 1121,
+            "top": 1320,
+            "right": 1429,
+            "bottom": 1475
+          }
+        }
+      ],
+      "sourceCases": ["manual-f-troffers"],
+      "evidence": []
+    },
+    {
+      "id": "e-fan-manual",
+      "role": "manual-source-guidance-control",
+      "notes": "Center on fan hub is hit but small returned hub box does not segment full fan sweep; not mask-fidelity success.",
+      "annotations": [
+        {
+          "id": "BAF-1-eight-blade-fan-0",
+          "kind": "BAF-1-eight-blade-fan",
+          "x": 480,
+          "y": 1464
+        }
+      ],
+      "predictions": [
+        {
+          "id": "manual-e-fan-1",
+          "kind": "BAF-1-eight-blade-fan",
+          "box": {
+            "left": 450,
+            "top": 1432,
+            "right": 515,
+            "bottom": 1494
+          }
+        }
+      ],
+      "sourceCases": ["manual-e-fan"],
+      "evidence": []
+    }
+  ],
+  "excludedClaims": [
+    "Civil footprint points selected a dimension digit 28; box mask does not establish area fidelity. No footprint center score is computed.",
+    "H bracing reference resolution is OCR/document coordination, not SAM segmentation. Printed A/S-1 versus actual A on S-2 is not a confirmed engineering-capacity defect.",
+    "Manual boxes/points are source guidance controls, not independent detection or automated recovery.",
+    "Partial boundary objects are excluded according to frozen source coverage. No whole-sheet or installed-quantity claim."
+  ]
+}

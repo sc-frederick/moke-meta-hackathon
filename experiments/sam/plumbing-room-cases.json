@@ -1,0 +1,186 @@
+[
+  {
+    "id": "room-c-staff-restrooms",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 170,
+              "top": 430,
+              "right": 360,
+              "bottom": 565
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 410,
+              "top": 430,
+              "right": 595,
+              "bottom": 565
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 175,
+              "top": 255,
+              "right": 350,
+              "bottom": 395
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 420,
+              "top": 255,
+              "right": 595,
+              "bottom": 395
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Council request-consolidation test. IDs follow the manual fixture roster for this room; returned IDs are not semantic classifications or independent detections."
+  },
+  {
+    "id": "room-c-central-restrooms",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 710,
+              "top": 425,
+              "right": 900,
+              "bottom": 545
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 710,
+              "top": 675,
+              "right": 900,
+              "bottom": 795
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 65,
+              "top": 100,
+              "right": 195,
+              "bottom": 235
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 720,
+              "top": 900,
+              "right": 900,
+              "bottom": 1035
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Council request-consolidation test. IDs follow the manual fixture roster for this room; returned IDs are not semantic classifications or independent detections."
+  },
+  {
+    "id": "room-c-private-restroom",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 235,
+              "top": 530,
+              "right": 410,
+              "bottom": 640
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 260,
+              "top": 145,
+              "right": 400,
+              "bottom": 285
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Council request-consolidation test. IDs follow the manual fixture roster for this room; returned IDs are not semantic classifications or independent detections."
+  },
+  {
+    "id": "room-c-patient-restroom",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 380,
+              "top": 175,
+              "right": 565,
+              "bottom": 315
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 415,
+              "top": 575,
+              "right": 565,
+              "bottom": 715
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Council request-consolidation test. IDs follow the manual fixture roster for this room; returned IDs are not semantic classifications or independent detections."
+  }
+]

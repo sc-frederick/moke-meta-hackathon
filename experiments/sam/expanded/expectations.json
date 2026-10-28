@@ -1,0 +1,692 @@
+{
+  "method": "Source-only implementation-agent annotations, saved before new-set inference; not a human benchmark. Input counts are drawing symbol instances and excluded from inference prompts.",
+  "electrical": {
+    "evaluationOnly": true,
+    "annotationMethod": "Independent visual source audit of original supplied PNG/PDF drawings and their legends. No SAM or other model outputs were consulted. Counts are symbol instances, not verified installed equipment or compliance.",
+    "doNotPassToInference": "Keep this evaluation file and its quantities out of model prompts, crop purposes and planner tool results.",
+    "coordinateSystem": "Pixel centers on the full source crop at the recorded DPI. Display copies ending -900 are half-size references only. Approximate manual centers, normally within a few pixels of source symbol centers.",
+    "sources": [
+      {
+        "id": "j-maintenance",
+        "cropId": "exp-j-alarm",
+        "sourceImage": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-j-alarm.png",
+        "pdf": "pdfs/sample-j.pdf",
+        "page": 2,
+        "sheet": "FA-2",
+        "pdfRectPoints": [1344, 924, 1776, 1356],
+        "dpi": 300,
+        "widthPixels": 1800,
+        "heightPixels": 1800,
+        "observed": [
+          {
+            "kind": "heat-detector-HD",
+            "count": 2,
+            "centers": [
+              [508, 644],
+              [508, 838]
+            ]
+          },
+          {
+            "kind": "door-holder-DH",
+            "count": 1,
+            "centers": [[696, 810]]
+          },
+          {
+            "kind": "control-relay-CR",
+            "count": 2,
+            "centers": [
+              [696, 922],
+              [1334, 1112]
+            ]
+          },
+          {
+            "kind": "time-delay-TD",
+            "count": 1,
+            "centers": [[1446, 1112]]
+          },
+          {
+            "kind": "manual-pull-F",
+            "count": 1,
+            "centers": [[1452, 978]]
+          },
+          {
+            "kind": "wall-strobe-V",
+            "count": 1,
+            "centers": [[892, 662]],
+            "visibleText": "75cd"
+          }
+        ],
+        "countingUnit": "8 individually labeled functional device symbols; adjacent DH/CR and CR/TD pairs remain two symbols each rather than one compound rectangle.",
+        "distractors": [
+          "Gray equipment/drains and circles",
+          "Red revision cloud",
+          "Dashed/dash-dot wire paths and line jumps",
+          "Text such as 75cd"
+        ],
+        "legendEvidence": ".local/sam/iteration-5/electrical-audit/j-legend.png",
+        "legendQuantitiesWholePlan": {
+          "HD": 2,
+          "DH": 1,
+          "CR": 4,
+          "TD": 2,
+          "F": 2,
+          "V-wall": 1,
+          "DD": 1,
+          "V-ceiling": 1,
+          "HV-ceiling": 1
+        },
+        "relationship": "The crop contains all declared HD, DH and wall-V symbols, but only part of CR/TD/F. Do not compare its partial counts directly to whole-plan totals. Full FA-2 plan visually has 15 symbols matching the 15 legend entries in aggregate; riser repeats the system and must not be added as more physical devices.",
+        "wholePlanVisualCount": {
+          "HD": 2,
+          "DH": 1,
+          "CR": 4,
+          "TD": 2,
+          "F": 2,
+          "V-wall": 1,
+          "DD": 1,
+          "V-ceiling": 1,
+          "HV-ceiling": 1
+        },
+        "wholePlanEvidence": ".local/sam/iteration-5/electrical-audit/j-overview-2.png",
+        "uncertainties": [
+          "Annotation distinguishes separately labeled functions, not actual shared enclosure/install quantities",
+          "Existing control-unit and untouched NAC circuits are excluded from the 15 new/proposed legend symbols",
+          "No spacing, audibility, battery adequacy or other compliance claim is made"
+        ],
+        "sourcePngSha256": "e6f706dd49088ac83f1454c6bff606816fe1270490833eb7ab0bb7a15e4836d4"
+      },
+      {
+        "id": "f-tagged-lighting",
+        "cropId": "exp-f-lighting",
+        "sourceImage": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-f-lighting.png",
+        "pdf": "pdfs/sample-f.pdf",
+        "page": 2,
+        "sheet": "E100",
+        "pdfRectPoints": [756, 900, 1188, 1332],
+        "dpi": 300,
+        "widthPixels": 1800,
+        "heightPixels": 1800,
+        "observed": [
+          {
+            "kind": "round-fixture-tag-A",
+            "count": 13,
+            "centers": [
+              [310, 398],
+              [536, 398],
+              [1000, 230],
+              [1450, 230],
+              [1000, 530],
+              [1450, 530],
+              [100, 830],
+              [550, 830],
+              [1000, 830],
+              [1450, 830],
+              [962, 1056],
+              [1260, 1056],
+              [1560, 1056]
+            ]
+          },
+          {
+            "kind": "complete-rectangular-troffer-symbol",
+            "count": 2,
+            "centers": [
+              [374, 1308],
+              [1274, 1400]
+            ]
+          },
+          {
+            "kind": "exhaust-motor-EF-2",
+            "count": 1,
+            "centers": [[590, 212]]
+          }
+        ],
+        "distractors": [
+          "Gray table/chair outlines",
+          "Blue equipment details with circles/squares and labels 5T",
+          "Switch S/O.S. text",
+          "Black/white motor circle EF-2",
+          "Two lamp heads at EM-3",
+          "Partial troffer at right edge and partial emergency symbol at upper right"
+        ],
+        "legendEvidence": ".local/sam/iteration-5/electrical-audit/f-lighting-legend.png",
+        "panelEvidence": ".local/sam/iteration-5/electrical-audit/f-panel-schedule.png",
+        "relationship": "E000 visually identifies tag A as a recessed can/light symbol. E100 has A-1 circuit indication in this region; E101 panel A lists circuits 1,3,5 as LIGHTING, each0.80kVA. The source legend wording includes both120W INCANDESCENT and contractor-selected recessed LED language, so nominal load must remain unresolved. This cropped13-symbol group is not complete circuit coverage.",
+        "uncertainties": [
+          "No load mismatch can be inferred from cropped count versus entire circuit schedule",
+          "Rectangular troffer B/C subtype is not legible in this crop",
+          "Sample F embedded PDF text is non-extractable; use original rendered legend/schedule rather than assuming missing text means missing information"
+        ],
+        "sourcePngSha256": "c5683b5502aac012370f0a7814e55870512afdbe0e05868c07358dca60014640"
+      },
+      {
+        "id": "d-plain-panel-lights",
+        "cropId": "audit-d-baths-small-room",
+        "sourceImage": ".local/sam/iteration-5/electrical-audit/d-baths-small-room.png",
+        "pdf": "pdfs/sample-d.pdf",
+        "page": 11,
+        "sheet": "E-2",
+        "pdfRectPoints": [744, 600, 1008, 912],
+        "dpi": 300,
+        "widthPixels": 1100,
+        "heightPixels": 1300,
+        "observed": [
+          {
+            "kind": "LED-panel-light",
+            "count": 4,
+            "centers": [
+              [194, 206],
+              [673, 266],
+              [194, 865],
+              [673, 865]
+            ]
+          },
+          {
+            "kind": "exhaust-fan",
+            "count": 2,
+            "centers": [
+              [324, 409],
+              [324, 644]
+            ]
+          },
+          {
+            "kind": "exit-and-emergency-combination",
+            "count": 1,
+            "centers": [[682, 1052]]
+          }
+        ],
+        "distractors": [
+          "Gray washers, basins, toilets and HWH circles",
+          "Revision clouds and triangular revision2 tags",
+          "Door swings",
+          "Two occupancy-sensor switch symbols with OS labels",
+          "Partly visible horizontal light and emergency unit at lower crop edge"
+        ],
+        "legendEvidence": ".local/sam/iteration-5/electrical-audit/d-lighting-overview-11.png",
+        "relationship": "E-2 legend explicitly calls the plain double-border rectangle LED PANEL LIGHT FIXTURE. Exhaust fans are a separate square/striped symbol. No quantity schedule is supplied. Two LED instances are in bathrooms and two in SMALL ROOM; circuit leaders must be traced rather than inferred from nearest text.",
+        "uncertainties": [
+          "One lower LED overlaps a revision cloud and emergency combination symbol",
+          "This proposed rectangle covers four complete LEDs only and excludes partial lower-edge lights"
+        ],
+        "sourcePngSha256": "37e10ceee653bd46186b18434e8e649a0d4684eb3006fb44fddbe81f37adebe3"
+      },
+      {
+        "id": "e-highbay-and-fan",
+        "cropId": "exp-e-lighting",
+        "sourceImage": "Moke-Hackathon-Drawings/expanded/sam-crops-300dpi/exp-e-lighting.png",
+        "pdf": "pdfs/sample-e.pdf",
+        "page": 5,
+        "sheet": "E-2",
+        "pdfRectPoints": [864, 714, 1296, 1146],
+        "dpi": 300,
+        "widthPixels": 1800,
+        "heightPixels": 1800,
+        "observed": [
+          {
+            "kind": "RBAY17-highbay",
+            "count": 4,
+            "centers": [
+              [354, 810],
+              [1134, 810],
+              [354, 1654],
+              [1134, 1654]
+            ]
+          },
+          {
+            "kind": "2x4-LED-panel",
+            "count": 2,
+            "centers": [
+              [478, 86],
+              [1500, 360]
+            ]
+          },
+          {
+            "kind": "BAF-1-eight-blade-fan",
+            "count": 1,
+            "centers": [[480, 1464]]
+          }
+        ],
+        "distractors": [
+          "Gray chiller/beer equipment with radial circles and blades",
+          "Gray tables/chairs",
+          "Gray sink/drain squares",
+          "Small gray filled architectural square near right center",
+          "Partial LED panel at left edge",
+          "Partial fan at right edge"
+        ],
+        "legendEvidence": ".local/sam/iteration-5/electrical-audit/e-lighting-legend.png",
+        "relationship": "The legend identifies small square with two diagonal hatch strokes as RBAY17 HIGH-BAY LIGHT; hatched2x4 rectangles are a separate LED panel class; the black eight-blade fan is BAF-1 ESSENSE8ft. Distinct class/counts must be retained rather than one generic rectangle or fan family.",
+        "uncertainties": [
+          "Count excludes partial edge objects",
+          "Plan symbol diameter is diagrammatic and does not establish physical fan sweep or clearance"
+        ],
+        "sourcePngSha256": "58ed15a3c84483fe12249094c4971ebcac70a5938771ce2531589752a69ebc17"
+      }
+    ],
+    "auxiliaryPowerObservations": [
+      {
+        "cropId": "exp-d-power",
+        "kind": "GFCI-labeled-receptacle-symbol",
+        "count": 3,
+        "centers": [
+          [456, 134],
+          [348, 688],
+          [870, 1000]
+        ],
+        "sourceContext": "E-3 page12, PDFrect[756,648,1188,1080] at300DPI;1800x1800.",
+        "distractors": "HWH J junction circles, DISC rectangles on washers/dryers, revision clouds and triangles.",
+        "circuits": "Middle-left GFCI visibly resolves to PNL A CKT4; lower GFCI to PNL A CKT6. Upper GFCI circuit is cropped/unclear. Nearby PNL A CKT5 points to HWH J, not automatically to the GFCI."
+      },
+      {
+        "cropId": "exp-e-power",
+        "kind": "receptacle-symbol",
+        "count": 5,
+        "centers": [
+          [886, 268],
+          [1204, 480],
+          [1692, 480],
+          [778, 606],
+          [496, 1120]
+        ],
+        "sourceContext": "E-3 page6, PDFrect[588,1116,1020,1548] at300DPI;1800x1800.",
+        "distractors": "Two narrow panel symbols, dashed working-clearance regions, proposed meter M, gray sinks/fixtures, architectural hatch triangles.",
+        "circuits": "Three upper receptacles visibly FOH CKT3; middle-left FOH CKT4; fire-riser-room lower receptacle FOH CKT25. Keep diagrammatic room ownership separate.",
+        "separatePanelCount": 2
+      },
+      {
+        "cropId": "exp-f-power",
+        "kind": "complete-receptacle-symbol",
+        "count": 10,
+        "centers": [
+          [88, 170],
+          [160, 170],
+          [1062, 124],
+          [496, 652],
+          [1174, 994],
+          [138, 1580],
+          [1216, 1580],
+          [1486, 1580],
+          [1598, 1580],
+          [1724, 1580]
+        ],
+        "sourceContext": "E100 page2, PDFrect[756,204,1188,636] at300DPI;1800x1800.",
+        "distractors": "Gray plumbing, blue equipment circles, RTU dashed box, disconnect WP symbol and triangular counter/device markers.",
+        "circuits": "Three upper GFI/WP-GFCI symbols visibly A-19; top dining receptacle A-21; counter receptacle A-9. Bottom individual leader ownership needs tighter inspection.",
+        "uncertainty": "One additional receptacle cuts the right edge near source y976 and is excluded from complete-symbol count."
+      }
+    ],
+    "rankedExperiments": [
+      {
+        "rank": 1,
+        "name": "Image-only tagged-lighting inventory and circuit evidence",
+        "sources": ["f-tagged-lighting"],
+        "why": "Fresh company drawing style, no embedded text, tag-based classes, and an independently readable panel schedule.",
+        "pass": "Locate13 complete tag-A symbols and reject EF-2 motor/EM-3 heads/switches; retain13 as a regional count without asserting whole-circuit load agreement."
+      },
+      {
+        "rank": 2,
+        "name": "Fire-alarm plan/legend/riser reconciliation",
+        "sources": ["j-maintenance"],
+        "why": "Explicit scheduled quantities and multiple symbol/tag families; separates device identity from shape and prevents double-counting the same devices in plan and riser.",
+        "pass": "Source-localized HD2,DH1,CR2,TD1,F1,V1 in maintenance crop with adjacent paired labels retained separately; partial CR/TD/F scope remains explicit. Extend to full15 only after locating every source symbol."
+      },
+      {
+        "rank": 3,
+        "name": "Cross-legend panel/highbay/fan discrimination",
+        "sources": ["d-plain-panel-lights", "e-highbay-and-fan"],
+        "why": "Tests reuse across two new styles while gray equipment and overlapping revision clouds supply hard negatives.",
+        "pass": "D4LEDpanels separated from2exhaustfans and1exitcombo; E4RBAY17highbays separated from2LEDpanels and1completeBAFfan. Partial edge objects remain separate, not silently counted or omitted."
+      }
+    ],
+    "frozenAtUtc": "2026-10-27T23:15:00.357Z",
+    "sourceManifestSha256": "78ea36e0fb53d5b9fe41ca2f34cf1c943baa0b67a907b33f4299bec8c9464972"
+  },
+  "structural": {
+    "frozenAt": "2026-10-27T23:15:27.723Z",
+    "annotationProvenance": "Independent source-only visual audit. No model calls made or expansion-model outputs consulted by this task. Centers are manual source approximations, not segmentation masks.",
+    "coordinateSystem": "Image pixels, top-left origin, x right/y down. Use crop pixel_to_pdf for source coordinates.",
+    "sources": [
+      {
+        "id": "sample-g",
+        "file": "Moke-Hackathon-Drawings/expanded/pdfs/sample-g.pdf",
+        "sha256": "7e868ef915f63dbb34cef8931c28a38ab2c901fdd75ccd5e09b31a1f6aee2faa"
+      },
+      {
+        "id": "sample-h",
+        "file": "Moke-Hackathon-Drawings/expanded/pdfs/sample-h.pdf",
+        "sha256": "7674e7bceced42e4c337ad8d1304d1b4e60e9e0d6637a9c11aae870b0796ba7e"
+      }
+    ],
+    "observations": [
+      {
+        "crop": "audit-g-porch-supports",
+        "objectType": "Visible aluminum post/support plan symbols",
+        "count": 5,
+        "centers": [
+          {
+            "id": "g-c2-northwest",
+            "x": 648,
+            "y": 202,
+            "column": "C2",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c2-northeast",
+            "x": 1596,
+            "y": 202,
+            "column": "C2",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c1-west-middle",
+            "x": 379,
+            "y": 585,
+            "column": "C1",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c3-west-wall",
+            "x": 379,
+            "y": 974,
+            "column": "C3",
+            "footing": "FD-2"
+          },
+          {
+            "id": "g-c3-east-wall",
+            "x": 1597,
+            "y": 415,
+            "column": "C3",
+            "footing": "FD-2"
+          }
+        ],
+        "centerTolerancePx": 6,
+        "columnMarks": {
+          "C1": 1,
+          "C2": 2,
+          "C3": 2
+        },
+        "footingMarks": {
+          "FD-1": 3,
+          "FD-2": 2
+        },
+        "sourceCaption": "Sample G S-2 foundation plan: five porch support locations, each with one C1/C2/C3 mark and one FD-1/FD-2 mark. Schedules are on the same sheet.",
+        "distractors": [
+          "Boxed C1/C2/C3 text marks",
+          "Round B/S-3 and C/S-3 section callouts",
+          "Dashed footing boundaries",
+          "Existing FD-EX strip footing",
+          "Leader arrowheads",
+          "Hatched NOT IN SCOPE existing building"
+        ],
+        "unresolvedBoundary": "Counts cover these five porch support locations only. Tags do not establish capacity, soil bearing, field condition, installed quantities or compliance. Column schedule defines types, not expected quantities.",
+        "scheduleEvidence": "g-schedules.png",
+        "usefulExperiment": "SAM discover/select five small post symbols, Muse read each nearby pair of marks, deterministic group by type and trace every mark to same-sheet schedules and S-3 detail E."
+      },
+      {
+        "crop": "exp-g-foundation",
+        "objectType": "Same five post/support centers in prepared crop",
+        "count": 5,
+        "centers": [
+          {
+            "id": "g-c2-northwest",
+            "x": 348,
+            "y": 202,
+            "column": "C2",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c2-northeast",
+            "x": 1296,
+            "y": 202,
+            "column": "C2",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c1-west-middle",
+            "x": 79,
+            "y": 585,
+            "column": "C1",
+            "footing": "FD-1"
+          },
+          {
+            "id": "g-c3-west-wall",
+            "x": 79,
+            "y": 974,
+            "column": "C3",
+            "footing": "FD-2"
+          },
+          {
+            "id": "g-c3-east-wall",
+            "x": 1297,
+            "y": 415,
+            "column": "C3",
+            "footing": "FD-2"
+          }
+        ],
+        "centerTolerancePx": 6,
+        "sourceCaption": "Prepared 300 DPI crop includes all five post centers but clips portions of left footing/tag context.",
+        "distractors": ["Same as audit-g-porch-supports"],
+        "unresolvedBoundary": "Do not evaluate whole footing masks against this cropped input; use expanded porch crop for complete tag/context inspection."
+      },
+      {
+        "crop": "audit-g-baseplate-holes",
+        "objectType": "Open bolt-hole circles in detail E",
+        "count": 6,
+        "centers": [
+          {
+            "id": "full-nw",
+            "x": 448,
+            "y": 205,
+            "detail": "full-plate"
+          },
+          {
+            "id": "full-ne",
+            "x": 529,
+            "y": 205,
+            "detail": "full-plate"
+          },
+          {
+            "id": "full-sw",
+            "x": 449,
+            "y": 285,
+            "detail": "full-plate"
+          },
+          {
+            "id": "full-se",
+            "x": 529,
+            "y": 285,
+            "detail": "full-plate"
+          },
+          {
+            "id": "half-west",
+            "x": 448,
+            "y": 702,
+            "detail": "half-plate-at-walls"
+          },
+          {
+            "id": "half-east",
+            "x": 529,
+            "y": 702,
+            "detail": "half-plate-at-walls"
+          }
+        ],
+        "centerTolerancePx": 2,
+        "sourceCaption": "Sample G S-3 E BASE PLATE DETAILS: four open circles in FULL PLATE and two in HALF PLATE AT WALLS. Printed callout says 5/8-inch diameter holes, typical.",
+        "distractors": [
+          "Dimension slashes and arrowheads",
+          "Diameter glyph in text",
+          "Digits and punctuation",
+          "Gray central post rectangle",
+          "Round E detail bubble"
+        ],
+        "unresolvedBoundary": "Six drawn circles across two alternative details. They are not six installed bolts, nor a total project anchor quantity. Section D shows two anchors in cut while its note calls for four: visible section marks must not be equated to total anchors.",
+        "usefulExperiment": "Compare noun prompt bolt hole with geometric small outlined circle; require one-to-one localization of four full-plate and two half-plate holes; keep non-hole circles/text as false positives."
+      },
+      {
+        "crop": "exp-g-footing-detail",
+        "objectType": "One concrete footer section and one aluminum post in detail D",
+        "count": 1,
+        "centers": [
+          {
+            "id": "footer-section",
+            "x": 1186,
+            "y": 1045
+          }
+        ],
+        "additionalSelectionTargets": [
+          {
+            "id": "aluminum-post",
+            "x": 1186,
+            "y": 650
+          }
+        ],
+        "centerTolerancePx": 10,
+        "sourceCaption": "S-3 D PAD FOOTER DETAIL shows one concrete section below a post, a 24-inch printed width and 14-inch printed depth; dimensions must be read from text.",
+        "distractors": [
+          "Leader lines",
+          "Hatched cover/grout layer",
+          "Two anchor section strokes",
+          "Rebar line/dots",
+          "Existing slab at right",
+          "Round D detail bubble"
+        ],
+        "unresolvedBoundary": "Useful for selecting the footer as evidence and linking its printed detail values to FD-1 schedule. A mask does not verify dimensions, concrete volume, reinforcement cover, capacity or total anchor quantity.",
+        "usefulExperiment": "SAM select footer and post separately using concept/box/positive-point prompts; Muse transcribe printed dimensions and note references from original source."
+      },
+      {
+        "crop": "audit-h-diagonal-braces",
+        "objectType": "Six visible diagonal bracing bars on the roof plan",
+        "count": 6,
+        "centers": [
+          {
+            "id": "h-left-upper",
+            "x": 242,
+            "y": 552
+          },
+          {
+            "id": "h-center-upper",
+            "x": 875,
+            "y": 552
+          },
+          {
+            "id": "h-right-upper",
+            "x": 1250,
+            "y": 475
+          },
+          {
+            "id": "h-left-lower",
+            "x": 242,
+            "y": 778
+          },
+          {
+            "id": "h-center-lower",
+            "x": 875,
+            "y": 778
+          },
+          {
+            "id": "h-right-lower",
+            "x": 1250,
+            "y": 700
+          }
+        ],
+        "centerTolerancePx": 4,
+        "sourceCaption": "Sample H S-1 roof plan: three upper and three lower diagonal brace bars intersect repeated vertical existing truss lines; all six bars are visible in this expanded crop.",
+        "distractors": [
+          "Vertical paired truss lines",
+          "Horizontal lateral bracing",
+          "Slope arrows and 4:12 text",
+          "Leader lines and arrowheads",
+          "Section cuts",
+          "Hatched OUT OF SCOPE projection"
+        ],
+        "unresolvedBoundary": "Count is six drawn diagonal bars only. It does not establish the number of physical top/bottom bracing members, required bracing, truss quantity, lengths or design adequacy.",
+        "usefulExperiment": "SAM select diagonal bars separately from gray vertical truss lines and black leaders; compare text discovery with independent box/point guidance and retain connected-line mask leakage."
+      },
+      {
+        "crop": "exp-h-trusses",
+        "objectType": "Visible diagonal brace fragments within prepared crop",
+        "count": 4,
+        "centers": [
+          {
+            "id": "h-left-upper",
+            "x": 334,
+            "y": 504
+          },
+          {
+            "id": "h-center-upper",
+            "x": 1600,
+            "y": 504
+          },
+          {
+            "id": "h-left-lower",
+            "x": 334,
+            "y": 956
+          },
+          {
+            "id": "h-center-lower",
+            "x": 1600,
+            "y": 956
+          }
+        ],
+        "centerTolerancePx": 8,
+        "sourceCaption": "Prepared 300 DPI roof crop intersects four diagonal bracing bars but clips their endpoints and every vertical truss.",
+        "distractors": ["Same as audit-h-diagonal-braces"],
+        "unresolvedBoundary": "Do not use this input for complete member or truss counts; this is a target-selection and line-identity test."
+      }
+    ],
+    "coordinationCandidate": {
+      "id": "h-bracing-reference",
+      "kind": "Drawing coordination; source reference resolution",
+      "source": {
+        "sheet": "Sample H S-1",
+        "image": "h-bracing-reference.png",
+        "dpi": 200,
+        "pdf_rect_points": [756, 720, 1104.12, 828],
+        "quote": "SEE DETAIL A/S-1 FOR GABLE END CROSS BRACING, TYP."
+      },
+      "target": {
+        "sheet": "Sample H S-2",
+        "image": "h-section-a.png",
+        "dpi": 100,
+        "pdf_rect_points": [599.76, 72, 1548, 792],
+        "quote": "A CROSS SECTION"
+      },
+      "observed": "The note refers to A/S-1, while the actual A CROSS SECTION is on S-2. The plan section bubble itself says A/S-2.",
+      "boundary": "A specific printed reference mismatch candidate; no structural capacity or code-compliance conclusion. Model should cite both source crops and seek reviewer confirmation, not infer inadequacy."
+    }
+  },
+  "civil": {
+    "recordedAt": "2026-10-27T23:14:48.470Z",
+    "recordedBeforeSam": true,
+    "method": "Parent source inspection supported by pre-SAM blue connected components, not a human benchmark.",
+    "cases": [
+      {
+        "crop": "exp-i-grading",
+        "kind": "complete-blue-flow-arrow",
+        "centers": [
+          [1521, 1722],
+          [79, 1515],
+          [859, 1489],
+          [642, 229],
+          [602, 1700]
+        ],
+        "expected": 5,
+        "partialBoundaryArrows": 2,
+        "distractors": "Upper-right continuous blue corner line, dashed blue arc, gray ground hatch arrows and black dimension arrows. Exactly five complete blue arrow components have >1100bluepixels and do not touch boundary. Two other blue arrows are clipped."
+      },
+      {
+        "crop": "exp-i-full-footprint",
+        "kind": "building-footprint",
+        "centers": [[1075, 620]],
+        "expected": 1,
+        "approximateBox": {
+          "left": 165,
+          "top": 195,
+          "right": 1975,
+          "bottom": 1045
+        },
+        "sourceText": ["60ft by28ft", "FFE115.75ft"],
+        "boundary": "Printed60x28 supports1680squarefeet by arithmetic only; SAM maskarea is evaluated asimagegeometry, not accepted buildingarea. Originalpreparedcropclipsrightedge; thisexpandedcropclosesboundary."
+      }
+    ]
+  }
+}

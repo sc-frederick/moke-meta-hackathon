@@ -1,0 +1,119 @@
+[
+  {
+    "id": "exp-d-lighting",
+    "crop": "exp-d-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangular ceiling light fixture"
+    },
+    "purpose": "Repeated lighting fixtures and controls. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-d-power",
+    "crop": "exp-d-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical outlet symbol"
+    },
+    "purpose": "Repeated equipment outlets and circuits. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-e-lighting",
+    "crop": "exp-e-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "ceiling fan"
+    },
+    "purpose": "Fans and lighting symbols among furniture. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-e-power",
+    "crop": "exp-e-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical panel"
+    },
+    "purpose": "Electrical panel and nearby branch circuits. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-f-power",
+    "crop": "exp-f-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "electrical outlet symbol"
+    },
+    "purpose": "Compact retail power plan. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-f-lighting",
+    "crop": "exp-f-lighting",
+    "prompt": {
+      "kind": "concept",
+      "text": "rectangular light fixture"
+    },
+    "purpose": "Same tenant plan in the lighting view. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-g-foundation",
+    "crop": "exp-g-foundation",
+    "prompt": {
+      "kind": "concept",
+      "text": "concrete footing"
+    },
+    "purpose": "Footing and column marks linked to schedules. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-g-footing-detail",
+    "crop": "exp-g-footing-detail",
+    "prompt": {
+      "kind": "concept",
+      "text": "concrete footing"
+    },
+    "purpose": "Pad footing section with anchors and dimensions. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-h-trusses",
+    "crop": "exp-h-trusses",
+    "prompt": {
+      "kind": "concept",
+      "text": "roof truss"
+    },
+    "purpose": "Roof trusses and diagonal bracing. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-i-grading",
+    "crop": "exp-i-grading",
+    "prompt": {
+      "kind": "concept",
+      "text": "building footprint"
+    },
+    "purpose": "Dimensioned building footprint, spot elevations and flow arrows. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-j-alarm",
+    "crop": "exp-j-alarm",
+    "prompt": {
+      "kind": "concept",
+      "text": "fire alarm device symbol"
+    },
+    "purpose": "Alarm device symbols, rooms and circuit path. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-e-sprinklers",
+    "crop": "exp-e-sprinklers",
+    "prompt": {
+      "kind": "concept",
+      "text": "sprinkler head symbol"
+    },
+    "purpose": "Sprinkler heads, branch pipes and spacing callouts. Proposed probe; object counts and masks have not been validated."
+  },
+  {
+    "id": "exp-e-riser",
+    "crop": "exp-e-riser",
+    "prompt": {
+      "kind": "concept",
+      "text": "pipe valve"
+    },
+    "purpose": "Fire riser, flow/tamper switches and valve symbols. Proposed probe; object counts and masks have not been validated."
+  }
+]

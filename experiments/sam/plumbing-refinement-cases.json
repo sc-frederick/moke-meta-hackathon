@@ -1,0 +1,104 @@
+[
+  {
+    "id": "private-wc-click",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 310,
+          "y": 580,
+          "label": "positive"
+        },
+        {
+          "x": 445,
+          "y": 680,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Manual corrective clicks for fixture evidence; compare with the saved normalized-box baseline, not an autonomous discovery result."
+  },
+  {
+    "id": "private-wc-bad-box-and-click",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 272,
+        "top": 641,
+        "right": 460,
+        "bottom": 699
+      },
+      "points": [
+        {
+          "x": 310,
+          "y": 580,
+          "label": "positive"
+        },
+        {
+          "x": 445,
+          "y": 680,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Negative control: conflicting old box and corrective click still selected the wrong geometry. Discard stale guidance when retargeting."
+  },
+  {
+    "id": "central-lav-click",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 790,
+          "y": 960,
+          "label": "positive"
+        },
+        {
+          "x": 850,
+          "y": 875,
+          "label": "negative"
+        },
+        {
+          "x": 910,
+          "y": 1000,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Manual corrective clicks for fixture evidence; compare with the saved normalized-box baseline, not an autonomous discovery result."
+  },
+  {
+    "id": "central-lav-box-and-click",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 725,
+        "top": 869,
+        "right": 875,
+        "bottom": 1034
+      },
+      "points": [
+        {
+          "x": 790,
+          "y": 960,
+          "label": "positive"
+        },
+        {
+          "x": 850,
+          "y": 875,
+          "label": "negative"
+        },
+        {
+          "x": 910,
+          "y": 1000,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Manual corrective clicks for fixture evidence; compare with the saved normalized-box baseline, not an autonomous discovery result."
+  }
+]

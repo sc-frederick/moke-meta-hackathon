@@ -1,0 +1,30 @@
+[
+  {
+    "id": "exam-development",
+    "crop": "c-exam-power",
+    "pageWidthPoints": 2304,
+    "pageHeightPoints": 1674,
+    "task": "Audit actual duplex receptacles in the Exam 125 drawing crop. Show room, panel, circuit and visible protection notation with source evidence. Compare independent inventories and investigate omissions or localization disagreements. Preserve unknowns and failed attempts. No expected quantity is supplied."
+  },
+  {
+    "id": "procedure-development",
+    "crop": "c-procedure-power",
+    "pageWidthPoints": 2304,
+    "pageHeightPoints": 1674,
+    "task": "Audit actual duplex receptacles visible in this Procedure 208 crop, distinguishing devices in adjacent rooms using walls and circuit leaders. Show room, panel, circuit and visible protection notation with source evidence. Compare independent inventories and investigate disagreements; exclude text and plumbing details. No expected quantity is supplied."
+  },
+  {
+    "id": "preop-control",
+    "crop": "c-pre-recovery-power",
+    "pageWidthPoints": 2304,
+    "pageHeightPoints": 1674,
+    "task": "Audit duplex receptacles in the pre-op/recovery drawing crop. Keep communication symbols, text and plumbing details out of the receptacle inventory. Show room, panel, circuit and visible protection notation with source evidence and investigate disagreements between independent inventories. No expected quantity is supplied."
+  },
+  {
+    "id": "workarea-transfer",
+    "crop": "c-workarea-transfer",
+    "pageWidthPoints": 2304,
+    "pageHeightPoints": 1674,
+    "task": "Audit actual duplex receptacles in this work-area drawing crop. Distinguish communication symbols, text and other distractors using source strokes. Show room, panel, circuit and visible protection notation with source evidence. Compare independent inventories and investigate disagreements without a desired quantity."
+  }
+]

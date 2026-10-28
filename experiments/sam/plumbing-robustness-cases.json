@@ -1,0 +1,170 @@
+[
+  {
+    "id": "robust-c-private-restroom-lav-expand",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 257,
+        "top": 141,
+        "right": 440,
+        "bottom": 290
+      }
+    },
+    "purpose": "Council geometry test: expand original LAV box, retain association with PRIVATE RR 106; schedule-blind"
+  },
+  {
+    "id": "robust-c-private-restroom-lav-shift",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 303,
+        "top": 154,
+        "right": 454,
+        "bottom": 277
+      }
+    },
+    "purpose": "Council geometry test: shift original LAV box, retain association with PRIVATE RR 106; schedule-blind"
+  },
+  {
+    "id": "robust-c-private-restroom-wc-expand",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 222,
+        "top": 502,
+        "right": 437,
+        "bottom": 621
+      }
+    },
+    "purpose": "Council geometry test: expand original WC box, retain association with PRIVATE RR 106; schedule-blind"
+  },
+  {
+    "id": "robust-c-private-restroom-wc-shift",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 276,
+        "top": 512,
+        "right": 455,
+        "bottom": 611
+      }
+    },
+    "purpose": "Council geometry test: shift original WC box, retain association with PRIVATE RR 106; schedule-blind"
+  },
+  {
+    "id": "robust-c-patient-restroom-wc-expand",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 373,
+        "top": 195,
+        "right": 545,
+        "bottom": 274
+      }
+    },
+    "purpose": "Council geometry test: expand original WC box, retain association with PATIENT RR 205; schedule-blind"
+  },
+  {
+    "id": "robust-c-patient-restroom-wc-shift",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 416,
+        "top": 202,
+        "right": 558,
+        "bottom": 267
+      }
+    },
+    "purpose": "Council geometry test: shift original WC box, retain association with PATIENT RR 205; schedule-blind"
+  },
+  {
+    "id": "robust-c-patient-restroom-lav-expand",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 404,
+        "top": 560,
+        "right": 556,
+        "bottom": 721
+      }
+    },
+    "purpose": "Council geometry test: expand original LAV box, retain association with PATIENT RR 205; schedule-blind"
+  },
+  {
+    "id": "robust-c-patient-restroom-lav-shift",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 442,
+        "top": 574,
+        "right": 568,
+        "bottom": 707
+      }
+    },
+    "purpose": "Council geometry test: shift original LAV box, retain association with PATIENT RR 205; schedule-blind"
+  },
+  {
+    "id": "control-wc-label",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 320,
+        "top": 430,
+        "right": 435,
+        "bottom": 500
+      }
+    },
+    "purpose": "Distractor control: no fixture is present at this supplied location. A mask must not be interpreted as fixture verification."
+  },
+  {
+    "id": "control-wall",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 423,
+        "top": 315,
+        "right": 462,
+        "bottom": 422
+      }
+    },
+    "purpose": "Distractor control: no fixture is present at this supplied location. A mask must not be interpreted as fixture verification."
+  },
+  {
+    "id": "control-grabbar",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 100,
+        "top": 665,
+        "right": 235,
+        "bottom": 694
+      }
+    },
+    "purpose": "Distractor control: no fixture is present at this supplied location. A mask must not be interpreted as fixture verification."
+  },
+  {
+    "id": "control-pipe-connection",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 180,
+        "top": 455,
+        "right": 225,
+        "bottom": 505
+      }
+    },
+    "purpose": "Distractor control: no fixture is present at this supplied location. A mask must not be interpreted as fixture verification."
+  }
+]

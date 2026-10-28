@@ -1,0 +1,150 @@
+[
+  {
+    "id": "bedroom-point",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 300,
+          "y": 1450,
+          "label": "positive"
+        }
+      ]
+    },
+    "purpose": "Point-only room interior segmentation. Open doorway may cause leakage; no area/compliance claim."
+  },
+  {
+    "id": "master-bedroom-point",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        {
+          "x": 250,
+          "y": 200,
+          "label": "positive"
+        }
+      ]
+    },
+    "purpose": "Point-only room interior; compare against source walls and open door."
+  },
+  {
+    "id": "bedroom-guided",
+    "crop": "b-rooms",
+    "prompt": {
+      "kind": "guided",
+      "box": {
+        "left": 125,
+        "top": 1200,
+        "right": 640,
+        "bottom": 1690
+      },
+      "points": [
+        {
+          "x": 300,
+          "y": 1450,
+          "label": "positive"
+        },
+        {
+          "x": 800,
+          "y": 1450,
+          "label": "negative"
+        }
+      ]
+    },
+    "purpose": "Does a box and negative floor point contain room leakage? Supplied box is manually approximated."
+  },
+  {
+    "id": "revision-sam-01-a-m2-revision-1",
+    "crop": "sam-01-a-m2-revision-1",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "guided",
+            "box": {
+              "left": 470,
+              "top": 850,
+              "right": 1480,
+              "bottom": 1800
+            },
+            "points": [
+              {
+                "x": 595,
+                "y": 1250,
+                "label": "positive"
+              },
+              {
+                "x": 800,
+                "y": 1250,
+                "label": "negative"
+              }
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1310,
+              "top": 850,
+              "right": 1475,
+              "bottom": 1140
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Same guidance on baseline/revision: blue main duct and magenta plenum. Inspect whether masks isolate systems before measuring any difference."
+  },
+  {
+    "id": "revision-sam-02-a-m2-baseline",
+    "crop": "sam-02-a-m2-baseline",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "guided",
+            "box": {
+              "left": 470,
+              "top": 850,
+              "right": 1480,
+              "bottom": 1800
+            },
+            "points": [
+              {
+                "x": 595,
+                "y": 1250,
+                "label": "positive"
+              },
+              {
+                "x": 800,
+                "y": 1250,
+                "label": "negative"
+              }
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1310,
+              "top": 850,
+              "right": 1475,
+              "bottom": 1140
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Same guidance on baseline/revision: blue main duct and magenta plenum. Inspect whether masks isolate systems before measuring any difference."
+  }
+]

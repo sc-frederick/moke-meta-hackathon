@@ -1,0 +1,16 @@
+[
+  {
+    "id": "g-missed-hole-box",
+    "crop": "audit-g-baseplate-holes",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 521,
+        "top": 694,
+        "right": 537,
+        "bottom": 710
+      }
+    },
+    "purpose": "Manualsourcehole correction afterindependentdiscovery missedthelower-right smallcircle. Suppliedgeometryisnotnewdiscovery."
+  }
+]

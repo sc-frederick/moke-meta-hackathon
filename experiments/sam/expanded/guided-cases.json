@@ -1,0 +1,390 @@
+[
+  {
+    "id": "batch-g-support-grounding",
+    "crop": "audit-g-porch-supports",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 631,
+              "top": 167,
+              "right": 691,
+              "bottom": 230
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 345,
+              "top": 547,
+              "right": 410,
+              "bottom": 613
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 343,
+              "top": 902,
+              "right": 418,
+              "bottom": 945
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1546,
+              "top": 170,
+              "right": 1609,
+              "bottom": 232
+            }
+          }
+        },
+        {
+          "id": 5,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1553,
+              "top": 381,
+              "right": 1626,
+              "bottom": 423
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Independent Muse locations supply class and geometry prompts; SAM masks are selection evidence, not independent discovery or semantic verification."
+  },
+  {
+    "id": "batch-d-fixture-grounding",
+    "crop": "audit-d-baths-small-room",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 129,
+              "top": 52,
+              "right": 261,
+              "bottom": 357
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 581,
+              "top": 106,
+              "right": 739,
+              "bottom": 427
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 281,
+              "top": 338,
+              "right": 365,
+              "bottom": 429
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 312,
+              "top": 544,
+              "right": 399,
+              "bottom": 639
+            }
+          }
+        },
+        {
+          "id": 5,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 130,
+              "top": 669,
+              "right": 260,
+              "bottom": 981
+            }
+          }
+        },
+        {
+          "id": 6,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 581,
+              "top": 668,
+              "right": 739,
+              "bottom": 949
+            }
+          }
+        },
+        {
+          "id": 7,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 576,
+              "top": 936,
+              "right": 763,
+              "bottom": 1082
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Independent Muse locations supply class and geometry prompts; SAM masks are selection evidence, not independent discovery or semantic verification."
+  },
+  {
+    "id": "batch-e-fixture-grounding",
+    "crop": "exp-e-lighting",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 367,
+              "top": 52,
+              "right": 594,
+              "bottom": 139
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1357,
+              "top": 313,
+              "right": 1617,
+              "bottom": 416
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 322,
+              "top": 801,
+              "right": 389,
+              "bottom": 870
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1099,
+              "top": 802,
+              "right": 1167,
+              "bottom": 870
+            }
+          }
+        },
+        {
+          "id": 5,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 322,
+              "top": 1596,
+              "right": 387,
+              "bottom": 1662
+            }
+          }
+        },
+        {
+          "id": 6,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1101,
+              "top": 1596,
+              "right": 1169,
+              "bottom": 1662
+            }
+          }
+        },
+        {
+          "id": 7,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 239,
+              "top": 1256,
+              "right": 724,
+              "bottom": 1700
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Independent Muse locations supply class and geometry prompts; SAM masks are selection evidence, not independent discovery or semantic verification."
+  },
+  {
+    "id": "batch-f-power-grounding",
+    "crop": "exp-f-power",
+    "prompt": {
+      "kind": "objects",
+      "objects": [
+        {
+          "id": 1,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 104,
+              "top": 129,
+              "right": 139,
+              "bottom": 164
+            }
+          }
+        },
+        {
+          "id": 2,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 169,
+              "top": 126,
+              "right": 204,
+              "bottom": 162
+            }
+          }
+        },
+        {
+          "id": 3,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1069,
+              "top": 73,
+              "right": 1102,
+              "bottom": 143
+            }
+          }
+        },
+        {
+          "id": 4,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 469,
+              "top": 626,
+              "right": 553,
+              "bottom": 677
+            }
+          }
+        },
+        {
+          "id": 5,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1150,
+              "top": 975,
+              "right": 1188,
+              "bottom": 1037
+            }
+          }
+        },
+        {
+          "id": 6,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 117,
+              "top": 1530,
+              "right": 157,
+              "bottom": 1601
+            }
+          }
+        },
+        {
+          "id": 7,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1198,
+              "top": 1533,
+              "right": 1237,
+              "bottom": 1601
+            }
+          }
+        },
+        {
+          "id": 8,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1465,
+              "top": 1531,
+              "right": 1505,
+              "bottom": 1601
+            }
+          }
+        },
+        {
+          "id": 9,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1576,
+              "top": 1533,
+              "right": 1617,
+              "bottom": 1601
+            }
+          }
+        },
+        {
+          "id": 10,
+          "prompt": {
+            "kind": "box",
+            "box": {
+              "left": 1704,
+              "top": 1533,
+              "right": 1745,
+              "bottom": 1601
+            }
+          }
+        }
+      ]
+    },
+    "purpose": "Independent Muse locations supply class and geometry prompts; SAM masks are selection evidence, not independent discovery or semantic verification."
+  }
+]

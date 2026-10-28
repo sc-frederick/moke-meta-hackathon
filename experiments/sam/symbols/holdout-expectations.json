@@ -1,0 +1,67 @@
+{
+  "method": "Visual annotations by implementation agent, independently audited by Sol; no human benchmark study.",
+  "cases": [
+    {
+      "crop": "c-exam-power",
+      "kind": "receptacle",
+      "expected": 4,
+      "centers": [
+        [493, 71],
+        [68, 202],
+        [68, 420],
+        [574, 554]
+      ],
+      "distractors": "Sink/furniture circles; circled S in a diamond; two left-wall outlets partly occluded by white callout text.",
+      "recordedBeforeSam": true,
+      "annotationTiming": "pre-run-expectation"
+    },
+    {
+      "crop": "c-pre-recovery-lighting",
+      "kind": "downlight",
+      "expected": 10,
+      "centers": [
+        [287, 231],
+        [587, 231],
+        [887, 231],
+        [1187, 231],
+        [1487, 231],
+        [287, 532],
+        [587, 532],
+        [887, 532],
+        [1187, 532],
+        [1487, 532]
+      ],
+      "recordedBeforeSam": true,
+      "annotationTiming": "pre-run-expectation"
+    },
+    {
+      "crop": "c-waiting-lighting-150",
+      "kind": "downlight",
+      "expected": 20,
+      "independence": "resolution control only",
+      "recordedBeforeSam": true,
+      "annotationTiming": "pre-run-resolution-control"
+    },
+    {
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "expected": 10,
+      "procedureRoomOnly": 8,
+      "centers": [
+        [214, 120],
+        [214, 433],
+        [345, 120],
+        [345, 230],
+        [345, 324],
+        [345, 571],
+        [1233, 118],
+        [1233, 398],
+        [1233, 788],
+        [589, 1127]
+      ],
+      "scope": "All ten true receptacles in crop; two left of the wall at x=300 belong to adjacent room/circuit7, eight right of wall belong to procedure208/circuit8. Sink drain is a distractor.",
+      "recordedBeforeSam": false,
+      "annotationTiming": "post-run-visual-audit"
+    }
+  ]
+}

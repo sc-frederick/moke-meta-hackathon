@@ -1,0 +1,170 @@
+[
+  {
+    "id": "grounded-01-lav",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 182,
+        "top": 264,
+        "right": 322,
+        "bottom": 395
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in EXISTING STAFF RR 131"
+  },
+  {
+    "id": "grounded-02-lav",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 438,
+        "top": 264,
+        "right": 588,
+        "bottom": 395
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in EXISTING PRIVATE 132"
+  },
+  {
+    "id": "grounded-03-wc",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 180,
+        "top": 440,
+        "right": 350,
+        "bottom": 560
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in EXISTING STAFF RR 131"
+  },
+  {
+    "id": "grounded-04-wc",
+    "crop": "c-staff-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 415,
+        "top": 440,
+        "right": 609,
+        "bottom": 560
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in EXISTING PRIVATE 132"
+  },
+  {
+    "id": "grounded-05-lav",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 70,
+        "top": 96,
+        "right": 200,
+        "bottom": 238
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in WOMENS RR 121"
+  },
+  {
+    "id": "grounded-06-wc",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 695,
+        "top": 440,
+        "right": 850,
+        "bottom": 556
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in WOMENS RR 121"
+  },
+  {
+    "id": "grounded-07-wc",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 700,
+        "top": 654,
+        "right": 835,
+        "bottom": 759
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in MENS RR 120"
+  },
+  {
+    "id": "grounded-08-lav",
+    "crop": "c-central-restrooms",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 725,
+        "top": 869,
+        "right": 875,
+        "bottom": 1034
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in MENS RR 120"
+  },
+  {
+    "id": "grounded-09-lav",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 273,
+        "top": 154,
+        "right": 424,
+        "bottom": 277
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in PRIVATE RR 106"
+  },
+  {
+    "id": "grounded-10-wc",
+    "crop": "c-private-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 240,
+        "top": 512,
+        "right": 419,
+        "bottom": 611
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in PRIVATE RR 106"
+  },
+  {
+    "id": "grounded-11-wc",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 388,
+        "top": 202,
+        "right": 530,
+        "bottom": 267
+      }
+    },
+    "purpose": "Normalized Muse grounding: WC in PATIENT RR 205"
+  },
+  {
+    "id": "grounded-12-lav",
+    "crop": "c-patient-restroom",
+    "prompt": {
+      "kind": "box",
+      "box": {
+        "left": 417,
+        "top": 574,
+        "right": 543,
+        "bottom": 707
+      }
+    },
+    "purpose": "Normalized Muse grounding: LAV in PATIENT RR 205"
+  }
+]

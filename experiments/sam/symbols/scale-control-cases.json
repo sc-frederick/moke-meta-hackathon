@@ -1,0 +1,92 @@
+[
+  {
+    "id": "circle-c-light-north-1",
+    "crop": "c-light-north-1",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-north-2",
+    "crop": "c-light-north-2",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-north-3",
+    "crop": "c-light-north-3",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-south-1",
+    "crop": "c-light-south-1",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-south-2",
+    "crop": "c-light-south-2",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-south-3",
+    "crop": "c-light-south-3",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "circle-c-light-south-4",
+    "crop": "c-light-south-4",
+    "prompt": {
+      "kind": "concept",
+      "text": "circle"
+    },
+    "purpose": "Scale/context control: same systematic tiles, plain circle rather than color-qualified prompt. Legend classification and overlap dedup still required."
+  },
+  {
+    "id": "black-c-procedure-power",
+    "crop": "c-procedure-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Does a fixed color qualifier reject gray equipment and text? Do not tune to expected count."
+  },
+  {
+    "id": "black-c-exam-power",
+    "crop": "c-exam-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Does a fixed color qualifier reject gray equipment and text? Do not tune to expected count."
+  },
+  {
+    "id": "black-c-pre-recovery-power",
+    "crop": "c-pre-recovery-power",
+    "prompt": {
+      "kind": "concept",
+      "text": "black circle"
+    },
+    "purpose": "Does a fixed color qualifier reject gray equipment and text? Do not tune to expected count."
+  }
+]

@@ -1,0 +1,344 @@
+{
+  "crops": [
+    {
+      "id": "a-lighting",
+      "file": ".local/sam/iteration-3/a-lighting.png",
+      "pdf": "pdfs/sample-a-revision-1.pdf",
+      "page": 12,
+      "sheet": "E-2",
+      "pdf_rect_points": [888, 432, 1416, 1440],
+      "dpi": 150,
+      "width_px": 1100,
+      "height_px": 2100,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [888, 432]
+      },
+      "purpose": "Nine rectangular fluorescent lights and five pendants; excludes legend and out-of-scope room from intended counts.",
+      "sha256": "42cad417efc6b27bbab8aef096edf891ae04b9743b6e80b0e7f5e85afcdbdcf6"
+    },
+    {
+      "id": "c-waiting-lighting",
+      "file": ".local/sam/iteration-3/c-waiting-lighting.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1308, 396, 1740, 708],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1300,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1308, 396]
+      },
+      "purpose": "Twenty round downlights including one circled-1 directional fixture, plus two green sconces.",
+      "sha256": "7f0904148adf6ce08a30ea1c4c68bc45a0b818600a99a815cc834f373a2f1809"
+    },
+    {
+      "id": "c-pre-recovery-power",
+      "file": ".local/sam/iteration-3/c-pre-recovery-power.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 8,
+      "sheet": "E-3",
+      "pdf_rect_points": [1332, 120, 1734, 312],
+      "dpi": 300,
+      "width_px": 1675,
+      "height_px": 800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1332, 120]
+      },
+      "purpose": "Twelve receptacle symbols; exclude triangular communication symbols and circuit arrows.",
+      "sha256": "6139e4abe76ac77a5c59c2644f369ee0bfea1db7b617175ac2fd245c6cd40de6"
+    },
+    {
+      "id": "c-pre-recovery-hvac",
+      "file": ".local/sam/iteration-3/c-pre-recovery-hvac.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 5,
+      "sheet": "M-2",
+      "pdf_rect_points": [1308, 132, 1728, 360],
+      "dpi": 300,
+      "width_px": 1750,
+      "height_px": 950,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1308, 132]
+      },
+      "purpose": "Colored supply/outside-air terminals and return grille amid connected ducts; this crop is not complete room coverage.",
+      "sha256": "b96ff14c20aabec57d0d9895ce1a62cec4b9469fa9bffbcdaaf27a007ebdb5fe"
+    },
+    {
+      "id": "a-life-safety",
+      "file": ".local/sam/iteration-3/a-life-safety.png",
+      "pdf": "pdfs/sample-a-revision-1.pdf",
+      "page": 3,
+      "sheet": "LS-1",
+      "pdf_rect_points": [1524, 396, 2052, 1416],
+      "dpi": 150,
+      "width_px": 1100,
+      "height_px": 2125,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1524, 396]
+      },
+      "purpose": "Life-safety devices and exit signs on the plan, excluding the legend; no egress compliance inference.",
+      "sha256": "3b730b71776332f0a08c6589e7ca79a039c912f5dbb8bab7752f44797ebdbac4"
+    },
+    {
+      "id": "b-rooms",
+      "file": ".local/sam/iteration-3/b-rooms.png",
+      "pdf": "pdfs/sample-b.pdf",
+      "page": 2,
+      "sheet": "B-2",
+      "pdf_rect_points": [648, 540, 1608, 1380],
+      "dpi": 150,
+      "width_px": 2000,
+      "height_px": 1750,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [648, 540]
+      },
+      "purpose": "Hinged door swings and room interior experiments on sparse residential plan.",
+      "sha256": "bb56811bbbf74de0062929b5ca0609369d1b6c76ced1a1fd2ca2d300ebbad7e2"
+    },
+    {
+      "id": "c-procedure-power",
+      "file": ".local/sam/iteration-3/c-procedure-power.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 8,
+      "sheet": "E-3",
+      "pdf_rect_points": [1944, 120, 2268, 408],
+      "dpi": 300,
+      "width_px": 1350,
+      "height_px": 1200,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1944, 120]
+      },
+      "purpose": "Fresh procedure-room receptacle test. Expected count frozen from visual source before SAM.",
+      "sha256": "1d8f4a9e55ec797dd7e9519b187826b75c8da8798348ecc0ebaef103cfddc9c0"
+    },
+    {
+      "id": "c-exam-power",
+      "file": ".local/sam/iteration-3/c-exam-power.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 8,
+      "sheet": "E-3",
+      "pdf_rect_points": [204, 936, 360, 1152],
+      "dpi": 300,
+      "width_px": 650,
+      "height_px": 900,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [204, 936]
+      },
+      "purpose": "Fresh exam-room test: four true duplex outlets, including two partly occluded left-wall symbols; furniture and S device are distractors.",
+      "sha256": "9f2709501e6ac7b6adeb53d062f0c81a14baaa1c3a81243e93d19818fa920e34"
+    },
+    {
+      "id": "c-waiting-lighting-150",
+      "file": ".local/sam/iteration-3/c-waiting-lighting-150.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1308, 396, 1740, 708],
+      "dpi": 150,
+      "width_px": 900,
+      "height_px": 650,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1308, 396]
+      },
+      "purpose": "Resolution control on identical PDF rectangle; compare against 300 DPI, not independent held-out data.",
+      "sha256": "dd7f046c8d88ea21f17489af02356dfa1cc3a4b7dc5bed6bb2851d72dd290642"
+    },
+    {
+      "id": "c-pre-recovery-lighting",
+      "file": ".local/sam/iteration-3/c-pre-recovery-lighting.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1320, 120, 1740, 312],
+      "dpi": 300,
+      "width_px": 1750,
+      "height_px": 800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1320, 120]
+      },
+      "purpose": "Fresh pre-op lighting region with ten downlights; annotate before inference.",
+      "sha256": "79141fe1d1d2dcbf8132763321e49daa20dd927619679439e36c986203d0eff5"
+    },
+    {
+      "id": "c-light-north-1",
+      "file": ".local/sam/iteration-3/c-light-north-1.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [852, 72, 1416, 744],
+      "dpi": 150,
+      "width_px": 1175,
+      "height_px": 1400,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [852, 72]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "c98e969e1978356ba40e4da83c6d37c7b31ff226ecf3b74d18320e3dc4fe8e61"
+    },
+    {
+      "id": "c-light-north-2",
+      "file": ".local/sam/iteration-3/c-light-north-2.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1332, 72, 1896, 744],
+      "dpi": 150,
+      "width_px": 1175,
+      "height_px": 1400,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1332, 72]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "7871388643cf59d6a100be0e85d9b72f6d08efaa119ee8ea15e911998fc565a1"
+    },
+    {
+      "id": "c-light-north-3",
+      "file": ".local/sam/iteration-3/c-light-north-3.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1812, 72, 2280, 744],
+      "dpi": 150,
+      "width_px": 975,
+      "height_px": 1400,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1812, 72]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "7a1ca6d0ea8b0f2b84c3e014f66d20cc041d22b9bcf3117f971c957f397302bf"
+    },
+    {
+      "id": "c-light-south-1",
+      "file": ".local/sam/iteration-3/c-light-south-1.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [24, 852, 588, 1536],
+      "dpi": 150,
+      "width_px": 1175,
+      "height_px": 1425,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [24, 852]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "8bfd3c64458ad29366ad45d64c8b53f21361d677ba8a91f3fd484cdf990e3fc0"
+    },
+    {
+      "id": "c-light-south-2",
+      "file": ".local/sam/iteration-3/c-light-south-2.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [504, 852, 1068, 1536],
+      "dpi": 150,
+      "width_px": 1175,
+      "height_px": 1425,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [504, 852]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "0ce3246f636cf3450795bbd6359255cc30106bc96b42f83cbbc0e1b82d21772b"
+    },
+    {
+      "id": "c-light-south-3",
+      "file": ".local/sam/iteration-3/c-light-south-3.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [984, 852, 1548, 1536],
+      "dpi": 150,
+      "width_px": 1175,
+      "height_px": 1425,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [984, 852]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "0e4e969eecd01f952bebc1118c153fd0f02b9e400a59513995282a0440298113"
+    },
+    {
+      "id": "c-light-south-4",
+      "file": ".local/sam/iteration-3/c-light-south-4.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 7,
+      "sheet": "E-2",
+      "pdf_rect_points": [1464, 852, 1908, 1536],
+      "dpi": 150,
+      "width_px": 925,
+      "height_px": 1425,
+      "pixel_to_pdf": {
+        "scale": 0.48,
+        "offset_points": [1464, 852]
+      },
+      "purpose": "Overlapping systematic plan-wing tile; excludes legend. Do not sum overlapping raw counts.",
+      "sha256": "030e0aa9d2af60301b4d599c1936a6c1a1a26a8d25a9deaee5f6561fda76a11b"
+    },
+    {
+      "id": "sam-01-a-m2-revision-1",
+      "file": "Moke-Hackathon-Drawings/sam-crops-300dpi/sam-01-a-m2-revision-1.png",
+      "pdf": "pdfs/sample-a-revision-1.pdf",
+      "page": 9,
+      "sheet": "M-2",
+      "pdf_rect_points": [1242, 396, 1674, 828],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1242, 396]
+      },
+      "purpose": "AHU and duct boundaries; revision example",
+      "sha256": "9ce073eecb7ab101800205fba749a920e75b57596a92d5b9052696abe2d4b32b"
+    },
+    {
+      "id": "sam-02-a-m2-baseline",
+      "file": "Moke-Hackathon-Drawings/sam-crops-300dpi/sam-02-a-m2-baseline.png",
+      "pdf": "pdfs/sample-a-baseline.pdf",
+      "page": 9,
+      "sheet": "M-2",
+      "pdf_rect_points": [1242, 396, 1674, 828],
+      "dpi": 300,
+      "width_px": 1800,
+      "height_px": 1800,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1242, 396]
+      },
+      "purpose": "Same AHU and duct region; baseline example",
+      "sha256": "8775a70ccd0141092e1c22dad85d455576fabbfea5f71130770fb07849c3f049"
+    },
+    {
+      "id": "c-workarea-transfer",
+      "file": ".local/sam/iteration-4/c-workarea-power.png",
+      "pdf": "pdfs/sample-c.pdf",
+      "page": 8,
+      "sheet": "E-3",
+      "pdf_rect_points": [1128, 396, 1308, 564],
+      "dpi": 300,
+      "width_px": 750,
+      "height_px": 700,
+      "pixel_to_pdf": {
+        "scale": 0.24,
+        "offset_points": [1128, 396]
+      },
+      "purpose": "Previously untested work area for frozen-prompt electrical transfer.",
+      "sha256": "4885c1b44c9c05eb60cfe3b7a1f12327b25ea0e33f815ebe32ff729cced1c1bf"
+    }
+  ]
+}

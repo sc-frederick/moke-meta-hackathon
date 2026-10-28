@@ -1,0 +1,1024 @@
+{
+  "candidates": [
+    {
+      "id": "a-lighting-0",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 192,
+        "top": 79,
+        "right": 303,
+        "bottom": 242
+      }
+    },
+    {
+      "id": "a-lighting-1",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 353,
+        "top": 373,
+        "right": 451,
+        "bottom": 525
+      }
+    },
+    {
+      "id": "a-lighting-2",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 507,
+        "top": 663,
+        "right": 622,
+        "bottom": 828
+      }
+    },
+    {
+      "id": "a-lighting-3",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 784,
+        "top": 661,
+        "right": 902,
+        "bottom": 828
+      }
+    },
+    {
+      "id": "a-lighting-4",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 507,
+        "top": 997,
+        "right": 621,
+        "bottom": 1158
+      }
+    },
+    {
+      "id": "a-lighting-5",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 785,
+        "top": 997,
+        "right": 901,
+        "bottom": 1153
+      }
+    },
+    {
+      "id": "a-lighting-6",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 193,
+        "top": 1434,
+        "right": 306,
+        "bottom": 1594
+      }
+    },
+    {
+      "id": "a-lighting-7",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 507,
+        "top": 1436,
+        "right": 622,
+        "bottom": 1594
+      }
+    },
+    {
+      "id": "a-lighting-8",
+      "crop": "a-lighting",
+      "kind": "fluorescent",
+      "label": "fluorescent",
+      "box": {
+        "left": 793,
+        "top": 1436,
+        "right": 902,
+        "bottom": 1594
+      }
+    },
+    {
+      "id": "a-lighting-9",
+      "crop": "a-lighting",
+      "kind": "pendant",
+      "label": "pendant",
+      "box": {
+        "left": 174,
+        "top": 1992,
+        "right": 211,
+        "bottom": 2042
+      }
+    },
+    {
+      "id": "a-lighting-10",
+      "crop": "a-lighting",
+      "kind": "pendant",
+      "label": "pendant",
+      "box": {
+        "left": 358,
+        "top": 1992,
+        "right": 394,
+        "bottom": 2044
+      }
+    },
+    {
+      "id": "a-lighting-11",
+      "crop": "a-lighting",
+      "kind": "pendant",
+      "label": "pendant",
+      "box": {
+        "left": 641,
+        "top": 1992,
+        "right": 677,
+        "bottom": 2042
+      }
+    },
+    {
+      "id": "a-lighting-12",
+      "crop": "a-lighting",
+      "kind": "pendant",
+      "label": "pendant",
+      "box": {
+        "left": 806,
+        "top": 1992,
+        "right": 842,
+        "bottom": 2042
+      }
+    },
+    {
+      "id": "a-lighting-13",
+      "crop": "a-lighting",
+      "kind": "pendant",
+      "label": "pendant",
+      "box": {
+        "left": 983,
+        "top": 1992,
+        "right": 1019,
+        "bottom": 2042
+      }
+    },
+    {
+      "id": "c-waiting-lighting-0",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 138,
+        "top": 205,
+        "right": 191,
+        "bottom": 267
+      }
+    },
+    {
+      "id": "c-waiting-lighting-1",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 459,
+        "top": 206,
+        "right": 513,
+        "bottom": 266
+      }
+    },
+    {
+      "id": "c-waiting-lighting-2",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 765,
+        "top": 206,
+        "right": 818,
+        "bottom": 266
+      }
+    },
+    {
+      "id": "c-waiting-lighting-3",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1098,
+        "top": 208,
+        "right": 1152,
+        "bottom": 266
+      }
+    },
+    {
+      "id": "c-waiting-lighting-4",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1386,
+        "top": 208,
+        "right": 1440,
+        "bottom": 266
+      }
+    },
+    {
+      "id": "c-waiting-lighting-5",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 138,
+        "top": 539,
+        "right": 193,
+        "bottom": 601
+      }
+    },
+    {
+      "id": "c-waiting-lighting-6",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 477,
+        "top": 566,
+        "right": 531,
+        "bottom": 626
+      }
+    },
+    {
+      "id": "c-waiting-lighting-7",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 775,
+        "top": 568,
+        "right": 832,
+        "bottom": 626
+      }
+    },
+    {
+      "id": "c-waiting-lighting-8",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1103,
+        "top": 568,
+        "right": 1158,
+        "bottom": 624
+      }
+    },
+    {
+      "id": "c-waiting-lighting-9",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1387,
+        "top": 540,
+        "right": 1444,
+        "bottom": 601
+      }
+    },
+    {
+      "id": "c-waiting-lighting-10",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 138,
+        "top": 847,
+        "right": 193,
+        "bottom": 908
+      }
+    },
+    {
+      "id": "c-waiting-lighting-11",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 473,
+        "top": 822,
+        "right": 535,
+        "bottom": 884
+      }
+    },
+    {
+      "id": "c-waiting-lighting-12",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 765,
+        "top": 824,
+        "right": 830,
+        "bottom": 884
+      }
+    },
+    {
+      "id": "c-waiting-lighting-13",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1074,
+        "top": 824,
+        "right": 1133,
+        "bottom": 884
+      }
+    },
+    {
+      "id": "c-waiting-lighting-14",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1384,
+        "top": 837,
+        "right": 1442,
+        "bottom": 897
+      }
+    },
+    {
+      "id": "c-waiting-lighting-15",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 138,
+        "top": 1193,
+        "right": 193,
+        "bottom": 1254
+      }
+    },
+    {
+      "id": "c-waiting-lighting-16",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 441,
+        "top": 1193,
+        "right": 510,
+        "bottom": 1254
+      }
+    },
+    {
+      "id": "c-waiting-lighting-17",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 775,
+        "top": 1193,
+        "right": 832,
+        "bottom": 1250
+      }
+    },
+    {
+      "id": "c-waiting-lighting-18",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1094,
+        "top": 1193,
+        "right": 1152,
+        "bottom": 1254
+      }
+    },
+    {
+      "id": "c-waiting-lighting-19",
+      "crop": "c-waiting-lighting",
+      "kind": "downlight",
+      "label": "downlight",
+      "box": {
+        "left": 1386,
+        "top": 1194,
+        "right": 1440,
+        "bottom": 1252
+      }
+    },
+    {
+      "id": "c-waiting-lighting-20",
+      "crop": "c-waiting-lighting",
+      "kind": "sconce",
+      "label": "sconce",
+      "box": {
+        "left": 16,
+        "top": 642,
+        "right": 94,
+        "bottom": 701
+      }
+    },
+    {
+      "id": "c-waiting-lighting-21",
+      "crop": "c-waiting-lighting",
+      "kind": "sconce",
+      "label": "sconce",
+      "box": {
+        "left": 16,
+        "top": 1144,
+        "right": 96,
+        "bottom": 1206
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-0",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 35,
+        "top": 76,
+        "right": 84,
+        "bottom": 104
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-1",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 33,
+        "top": 168,
+        "right": 83,
+        "bottom": 197
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-2",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "G.F.I.@42\" NP-2 CKT 5",
+      "box": {
+        "left": 60,
+        "top": 508,
+        "right": 109,
+        "bottom": 538
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-3",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 621,
+        "top": 666,
+        "right": 669,
+        "bottom": 700
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-4",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 661,
+        "top": 27,
+        "right": 704,
+        "bottom": 68
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-5",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 705,
+        "top": 28,
+        "right": 748,
+        "bottom": 69
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-6",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1030,
+        "top": 28,
+        "right": 1072,
+        "bottom": 69
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-7",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1073,
+        "top": 28,
+        "right": 1116,
+        "bottom": 71
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-8",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1581,
+        "top": 288,
+        "right": 1630,
+        "bottom": 315
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-9",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1581,
+        "top": 328,
+        "right": 1630,
+        "bottom": 355
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-10",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1581,
+        "top": 654,
+        "right": 1630,
+        "bottom": 681
+      }
+    },
+    {
+      "id": "c-pre-recovery-power-11",
+      "crop": "c-pre-recovery-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 5",
+      "box": {
+        "left": 1581,
+        "top": 694,
+        "right": 1630,
+        "bottom": 721
+      }
+    },
+    {
+      "id": "c-pre-recovery-hvac-0",
+      "crop": "c-pre-recovery-hvac",
+      "kind": "supply",
+      "label": "194 CFM",
+      "box": {
+        "left": 826,
+        "top": 554,
+        "right": 1019,
+        "bottom": 688
+      }
+    },
+    {
+      "id": "c-pre-recovery-hvac-1",
+      "crop": "c-pre-recovery-hvac",
+      "kind": "outside-air",
+      "label": "45 CFM",
+      "box": {
+        "left": 1195,
+        "top": 557,
+        "right": 1358,
+        "bottom": 687
+      }
+    },
+    {
+      "id": "c-pre-recovery-hvac-2",
+      "crop": "c-pre-recovery-hvac",
+      "kind": "return",
+      "label": "1200 CFM",
+      "box": {
+        "left": 780,
+        "top": 767,
+        "right": 961,
+        "bottom": 929
+      }
+    },
+    {
+      "id": "a-life-safety-0",
+      "crop": "a-life-safety",
+      "kind": "exit",
+      "label": "exit",
+      "box": {
+        "left": 35,
+        "top": 144,
+        "right": 121,
+        "bottom": 228
+      }
+    },
+    {
+      "id": "a-life-safety-1",
+      "crop": "a-life-safety",
+      "kind": "exit",
+      "label": "exit",
+      "box": {
+        "left": 423,
+        "top": 1982,
+        "right": 502,
+        "bottom": 2068
+      }
+    },
+    {
+      "id": "a-life-safety-2",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 346,
+        "top": 63,
+        "right": 407,
+        "bottom": 92
+      }
+    },
+    {
+      "id": "a-life-safety-3",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 700,
+        "top": 344,
+        "right": 724,
+        "bottom": 404
+      }
+    },
+    {
+      "id": "a-life-safety-4",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 1039,
+        "top": 856,
+        "right": 1071,
+        "bottom": 921
+      }
+    },
+    {
+      "id": "a-life-safety-5",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 1039,
+        "top": 1500,
+        "right": 1071,
+        "bottom": 1588
+      }
+    },
+    {
+      "id": "a-life-safety-6",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 1039,
+        "top": 1836,
+        "right": 1070,
+        "bottom": 1900
+      }
+    },
+    {
+      "id": "a-life-safety-7",
+      "crop": "a-life-safety",
+      "kind": "emergency-light",
+      "label": "emergency-light",
+      "box": {
+        "left": 39,
+        "top": 1685,
+        "right": 68,
+        "bottom": 1739
+      }
+    },
+    {
+      "id": "a-life-safety-8",
+      "crop": "a-life-safety",
+      "kind": "extinguisher",
+      "label": "extinguisher",
+      "box": {
+        "left": 726,
+        "top": 501,
+        "right": 750,
+        "bottom": 538
+      }
+    },
+    {
+      "id": "a-life-safety-9",
+      "crop": "a-life-safety",
+      "kind": "extinguisher",
+      "label": "extinguisher",
+      "box": {
+        "left": 407,
+        "top": 977,
+        "right": 429,
+        "bottom": 1014
+      }
+    },
+    {
+      "id": "a-life-safety-10",
+      "crop": "a-life-safety",
+      "kind": "extinguisher",
+      "label": "extinguisher",
+      "box": {
+        "left": 38,
+        "top": 1729,
+        "right": 64,
+        "bottom": 1764
+      }
+    },
+    {
+      "id": "a-life-safety-11",
+      "crop": "a-life-safety",
+      "kind": "detector",
+      "label": "detector",
+      "box": {
+        "left": 452,
+        "top": 121,
+        "right": 480,
+        "bottom": 164
+      }
+    },
+    {
+      "id": "a-life-safety-12",
+      "crop": "a-life-safety",
+      "kind": "detector",
+      "label": "detector",
+      "box": {
+        "left": 530,
+        "top": 1678,
+        "right": 555,
+        "bottom": 1720
+      }
+    },
+    {
+      "id": "b-rooms-0",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "MASTER BEDROOM LIVING ROOM",
+      "box": {
+        "left": 378,
+        "top": 413,
+        "right": 510,
+        "bottom": 616
+      }
+    },
+    {
+      "id": "b-rooms-1",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "CLOSET MASTER BATHROOM",
+      "box": {
+        "left": 200,
+        "top": 759,
+        "right": 326,
+        "bottom": 882
+      }
+    },
+    {
+      "id": "b-rooms-2",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "BATH.",
+      "box": {
+        "left": 286,
+        "top": 1004,
+        "right": 436,
+        "bottom": 1138
+      }
+    },
+    {
+      "id": "b-rooms-3",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "BEDROOM",
+      "box": {
+        "left": 428,
+        "top": 1123,
+        "right": 570,
+        "bottom": 1330
+      }
+    },
+    {
+      "id": "b-rooms-4",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "CL",
+      "box": {
+        "left": 570,
+        "top": 1158,
+        "right": 634,
+        "bottom": 1241
+      }
+    },
+    {
+      "id": "b-rooms-5",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "FRONT PORCH LIVING ROOM",
+      "box": {
+        "left": 856,
+        "top": 1118,
+        "right": 984,
+        "bottom": 1245
+      }
+    },
+    {
+      "id": "b-rooms-6",
+      "crop": "b-rooms",
+      "kind": "door",
+      "label": "GARAGE DINING AREA",
+      "box": {
+        "left": 1284,
+        "top": 815,
+        "right": 1418,
+        "bottom": 940
+      }
+    },
+    {
+      "id": "c-procedure-power-0",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "unclear",
+      "box": {
+        "left": 183,
+        "top": 110,
+        "right": 233,
+        "bottom": 156
+      }
+    },
+    {
+      "id": "c-procedure-power-1",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT8",
+      "box": {
+        "left": 307,
+        "top": 106,
+        "right": 365,
+        "bottom": 155
+      }
+    },
+    {
+      "id": "c-procedure-power-2",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 1235,
+        "top": 84,
+        "right": 1291,
+        "bottom": 132
+      }
+    },
+    {
+      "id": "c-procedure-power-3",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 307,
+        "top": 218,
+        "right": 365,
+        "bottom": 267
+      }
+    },
+    {
+      "id": "c-procedure-power-4",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "USB@42\" NP-2 CKT 8",
+      "box": {
+        "left": 305,
+        "top": 324,
+        "right": 364,
+        "bottom": 375
+      }
+    },
+    {
+      "id": "c-procedure-power-5",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 1235,
+        "top": 386,
+        "right": 1291,
+        "bottom": 435
+      }
+    },
+    {
+      "id": "c-procedure-power-6",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "unclear",
+      "box": {
+        "left": 183,
+        "top": 412,
+        "right": 241,
+        "bottom": 460
+      }
+    },
+    {
+      "id": "c-procedure-power-7",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 307,
+        "top": 573,
+        "right": 365,
+        "bottom": 622
+      }
+    },
+    {
+      "id": "c-procedure-power-8",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 1235,
+        "top": 782,
+        "right": 1291,
+        "bottom": 831
+      }
+    },
+    {
+      "id": "c-procedure-power-9",
+      "crop": "c-procedure-power",
+      "kind": "receptacle",
+      "label": "NP-2 CKT 8",
+      "box": {
+        "left": 575,
+        "top": 1117,
+        "right": 615,
+        "bottom": 1168
+      }
+    },
+    {
+      "id": "c-exam-power-0",
+      "crop": "c-exam-power",
+      "kind": "receptacle",
+      "label": "NP-1 CKT 21",
+      "box": {
+        "left": 475,
+        "top": 74,
+        "right": 510,
+        "bottom": 121
+      }
+    },
+    {
+      "id": "c-exam-power-1",
+      "crop": "c-exam-power",
+      "kind": "receptacle",
+      "label": "G.F.I.@42\" NP-1 CKT 21",
+      "box": {
+        "left": 23,
+        "top": 219,
+        "right": 65,
+        "bottom": 268
+      }
+    },
+    {
+      "id": "c-exam-power-2",
+      "crop": "c-exam-power",
+      "kind": "receptacle",
+      "label": "NP-1 CKT 21",
+      "box": {
+        "left": 23,
+        "top": 394,
+        "right": 65,
+        "bottom": 446
+      }
+    },
+    {
+      "id": "c-exam-power-3",
+      "crop": "c-exam-power",
+      "kind": "receptacle",
+      "label": "NP-1 CKT 21",
+      "box": {
+        "left": 556,
+        "top": 523,
+        "right": 597,
+        "bottom": 570
+      }
+    }
+  ]
+}

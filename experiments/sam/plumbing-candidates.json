@@ -1,0 +1,196 @@
+{
+  "fixtures": [
+    {
+      "bottom": 395,
+      "kind": "LAV",
+      "left": 182,
+      "right": 322,
+      "room": "EXISTING STAFF RR 131",
+      "scope": "existing",
+      "top": 264,
+      "crop": "c-staff-restrooms",
+      "normalized": {
+        "left": 260,
+        "top": 378,
+        "right": 460,
+        "bottom": 563
+      }
+    },
+    {
+      "bottom": 395,
+      "kind": "LAV",
+      "left": 438,
+      "right": 588,
+      "room": "EXISTING PRIVATE 132",
+      "scope": "existing",
+      "top": 264,
+      "crop": "c-staff-restrooms",
+      "normalized": {
+        "left": 626,
+        "top": 378,
+        "right": 839,
+        "bottom": 564
+      }
+    },
+    {
+      "bottom": 560,
+      "kind": "WC",
+      "left": 180,
+      "right": 350,
+      "room": "EXISTING STAFF RR 131",
+      "scope": "existing",
+      "top": 440,
+      "crop": "c-staff-restrooms",
+      "normalized": {
+        "left": 258,
+        "top": 629,
+        "right": 499,
+        "bottom": 799
+      }
+    },
+    {
+      "bottom": 560,
+      "kind": "WC",
+      "left": 415,
+      "right": 609,
+      "room": "EXISTING PRIVATE 132",
+      "scope": "existing",
+      "top": 440,
+      "crop": "c-staff-restrooms",
+      "normalized": {
+        "left": 594,
+        "top": 629,
+        "right": 870,
+        "bottom": 799
+      }
+    },
+    {
+      "bottom": 238,
+      "kind": "LAV",
+      "left": 70,
+      "right": 200,
+      "room": "WOMENS RR 121",
+      "scope": "unclear",
+      "top": 96,
+      "crop": "c-central-restrooms",
+      "normalized": {
+        "left": 70,
+        "top": 88,
+        "right": 200,
+        "bottom": 216
+      }
+    },
+    {
+      "bottom": 556,
+      "kind": "WC",
+      "left": 695,
+      "right": 850,
+      "room": "WOMENS RR 121",
+      "scope": "unclear",
+      "top": 440,
+      "crop": "c-central-restrooms",
+      "normalized": {
+        "left": 695,
+        "top": 400,
+        "right": 850,
+        "bottom": 505
+      }
+    },
+    {
+      "bottom": 759,
+      "kind": "WC",
+      "left": 700,
+      "right": 835,
+      "room": "MENS RR 120",
+      "scope": "existing",
+      "top": 654,
+      "crop": "c-central-restrooms",
+      "normalized": {
+        "left": 700,
+        "top": 595,
+        "right": 835,
+        "bottom": 690
+      }
+    },
+    {
+      "bottom": 1034,
+      "kind": "LAV",
+      "left": 725,
+      "right": 875,
+      "room": "MENS RR 120",
+      "scope": "existing",
+      "top": 869,
+      "crop": "c-central-restrooms",
+      "normalized": {
+        "left": 725,
+        "top": 790,
+        "right": 875,
+        "bottom": 940
+      }
+    },
+    {
+      "bottom": 277,
+      "kind": "LAV",
+      "left": 273,
+      "right": 424,
+      "room": "PRIVATE RR 106",
+      "scope": "unclear",
+      "top": 154,
+      "crop": "c-private-restroom",
+      "normalized": {
+        "left": 498,
+        "top": 220,
+        "right": 770,
+        "bottom": 395
+      }
+    },
+    {
+      "bottom": 611,
+      "kind": "WC",
+      "left": 240,
+      "right": 419,
+      "room": "PRIVATE RR 106",
+      "scope": "unclear",
+      "top": 512,
+      "crop": "c-private-restroom",
+      "normalized": {
+        "left": 438,
+        "top": 732,
+        "right": 761,
+        "bottom": 872
+      }
+    },
+    {
+      "bottom": 267,
+      "kind": "WC",
+      "left": 388,
+      "right": 530,
+      "room": "PATIENT RR 205",
+      "scope": "unclear",
+      "top": 202,
+      "crop": "c-patient-restroom",
+      "normalized": {
+        "left": 555,
+        "top": 270,
+        "right": 756,
+        "bottom": 356
+      }
+    },
+    {
+      "bottom": 707,
+      "kind": "LAV",
+      "left": 417,
+      "right": 543,
+      "room": "PATIENT RR 205",
+      "scope": "unclear",
+      "top": 574,
+      "crop": "c-patient-restroom",
+      "normalized": {
+        "left": 597,
+        "top": 766,
+        "right": 775,
+        "bottom": 942
+      }
+    }
+  ]
+}

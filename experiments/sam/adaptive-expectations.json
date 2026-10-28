@@ -1,0 +1,26 @@
+{
+  "method": "Implementation-agent source annotation, frozen before this crop receives any model inference. No human benchmark; excluded from model prompts and tool results.",
+  "cases": [
+    {
+      "id": "workarea-transfer",
+      "crop": "c-workarea-transfer",
+      "inputSha256": "4885c1b44c9c05eb60cfe3b7a1f12327b25ea0e33f815ebe32ff729cced1c1bf",
+      "recordedAt": "2026-10-27T22:51:25.118Z",
+      "recordedBeforeInference": true,
+      "centers": [
+        [673, 244],
+        [673, 338],
+        [263, 642],
+        [356, 642]
+      ],
+      "attributes": {
+        "room": "107",
+        "panel": "NP-1",
+        "circuit": "8",
+        "visibleProtection": null
+      },
+      "distractors": "Two communication triangles and @ characters in two USB height annotations. Four receptacles visibly connect to circuit8 leaders.",
+      "annotationTiming": "pre-run-source-annotation"
+    }
+  ]
+}

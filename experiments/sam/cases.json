@@ -1,0 +1,68 @@
+[
+  {
+    "id": "bathroom-toilets",
+    "crop": "sam-05-b-b2-bathrooms",
+    "prompt": { "kind": "concept", "text": "toilet" },
+    "purpose": "Find toilet symbols in the sparse residential plan."
+  },
+  {
+    "id": "bathroom-sinks",
+    "crop": "sam-05-b-b2-bathrooms",
+    "prompt": { "kind": "concept", "text": "sink" },
+    "purpose": "Compare sink boundaries with toilet detection on identical pixels."
+  },
+  {
+    "id": "bathroom-toilet-box",
+    "crop": "sam-05-b-b2-bathrooms",
+    "prompt": { "kind": "box", "box": { "left": 740, "top": 850, "right": 880, "bottom": 1050 } },
+    "purpose": "Test a manually supplied box around the upper toilet; location input is not ground truth."
+  },
+  {
+    "id": "bathroom-toilet-points",
+    "crop": "sam-05-b-b2-bathrooms",
+    "prompt": {
+      "kind": "points",
+      "points": [
+        { "x": 810, "y": 931, "label": "positive" },
+        { "x": 940, "y": 930, "label": "negative" }
+      ]
+    },
+    "purpose": "Test one positive toilet point and one negative point on the neighboring room."
+  },
+  {
+    "id": "bathroom-absent-control",
+    "crop": "sam-05-b-b2-bathrooms",
+    "prompt": { "kind": "concept", "text": "yellow school bus" },
+    "purpose": "Absent-concept probe. Inspect any proposed detection as a potential false positive."
+  },
+  {
+    "id": "kitchen-sinks",
+    "crop": "sam-04-a-b1-kitchen-fixtures",
+    "prompt": { "kind": "concept", "text": "sink" },
+    "purpose": "Test commercial fixtures amid equipment labels and dimensions."
+  },
+  {
+    "id": "revision-ducts",
+    "crop": "sam-01-a-m2-revision-1",
+    "prompt": { "kind": "concept", "text": "air duct" },
+    "purpose": "Propose duct masks on the revised M-2 region."
+  },
+  {
+    "id": "baseline-ducts",
+    "crop": "sam-02-a-m2-baseline",
+    "prompt": { "kind": "concept", "text": "air duct" },
+    "purpose": "Use the identical prompt and PDF rectangle on baseline M-2. IDs do not correspond between requests."
+  },
+  {
+    "id": "dense-plumbing-sinks",
+    "crop": "sam-06-c-p2-fixture-overlays",
+    "prompt": { "kind": "concept", "text": "sink" },
+    "purpose": "Probe fixture recognition under dense colored plumbing overlays."
+  },
+  {
+    "id": "electrical-panel",
+    "crop": "sam-03-a-e3-panel-equipment",
+    "prompt": { "kind": "concept", "text": "electrical panel" },
+    "purpose": "Hard electrical-symbol probe. A symbol does not establish physical working clearance."
+  }
+]
