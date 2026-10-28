@@ -5,11 +5,11 @@ Base: `a1d4bbc21` (includes merged SAM implementation, PR #5). Round 1 reviewed
 Optional Modal/cloud remains outside scope. All reviews were read-only, without
 paid calls, nested agents, commits or PR watches.
 
-| Delegate          | Round 1 | Verdict                                 |
-| ----------------- | ------- | --------------------------------------- |
-| GPT-6.1 Sol, high | 7/10    | Changes                                 |
-| Grok 4.7, high    | 7/10    | Changes                                 |
-| Composer 2.5      | 8.5/10  | Approve, credential hardening suggested |
+| Delegate          | Round 1 | Round 2 | Final verdict |
+| ----------------- | ------- | ------- | ------------- |
+| GPT-6.1 Sol, high | 7/10    | 9/10    | Approve       |
+| Grok 4.7, high    | 7/10    | 9/10    | Approve       |
+| Composer 2.5      | 8.5/10  | 8.5/10  | Approve       |
 
 ## Findings ledger
 
@@ -27,5 +27,15 @@ paid calls, nested agents, commits or PR watches.
 | C3  | nit      | Retained initial execution replay. The workbench's domain-event cursor is a different sequence and cannot replace the execution cursor. Initial replay reconstructs the latest finding run after reopening; reads paginate at 200. A dedicated execution snapshot/cursor would be a separate scale improvement.                                                                                              |
 | C4  | doc nit  | Updated the stale NotesRpc-only comment to the restricted review/chooser boundary.                                                                                                                                                                                                                                                                                                                           |
 
-Sol-loop uses the single Sol member of this council. Round 2 checks changed code
-and open findings; provider usage for reviewer runs was not exposed.
+Sol-loop used the single Sol member in two rounds and ended approved. Round 2
+checked changed code and the open findings, all of which were resolved or accepted
+as deferred nits. Sol independently passed 16 focused tests /152 assertions in
+round 2; reviewer provider usage was not exposed. The behavior diff grew from
+86 files /18,649 insertions at the first freeze to 91 files /19,414 insertions at
+the second, primarily regression tests, recovery fixes, provenance and evidence.
+
+Composer C5 (nit) proposed rejecting credential-file symlinks. Deferred: stat and
+read use the same opened handle and enforce the target's permissions. An alias
+to a private target does not bypass that check; the caller explicitly selects
+the session path. No should/blocker findings remain. Final review freeze was
+`a81b45226`; subsequent edits only record these review results.
