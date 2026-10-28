@@ -6,14 +6,14 @@ Primary demo target: **Linux x64**. Packages pin `pdfjs-dist@6.4.299` and `@napi
 
 After `bun run prepare:pdf-assets`, the backend bundle includes:
 
-| Path | Role |
-| --- | --- |
-| `dist/backend/pdf-assets/pdfjs/` | `legacy/build/pdf.worker.mjs`, `cmaps/`, `standard_fonts/` |
-| `dist/backend/pdf-assets/native/skia.<platform>.node` | Platform `@napi-rs/canvas` binary |
-| `dist/backend/pdf-assets/layout.json` | Selected native package for `process.platform` / `process.arch` |
-| `dist/backend/pdf-assets/licenses.json` | Bundled license text |
-| `dist/backend/pdf-worker` | NDJSON worker (import, bounded region render) |
-| `dist/backend/pdf-packaging-probe` | Compiled overview render for packaging checks |
+| Path                                                  | Role                                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| `dist/backend/pdf-assets/pdfjs/`                      | `legacy/build/pdf.worker.mjs`, `cmaps/`, `standard_fonts/`      |
+| `dist/backend/pdf-assets/native/skia.<platform>.node` | Platform `@napi-rs/canvas` binary                               |
+| `dist/backend/pdf-assets/layout.json`                 | Selected native package for `process.platform` / `process.arch` |
+| `dist/backend/pdf-assets/licenses.json`               | Bundled license text                                            |
+| `dist/backend/pdf-worker`                             | NDJSON worker (import, bounded region render)                   |
+| `dist/backend/pdf-packaging-probe`                    | Compiled overview render for packaging checks                   |
 
 Runtime environment for workers:
 

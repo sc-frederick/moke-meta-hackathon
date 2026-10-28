@@ -39,8 +39,8 @@ The explicit alternative is provider `baseten`, endpoint
 `https://inference.baseten.co/v1`, model `meta-models/muse-spark-open-1026`.
 Endpoint/model mismatches fail closed. No ambient credential fallback or dynamic
 catalog refresh is enabled. Recorded execution requires an injected HTTP
-transport. Without provider configuration, a new record is visibly offline and
-paused. No execution RPC carries credentials, filesystem paths, journals, or
+transport. Without provider configuration, start returns a typed unavailable failure
+and creates no phantom run. No execution RPC carries credentials, filesystem paths, journals, or
 transcripts.
 
 `backend/review/execution-port.ts` defines the parent's required capabilities:
@@ -178,3 +178,28 @@ Electron packaging. Parent integration owns the explicit budgeted live probe,
 real domain/PDF acceptance, complete export/restore consistency, E2E, council,
 and final repository verification. Gates 0C/0D are not declared fully passed by
 this slice alone.
+
+## Lifecycle command receipts and explicit new attempts
+
+Migration 0005 adds stable command receipts for start, pause/resume/cancel and
+uncertainty acknowledgement. Matching replay returns the committed receipt before
+version or owner checks; changed input conflicts. A start committed before a crash
+reopens paused, schedules nothing, and can be resumed explicitly. Only one
+inspection may be running/pausing across the application.
+
+The public acknowledgement requires `possibleChargeAcknowledged: true`, a fresh
+run version and command ID. It records the decision and cancels the old run; its
+uncertain attempts remain in the ledger. A separate StartExecution creates a new
+run/journal and budget. Acknowledgement itself never sends. Restored historical
+journals cannot resume; cancelling historical paused work permits a new run.
+
+## Image request window
+
+The stateless SDK transcript retains all text, artifact metadata, tool and response
+identities. Each outbound request includes only the newest images that fit six
+images and 2 MiB decoded bytes; omitted older pixels are replaced with explicit
+text notices. The original images remain in the journal/artifact store and can
+be requested again. No image is silently resized or cropped at this boundary.
+The deterministic bounded transcript participates in the dispatch fingerprint.
+The wire cap remains 3 MiB. This prevents repeated detail/SAM turns from filling
+the request with every earlier raster. Image tokens and billing remain unknown.

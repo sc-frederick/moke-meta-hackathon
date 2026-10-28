@@ -115,9 +115,20 @@ export class BackendApi extends Context.Service<
 
         child.stderr.pipe(process.stderr, { end: false });
 
-        const paths = { dataDirectory: options.dataDirectory,migrationDirectory: options.migrationDirectory,token };
-        const processing = options.processing === undefined ? paths : { ...paths,processing: options.processing };
-        const startup = new BackendConfig(options.inference === undefined ? processing : { ...processing,inference: options.inference });
+        const paths = {
+          dataDirectory: options.dataDirectory,
+          migrationDirectory: options.migrationDirectory,
+          token,
+        };
+
+        const processing =
+          options.processing === undefined ? paths : { ...paths, processing: options.processing };
+
+        const startup = new BackendConfig(
+          options.inference === undefined
+            ? processing
+            : { ...processing, inference: options.inference },
+        );
 
         const ready = yield* Effect.all(
           [
@@ -156,7 +167,7 @@ export class BackendApi extends Context.Service<
               client,
               HttpClientRequest.setHeader("authorization", `Bearer ${Redacted.value(token)}`),
             ),
-        }).pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(RpcSerialization.layerJson));
+        }).pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(RpcSerialization.layerNdjson));
 
         const context = yield* Layer.build(protocol);
         const api = yield* RpcClient.make(BackendRpc).pipe(Effect.provide(context));

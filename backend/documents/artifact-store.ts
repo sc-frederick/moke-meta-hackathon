@@ -1,6 +1,15 @@
 import { Effect } from "effect";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, statSync, renameSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  statSync,
+  renameSync,
+  writeSync,
+} from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DocumentError, ReviewStorageError } from "#lib/review/contracts.ts";
@@ -59,7 +68,9 @@ export const storeBytes = Effect.fnUntraced(function* (
   yield* Effect.try({
     try: () => {
       let offset = 0;
-      while (offset < bytes.byteLength) offset += writeSync(handle,bytes,offset,bytes.byteLength-offset);
+
+      while (offset < bytes.byteLength)
+        offset += writeSync(handle, bytes, offset, bytes.byteLength - offset);
       fsyncSync(handle);
       closeSync(handle);
 
@@ -94,11 +105,17 @@ export const readArtifactChunk = Effect.fnUntraced(function* (
   limit: number,
 ) {
   if (!sha256Pattern.test(sha256)) {
-    return yield* new DocumentError({ reason: "invalid", message: "The artifact hash is not valid." });
+    return yield* new DocumentError({
+      reason: "invalid",
+      message: "The artifact hash is not valid.",
+    });
   }
 
   if (limit < 1 || limit > DocumentsLimits.maxReadChunkBytes) {
-    return yield* new DocumentError({ reason: "limit", message: "The read chunk exceeds the allowed size." });
+    return yield* new DocumentError({
+      reason: "limit",
+      message: "The read chunk exceeds the allowed size.",
+    });
   }
 
   if (offset < 0) {
@@ -110,17 +127,33 @@ export const readArtifactChunk = Effect.fnUntraced(function* (
   const bytes = yield* Effect.try({
     try: () => {
       const size = statSync(path).size;
+
       if (size > DocumentsLimits.maxSourceBytes) throw new Error("Artifact exceeds limit");
       const content = readFileSync(path);
+
       if (hashBytes(content) !== sha256) throw new Error("Artifact hash mismatch");
+
       return content;
     },
-    catch: () => new DocumentError({ reason: "unavailable",message: "The requested evidence artifact is missing or its hash does not match." }),
+    catch: () =>
+      new DocumentError({
+        reason: "unavailable",
+        message: "The requested evidence artifact is missing or its hash does not match.",
+      }),
   });
-  const totalBytes = bytes.byteLength;
-  if (offset > totalBytes || !Number.isInteger(offset) || !Number.isInteger(limit)) return yield* new DocumentError({ reason: "invalid",message: "The artifact read range is invalid." });
-  return { base64: bytes.subarray(offset,Math.min(totalBytes,offset+limit)).toString("base64"),totalBytes };
 
+  const totalBytes = bytes.byteLength;
+
+  if (offset > totalBytes || !Number.isInteger(offset) || !Number.isInteger(limit))
+    return yield* new DocumentError({
+      reason: "invalid",
+      message: "The artifact read range is invalid.",
+    });
+
+  return {
+    base64: bytes.subarray(offset, Math.min(totalBytes, offset + limit)).toString("base64"),
+    totalBytes,
+  };
 });
 
 /** Remove a staged part file after a failed store attempt. */
@@ -138,7 +171,8 @@ export const storeFile = Effect.fnUntraced(function* (
 ) {
   const bytes = yield* Effect.try({
     try: () => readFileSync(sourcePath),
-    catch: () => new DocumentError({ reason: "unavailable", message: "The source file could not be read." }),
+    catch: () =>
+      new DocumentError({ reason: "unavailable", message: "The source file could not be read." }),
   });
 
   return yield* storeBytes(dataDirectory, bytes, mediaType);

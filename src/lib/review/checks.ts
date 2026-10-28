@@ -10,7 +10,8 @@ export function evaluateCoordination(
     return {
       outcome: "outside_scope" as const,
       difference: null,
-      explanation: "Confirm that the selected plan region and schedule describe the same object class and scope.",
+      explanation:
+        "Confirm that the selected plan region and schedule describe the same object class and scope.",
     };
   }
 
@@ -23,7 +24,8 @@ export function evaluateCoordination(
     return {
       outcome: "needs_evidence" as const,
       difference: null,
-      explanation: "Accept both source-linked counts and confirm coverage of the selected scope before evaluating.",
+      explanation:
+        "Accept both source-linked counts and confirm coverage of the selected scope before evaluating.",
     };
   }
 

@@ -33,7 +33,11 @@ export function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.met
   const outputRoot = join(root, "dist/backend/pdf-assets");
   const pdfjsSource = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
   const nativePackage = canvasNativePackage();
-  const nativeSourceDir = dirname(fileURLToPath(import.meta.resolve(`${nativePackage}/package.json`)));
+
+  const nativeSourceDir = dirname(
+    fileURLToPath(import.meta.resolve(`${nativePackage}/package.json`)),
+  );
+
   const nativeBasename = nativePackage.replace("@napi-rs/canvas-", "");
   const nativeFile = readFileSync(join(nativeSourceDir, `skia.${nativeBasename}.node`));
 

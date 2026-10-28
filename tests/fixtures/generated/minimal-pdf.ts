@@ -1,37 +1,27 @@
-import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+/** Build an original, valid one-page vector PDF with byte-correct cross references. */
+export function buildMinimalPdf(rotation: 0 | 90 | 180 | 270 = 0): Uint8Array {
+  const content = "0.5 w 24 24 200 160 re S\n";
 
-/** Known-good one-page PDF bytes (612×792 pt) used for generated fixtures. */
-const basePdf = Buffer.from(
-  "JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0tpZHMgWzMgMCBSXQovQ291bnQgMQo+PgplbmRvYmoKMyAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDIgMCBSCi9NZWRpYUJveCBbMCAwIDYxMiA3OTJdCi9Db250ZW50cyA0IDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovTGVuZ3RoIDQ0Cj4+CnN0cmVhbQpCBQowIDAgNjEyIDc5MiByZQovRDEgcmVnaCBlbGxpc2NoCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjA0IDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNQovUm9vdCAxIDAgUgo+PgpzdGFydXhyZWYKMjk3CiUlRU9G",
-  "base64",
-);
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate ${rotation} /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+  ];
 
-/** Build a tiny valid PDF with an optional /Rotate entry for geometry tests. */
-export function buildMinimalPdf(rotation?: 90 | 180 | 270): Uint8Array {
-  if (!rotation) {
-    return new Uint8Array(basePdf);
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  for (const [index, object] of objects.entries()) {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
   }
 
-  const text = new TextDecoder().decode(basePdf);
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
 
-  const rotated = text.replace(
-    "/MediaBox [0 0 612 792]",
-    `/MediaBox [0 0 612 792] /Rotate ${rotation}`,
-  );
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
 
-  return new TextEncoder().encode(rotated);
+  return new TextEncoder().encode(pdf);
 }
-
-const fixtureDir = dirname(fileURLToPath(import.meta.url));
-
-/** Write the default generated PDF fixtures used by document tests. */
-export function ensureGeneratedPdfFixtures() {
-  mkdirSync(fixtureDir, { recursive: true });
-  writeFileSync(join(fixtureDir, "original.pdf"), buildMinimalPdf());
-  writeFileSync(join(fixtureDir, "rotated-90.pdf"), buildMinimalPdf(90));
-  writeFileSync(join(fixtureDir, "malformed.pdf"), Buffer.from("not a pdf"));
-}
-
-ensureGeneratedPdfFixtures();

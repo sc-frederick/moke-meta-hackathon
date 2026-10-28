@@ -1,12 +1,7 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import {
-  CommandId,
-  CommandReceipt,
-  ProjectId,
-  ReviewError,
-  ReviewRpc,
-} from "#lib/review/contracts.ts";
+import { ExecutionRpc } from "./execution.ts";
+import { CommandId, CommandReceipt, ProjectId, ReviewError, ReviewRpc } from "./contracts.ts";
 
 const Version = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
@@ -26,7 +21,7 @@ export class ReviewShellRpc extends RpcGroup.make(
   }),
   Rpc.make("ChooseReviewExport", {
     payload: Schema.Struct({}),
-    success: Schema.NullOr(CommandReceipt),
+    success: Schema.Boolean,
     error: ReviewError,
   }),
   Rpc.make("ChooseReviewRestore", {
@@ -37,4 +32,4 @@ export class ReviewShellRpc extends RpcGroup.make(
 ) {}
 
 /** Desktop renderer RPC: application review API plus shell file capabilities. */
-export class ReviewDesktopRpc extends ReviewRpc.merge(ReviewShellRpc) {}
+export class ReviewDesktopRpc extends ReviewRpc.merge(ReviewShellRpc).merge(ExecutionRpc) {}

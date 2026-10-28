@@ -10,8 +10,11 @@ const built = Bun.spawnSync([process.execPath, "run", "build:desktop"], {
 if (built.exitCode !== 0) process.exit(built.exitCode);
 
 const backendBuilt = Bun.spawnSync([process.execPath, "run", "build:backend"], {
-  stdin: "inherit", stdout: "inherit", stderr: "inherit",
+  stdin: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
 });
+
 if (backendBuilt.exitCode !== 0) process.exit(backendBuilt.exitCode);
 
 const server = await createServer({ server: { host: "127.0.0.1", port: 5173, strictPort: true } });

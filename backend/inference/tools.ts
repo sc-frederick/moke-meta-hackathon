@@ -1,5 +1,6 @@
 import { createRegistry, defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { Schema } from "effect";
+import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 import { Type } from "typebox";
 import {
   CountProposal,
@@ -18,6 +19,10 @@ export interface ExecutionTools {
   readonly evaluate: (taskId: number) => Promise<string>;
   readonly message: (taskId: number, text: string) => Promise<string>;
   readonly finish: (taskId: number, text: string) => Promise<string>;
+  readonly segment?: (
+    taskId: number,
+    request: SamInspectionRequest,
+  ) => Promise<ExecutionToolEvidence>;
 }
 
 /** Restrict the descriptor bridge to required JSON fields; Effect parses again on execution. */
@@ -70,7 +75,7 @@ export function createReviewTools(operations: ExecutionTools) {
     defineTool({
       name: "render_missing_detail",
       description:
-        "Render a bounded region on a selected sheet. Identify the missing fact this detail will resolve.",
+        "Render a bounded region on a selected sheet. Region x/y/width/height are original PDF points with bottom-left origin; raster rows start at the top. Use the supplied pixelsToPdf transform rather than copying screen y coordinates. Identify the missing fact this detail will resolve.",
       parameters: descriptor(DetailRequest),
       replay: "safe",
       executionMode: "sequential",
@@ -136,6 +141,27 @@ export function createReviewTools(operations: ExecutionTools) {
       },
     }),
   ];
+
+  const segmentation = operations.segment;
+
+  if (segmentation !== undefined)
+    tools.push(
+      defineTool({
+        name: "segment_source_region",
+        description:
+          "Use SAM to propose object locations on a rendered source artifact. Shape prompts such as square/circle and source-guided boxes/points are useful; verify class and coverage independently. Coordinates refer to the delivered image. Zero matches do not establish absence.",
+        parameters: descriptor(SamInspectionRequest),
+        replay: "safe",
+        executionMode: "sequential",
+        async execute(args, api) {
+          const request = Schema.decodeUnknownSync(Schema.toCodecJson(SamInspectionRequest), {
+            onExcessProperty: "error",
+          })(args);
+
+          return { output: imageOutput(await segmentation(api.taskId, request)) };
+        },
+      }),
+    );
 
   registry.install(defineExtension({ name: "selected-finding-review-v1", tools }));
 

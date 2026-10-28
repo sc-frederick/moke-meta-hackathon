@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { Rpc, RpcGroup } from "effect/rpc";
 
 import { ExecutionState } from "./execution.ts";
 
@@ -132,7 +133,9 @@ export class PackageExportResult extends Schema.Class<PackageExportResult>("Pack
 }) {}
 
 /** Result of replacing local data from a validated package. */
-export class PackageRestoreResult extends Schema.Class<PackageRestoreResult>("PackageRestoreResult")({
+export class PackageRestoreResult extends Schema.Class<PackageRestoreResult>(
+  "PackageRestoreResult",
+)({
   admission: PackageAdmission,
   preRestorePackagePath: Schema.NullOr(Schema.String),
 }) {}
@@ -148,3 +151,17 @@ export const PackageInterrupt = Schema.Literals(["prepared", "first-replaced"]);
 
 /** One crash seam. Production callers omit this. */
 export type PackageInterrupt = typeof PackageInterrupt.Type;
+
+/** Only the trusted shell chooses full-package filesystem locations. */
+export class ReviewPackageFilesRpc extends RpcGroup.make(
+  Rpc.make("ExportReviewPackage", {
+    payload: { destination: Schema.NonEmptyString },
+    success: PackageExportResult,
+    error: PackageError,
+  }),
+  Rpc.make("RestoreReviewPackage", {
+    payload: { source: Schema.NonEmptyString },
+    success: PackageRestoreResult,
+    error: PackageError,
+  }),
+) {}

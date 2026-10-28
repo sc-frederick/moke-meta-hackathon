@@ -10,7 +10,10 @@ export const validateRenderRequest = Effect.fnUntraced(function* (
   dpi: number,
 ) {
   if (dpi < DocumentsLimits.minDpi || dpi > DocumentsLimits.maxDpi) {
-    return yield* new DocumentError({ reason: "limit", message: "The render DPI is outside the allowed range." });
+    return yield* new DocumentError({
+      reason: "limit",
+      message: "The render DPI is outside the allowed range.",
+    });
   }
 
   if (!containsRegion(sheet.box, region)) {
@@ -25,7 +28,10 @@ export const validateRenderRequest = Effect.fnUntraced(function* (
   const height = Math.ceil(region.height * scale);
 
   if (width <= 0 || height <= 0) {
-    return yield* new DocumentError({ reason: "invalid", message: "The requested region has no renderable area." });
+    return yield* new DocumentError({
+      reason: "invalid",
+      message: "The requested region has no renderable area.",
+    });
   }
 
   if (width * height > DocumentsLimits.maxOutputPixels) {

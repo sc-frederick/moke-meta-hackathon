@@ -3,6 +3,7 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import { NotesRpc } from "./notes.ts";
 import { ReviewFilesRpc, ReviewRpc } from "./review/contracts.ts";
 import { ExecutionRpc } from "./review/execution.ts";
+import { ReviewPackageFilesRpc } from "./review/packages.ts";
 
 /** A safe failure at the database file, migration, or recovery boundary. */
 export class DatabaseFileError extends Schema.TaggedError<DatabaseFileError>()(
@@ -70,4 +71,8 @@ export class DatabaseRpc extends RpcGroup.make(
 ) {}
 
 /** Shared application API served by Bun; Electron exposes only NotesRpc to the renderer. */
-export class BackendRpc extends NotesRpc.merge(DatabaseRpc).merge(ReviewRpc).merge(ReviewFilesRpc).merge(ExecutionRpc) {}
+export class BackendRpc extends NotesRpc.merge(DatabaseRpc)
+  .merge(ReviewRpc)
+  .merge(ReviewFilesRpc)
+  .merge(ExecutionRpc)
+  .merge(ReviewPackageFilesRpc) {}

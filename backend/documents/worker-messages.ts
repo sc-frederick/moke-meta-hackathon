@@ -16,10 +16,14 @@ export const WorkerRenderRequest = Schema.TaggedStruct("Render", {
   region: Region,
   rotation: Schema.Literals([0, 90, 180, 270]),
   userUnit: Schema.Finite.check(Schema.isGreaterThan(0)),
-  dpi: Schema.Int.check(Schema.isBetween({ minimum: DocumentsLimits.minDpi, maximum: DocumentsLimits.maxDpi })),
+  dpi: Schema.Int.check(
+    Schema.isBetween({ minimum: DocumentsLimits.minDpi, maximum: DocumentsLimits.maxDpi }),
+  ),
 });
 
-export const WorkerRequest = Schema.Union([WorkerInspectRequest, WorkerRenderRequest]).pipe(Schema.toTaggedUnion("_tag"));
+export const WorkerRequest = Schema.Union([WorkerInspectRequest, WorkerRenderRequest]).pipe(
+  Schema.toTaggedUnion("_tag"),
+);
 
 export const WorkerPageInfo = Schema.Struct({
   pageIndex: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 199 })),

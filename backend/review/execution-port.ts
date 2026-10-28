@@ -16,6 +16,7 @@ import {
   SheetId,
 } from "../../src/lib/review/contracts.ts";
 import { ExecutionError, ExecutionVersion, RunId } from "../../src/lib/review/execution.ts";
+import { SamInspectionRequest, SamObservation } from "#lib/review/segmentation.ts";
 
 /** Every tool is restricted to the finding and immutable inputs captured on start. */
 export class ExecutionSelection extends Schema.Class<ExecutionSelection>("ExecutionSelection")({
@@ -32,6 +33,9 @@ export class ExecutionEvidence extends Schema.Class<ExecutionEvidence>("Executio
   facts: Schema.Array(CountFact),
   checks: Schema.Array(CheckRun),
   artifacts: Schema.Array(Artifact),
+  reviewerInstructions: Schema.optionalKey(
+    Schema.Array(Schema.String).check(Schema.isMaxLength(8)),
+  ),
 }) {}
 
 /** Parent transactions must check this fence and commit mutation plus command receipt together. */
@@ -87,8 +91,8 @@ export interface ExecutionToolEvidence {
 export interface SegmentationCapability {
   readonly segment: (
     fence: ExecutionFence,
-    detail: typeof DetailRequest.Type,
-  ) => Effect.Effect<Artifact, ExecutionError>;
+    request: SamInspectionRequest,
+  ) => Effect.Effect<SamObservation, ExecutionError>;
 }
 
 /** The parent implements domain authorization, atomic receipts, source work, and deterministic evaluation. */

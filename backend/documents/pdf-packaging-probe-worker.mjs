@@ -20,12 +20,14 @@ mkdirSync(outDir, { recursive: true });
 
 const data = new Uint8Array(readFileSync(pdfPath));
 
-const doc = await getDocument({
+const loading = getDocument({
   data,
   cMapUrl: join(assetsRoot, "cmaps/") + "/",
   cMapPacked: true,
   standardFontDataUrl: join(assetsRoot, "standard_fonts/") + "/",
-}).promise;
+});
+
+const doc = await loading.promise;
 
 const page = await doc.getPage(1);
 const scale = 512 / page.view[2];
@@ -36,8 +38,8 @@ await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
 
 writeFileSync(join(outDir, "overview.png"), canvas.toBuffer("image/png"));
 
-await page.cleanup();
+page.cleanup();
 
-await doc.cleanup();
+await loading.destroy();
 
 console.log("ok", canvas.width, canvas.height);

@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { FindingId, ProjectId } from "./contracts.ts";
+import { CommandId, FindingId, ProjectId } from "./contracts.ts";
 
 /** Public execution identifiers reveal neither journal locations nor provider sessions. */
 export const RunId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("RunId"));
@@ -41,6 +41,7 @@ export class ExecutionStatus extends Schema.Class<ExecutionStatus>("ExecutionSta
   reservedInputTokens: ExecutionVersion,
   reservedOutputTokens: ExecutionVersion,
   unresolvedAttempts: ExecutionVersion,
+  uncertaintyAcknowledged: Schema.Boolean,
   costUsd: Schema.NullOr(Schema.Finite),
   imageInputTokens: Schema.Null,
 }) {}
@@ -70,6 +71,7 @@ export class ExecutionError extends Schema.TaggedError<ExecutionError>()("Execut
 
 /** Starting work names a selected finding and a bounded admission policy. */
 export const StartExecution = Schema.Struct({
+  commandId: CommandId,
   projectId: ProjectId,
   findingId: FindingId,
   budget: ExecutionBudget,
@@ -93,6 +95,18 @@ export class ExecutionRpc extends RpcGroup.make(
       runId: RunId,
       expectedVersion: ExecutionVersion,
       action: Schema.Literals(["pause", "resume", "cancel"]),
+      commandId: CommandId,
+    },
+    success: ExecutionStatus,
+    error: ExecutionError,
+  }),
+  Rpc.make("AcknowledgeUncertainExecution", {
+    payload: {
+      projectId: ProjectId,
+      runId: RunId,
+      expectedVersion: ExecutionVersion,
+      commandId: CommandId,
+      possibleChargeAcknowledged: Schema.Literal(true),
     },
     success: ExecutionStatus,
     error: ExecutionError,
@@ -101,5 +115,11 @@ export class ExecutionRpc extends RpcGroup.make(
     payload: { projectId: ProjectId, afterSequence: ExecutionVersion },
     success: Schema.Array(ExecutionEvent),
     error: ExecutionError,
+  }),
+  Rpc.make("ObserveExecution", {
+    payload: { projectId: ProjectId, afterSequence: ExecutionVersion },
+    success: ExecutionEvent,
+    error: ExecutionError,
+    stream: true,
   }),
 ) {}

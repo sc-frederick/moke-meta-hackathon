@@ -15,12 +15,12 @@ reviewer-confirmed coverage. It is a coordination check with its source on
 L-601, not a regulatory minimum. SAM masks propose locations; the reviewer
 accepts the count and scope independently.
 
-| Case | Source | Expected accepted result |
-| --- | --- | --- |
-| Supported issue | Rev A L-101 Room 101 has two A fixtures; L-601 requires three | 2 − 3 = −1, supported issue |
-| Corrected false alarm | Room 102 has two B fixtures; begin with a deliberately incorrect accepted count of one, then correct to two | 1 − 2 = −1, then 2 − 2 = 0; both runs retained |
-| Unrelated control | L-601 control detail has two C fixtures and requires two | 2 − 2 = 0; corrections to Room 102 do not replace this run |
-| Revision recheck | Rev B adds the third A fixture on L-101; L-601 stays unchanged | Confirm correspondence, stale changed dependencies, accept fresh Rev B evidence, then 3 − 3 = 0 |
+| Case                  | Source                                                                                                      | Expected accepted result                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Supported issue       | Rev A L-101 Room 101 has two A fixtures; L-601 requires three                                               | 2 − 3 = −1, supported issue                                                                     |
+| Corrected false alarm | Room 102 has two B fixtures; begin with a deliberately incorrect accepted count of one, then correct to two | 1 − 2 = −1, then 2 − 2 = 0; both runs retained                                                  |
+| Unrelated control     | L-601 control detail has two C fixtures and requires two                                                    | 2 − 2 = 0; corrections to Room 102 do not replace this run                                      |
+| Revision recheck      | Rev B adds the third A fixture on L-101; L-601 stays unchanged                                              | Confirm correspondence, stale changed dependencies, accept fresh Rev B evidence, then 3 − 3 = 0 |
 
 PDF coordinates are original page points with bottom-left origin and page box
 `[0,0,612,792]`. Display rasters use the stored PDF.js affine transform. Room
@@ -33,8 +33,8 @@ application distributions. Their sanitization is not redistribution permission.
 The separate SAM study supplies observed capability and failure evidence; it
 does not establish a precise physical measurement or broad recall guarantee.
 
-Live validation budget: explicit per-run admission, at most 12 calls, 8,192
-input tokens and 2,048 output tokens reserved per call. No automatic retries,
+Live validation budget: explicit per-run admission, at most 12 calls including at most two SAM calls, 64,000 conservative text
+tokens and 4,096 output tokens reserved per call. No automatic retries,
 compaction, provider switch, or uncertain-call reissue. Stop on a route error.
 Observed cost stays unknown unless the provider supplies sufficient usage and
 verified prices. Real-provider acceptance is recorded separately after execution.

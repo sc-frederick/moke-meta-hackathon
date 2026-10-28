@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import type { Affine, Region } from "#lib/review/contracts.ts";
   import { transformRegion } from "#lib/review/geometry.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
@@ -23,10 +22,13 @@
   let dragging = $state(false);
   let lastX = 0;
   let lastY = 0;
-  let viewport: HTMLDivElement | undefined = $state();
+  let viewportWidth = $state(0);
+  let viewportHeight = $state(0);
+  let imageWidth = $state(1);
+  let imageHeight = $state(1);
 
   const transformStyle = $derived(
-    `translate(${panX}px, ${panY}px) rotate(${rotation}deg) scale(${scale})`,
+    `translate(${viewportWidth / 2 + panX}px, ${viewportHeight / 2 + panY}px) rotate(${rotation}deg) scale(${scale}) translate(${-imageWidth / 2}px, ${-imageHeight / 2}px)`,
   );
 
   const pixelOverlays = $derived(
@@ -37,11 +39,11 @@
   );
 
   function zoom(delta: number) {
-    scale = Math.min(4, Math.max(0.25, scale + delta));
+    scale = Math.min(8, Math.max(0.02, scale * (delta > 0 ? 1.25 : 0.8)));
   }
 
   function resetView() {
-    scale = 1;
+    scale = Math.min(viewportWidth / imageWidth, viewportHeight / imageHeight) * 0.95;
     rotation = 0;
     panX = 0;
     panY = 0;
@@ -66,12 +68,10 @@
   function onPointerUp(event: PointerEvent) {
     dragging = false;
     // SAFETY: pointer handlers are registered on the viewport div element.
-    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-  }
+    const element = event.currentTarget as HTMLElement;
 
-  onDestroy(() => {
-    if (imageUrl.startsWith("blob:")) URL.revokeObjectURL(imageUrl);
-  });
+    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+  }
 </script>
 
 <section class="viewer" aria-label={label}>
@@ -94,18 +94,41 @@
       ><ReviewIcon name="refresh" size={16} /></button
     >
   </div>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (The image canvas supports focusable keyboard pan and zoom.) -->
   <div
     class="viewport"
     role="application"
     aria-label="Pan and zoom source canvas"
-    bind:this={viewport}
+    tabindex="0"
+    bind:clientWidth={viewportWidth}
+    bind:clientHeight={viewportHeight}
+    onkeydown={(event) => {
+      if (event.key === "+" || event.key === "=") zoom(0.2);
+      else if (event.key === "-") zoom(-0.2);
+      else if (event.key === "ArrowLeft") panX += 24;
+      else if (event.key === "ArrowRight") panX -= 24;
+      else if (event.key === "ArrowUp") panY += 24;
+      else if (event.key === "ArrowDown") panY -= 24;
+      else return;
+      event.preventDefault();
+    }}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
   >
     <div class="transform-layer" style={`transform: ${transformStyle}`}>
-      <img src={imageUrl} alt="" draggable="false" />
+      <img
+        src={imageUrl}
+        alt=""
+        draggable="false"
+        onload={(event) => {
+          if (!(event.currentTarget instanceof HTMLImageElement)) return;
+          imageWidth = event.currentTarget.naturalWidth;
+          imageHeight = event.currentTarget.naturalHeight;
+          resetView();
+        }}
+      />
       {#each pixelOverlays as overlay, index (index)}
         <div
           class="overlay"
@@ -123,7 +146,8 @@
     flex-direction: column;
     gap: 8px;
     min-height: 0;
-    flex: 1;
+    flex: 0 0 300px;
+    height: 300px;
   }
   .viewer-toolbar {
     display: flex;
@@ -163,7 +187,7 @@
   }
   .transform-layer {
     position: relative;
-    transform-origin: center center;
+    transform-origin: 0 0;
     display: inline-block;
   }
   .transform-layer img {

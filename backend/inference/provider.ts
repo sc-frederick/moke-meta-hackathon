@@ -9,6 +9,7 @@ import type {
   ProviderRequestOptions,
   TranscriptContext,
   SimpleStreamOptions,
+  ImageContent,
 } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { Predicate, Redacted, Schema } from "effect";
@@ -85,6 +86,55 @@ function requestBounds(body: string) {
   return { textBytes, imageBytes, images, requestBytes: Buffer.byteLength(body) };
 }
 
+/** Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts. */
+function boundedImageContext(transcript: TranscriptContext): TranscriptContext {
+  const retained = new Set<ImageContent>();
+  let bytes = 0;
+
+  for (const message of transcript.messages.toReversed()) {
+    if (
+      (message.role !== "user" && message.role !== "toolResult") ||
+      Predicate.isString(message.content)
+    )
+      continue;
+
+    for (const part of message.content.toReversed()) {
+      if (part.type !== "image") continue;
+      const size = Buffer.byteLength(part.data, "base64");
+
+      if (size > 1024 * 1024) throw new Error("Individual source image exceeds its bound");
+
+      if (retained.size < 6 && bytes + size <= 2 * 1024 * 1024) {
+        retained.add(part);
+        bytes += size;
+      }
+    }
+  }
+
+  return {
+    ...transcript,
+    messages: transcript.messages.map((message) => {
+      if (
+        (message.role !== "user" && message.role !== "toolResult") ||
+        Predicate.isString(message.content)
+      )
+        return message;
+
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type !== "image" || retained.has(part)
+            ? part
+            : {
+                type: "text" as const,
+                text: "Earlier image omitted from the bounded six-image / 2 MiB request window. Its artifact metadata remains available; request a new detail if required.",
+              },
+        ),
+      };
+    }),
+  };
+}
+
 /** Both SDK entrypoints pass the same durable guard, including complete/completeSimple callers. */
 export function createAdmittedModels(
   configuration: ProviderConfiguration,
@@ -131,7 +181,10 @@ export function createAdmittedModels(
     model: Model<Api>,
     transcript: TranscriptContext,
     options: ProviderRequestOptions | undefined,
-    send: (fetch: FetchFunction) => ReturnType<typeof createAssistantMessageEventStream>,
+    send: (
+      fetch: FetchFunction,
+      context: TranscriptContext,
+    ) => ReturnType<typeof createAssistantMessageEventStream>,
   ) => {
     const output = createAssistantMessageEventStream();
     void (async () => {
@@ -149,12 +202,14 @@ export function createAdmittedModels(
         )
           throw new Error("Provider admission denied");
 
+        const bounded = boundedImageContext(transcript);
+
         const fingerprint = createHash("sha256")
           .update(
             JSON.stringify({
               model: model.id,
               api: model.api,
-              transcript,
+              transcript: bounded,
               output: admission.maxOutputTokens,
             }),
           )
@@ -197,7 +252,7 @@ export function createAdmittedModels(
         );
 
         // Buffer the final normalized response. No tool can consume a response before its receipt commits.
-        const message = parseResponseReceipt(await send(transport).result());
+        const message = parseResponseReceipt(await send(transport, bounded).result());
         const receipt = JSON.stringify(message);
 
         if (
@@ -272,12 +327,12 @@ export function createAdmittedModels(
     },
     getModels: () => [selected],
     stream: (model, context, options) =>
-      guarded(model, context, options, (fetch) =>
-        base.stream<Api>(model, context, requestOptions(options, fetch)),
+      guarded(model, context, options, (fetch, bounded) =>
+        base.stream<Api>(model, bounded, requestOptions(options, fetch)),
       ),
     streamSimple: (model, context, options) =>
-      guarded(model, context, options, (fetch) =>
-        base.streamSimple(model, context, requestOptions(options, fetch)),
+      guarded(model, context, options, (fetch, bounded) =>
+        base.streamSimple(model, bounded, requestOptions(options, fetch)),
       ),
   });
 

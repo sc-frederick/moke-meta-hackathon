@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect";
+import { Context, Effect, Layer, ManagedRuntime, Option, Schema, Stream } from "effect";
 import { RpcClient, type RpcClientError } from "effect/rpc";
 import { RendererRpcClient } from "electron-effect-rpc/renderer";
 import {
@@ -16,6 +16,14 @@ import {
   type SheetId,
 } from "#lib/review/contracts.ts";
 import { ReviewDesktopRpc } from "#lib/review/shell.ts";
+import {
+  ExecutionError,
+  type ExecutionEvent,
+  type RunId,
+  type StartExecution,
+} from "#lib/review/execution.ts";
+
+const ClientError = Schema.Union([ReviewError, ExecutionError]);
 
 class ReviewDesktopApi extends Context.Service<
   ReviewDesktopApi,
@@ -23,8 +31,8 @@ class ReviewDesktopApi extends Context.Service<
 >()("app/ReviewDesktopApi") {}
 
 /** Map RPC failures to stable review errors for the workbench. */
-export function mapClientError(cause: unknown, fallback: string): typeof ReviewError.Type {
-  return Option.match(Schema.decodeUnknownOption(ReviewError)(cause), {
+export function mapClientError(cause: unknown, fallback: string): typeof ClientError.Type {
+  return Option.match(Schema.decodeUnknownOption(ClientError)(cause), {
     onNone: () => new ReviewStorageError({ message: fallback }),
     onSome: (value) => value,
   });
@@ -32,7 +40,7 @@ export function mapClientError(cause: unknown, fallback: string): typeof ReviewE
 
 export type ReviewClientResult<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: typeof ReviewError.Type };
+  | { readonly ok: false; readonly error: typeof ClientError.Type };
 
 /** Acquire a scoped MessagePort client for review workbench operations. */
 export function createReviewClient() {
@@ -62,6 +70,75 @@ export function createReviewClient() {
   };
 
   return {
+    observeExecution: (
+      projectId: typeof ProjectId.Type,
+      afterSequence: number,
+      onEvent: (event: ExecutionEvent) => Promise<void>,
+      signal: AbortSignal,
+    ) =>
+      runtime
+        .runPromise(
+          Effect.gen(function* () {
+            const api = yield* ReviewDesktopApi;
+            yield* Stream.runForEach(api.ObserveExecution({ projectId, afterSequence }), (event) =>
+              Effect.promise(() => onEvent(event)),
+            );
+          }),
+          { signal },
+        )
+        .catch(() => undefined),
+    startExecution: (request: typeof StartExecution.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.StartExecution(request)),
+        "The review could not start.",
+      ),
+    executionStatus: (projectId: typeof ProjectId.Type, runId: typeof RunId.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.ExecutionStatus({ projectId, runId })),
+        "Execution status is unavailable.",
+      ),
+    executionEvents: (projectId: typeof ProjectId.Type, afterSequence: number) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.ExecutionEvents({ projectId, afterSequence }),
+        ),
+        "Execution progress is unavailable.",
+      ),
+    controlExecution: (
+      projectId: typeof ProjectId.Type,
+      runId: typeof RunId.Type,
+      expectedVersion: number,
+      action: "pause" | "resume" | "cancel",
+    ) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.ControlExecution({
+            projectId,
+            runId,
+            expectedVersion,
+            action,
+            commandId: newCommandId(),
+          }),
+        ),
+        "The execution control could not be applied.",
+      ),
+    acknowledgeExecution: (
+      projectId: typeof ProjectId.Type,
+      runId: typeof RunId.Type,
+      expectedVersion: number,
+    ) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.AcknowledgeUncertainExecution({
+            projectId,
+            runId,
+            expectedVersion,
+            commandId: newCommandId(),
+            possibleChargeAcknowledged: true,
+          }),
+        ),
+        "The uncertainty acknowledgement could not be saved.",
+      ),
     snapshot: (
       projectId: typeof ProjectId.Type | null,
       afterSequence: number,

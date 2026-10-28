@@ -3,14 +3,14 @@
 A desktop workbench for engineering drawing review, built for the Meta AI
 Developer Hackathon.
 
-Moke is being built to help engineers inspect drawing-review findings, correct
+Moke helps engineers inspect drawing-review findings, correct
 the evidence behind them, and recheck the affected conclusions when a drawing
-changes. Each finding should lead back to the source sheet, the observations,
+changes. Each finding leads back to the source sheet, the observations,
 and the calculation that supports it.
 
 ## The review workflow
 
-The planned workflow keeps the engineer involved at each step:
+The local workflow keeps the engineer involved at each step:
 
 1. **Review a drawing set.** Keep the original PDFs in a local project and select
    the sheets and engineering check to review.
@@ -24,41 +24,41 @@ The planned workflow keeps the engineer involved at each step:
 5. **Recheck a revision.** Mark affected results as stale, inspect the new
    evidence, and retain the history and unrelated results.
 
-The initial target is one engineering rule applied to a small drawing set:
-a supported issue, a corrected false alarm, and a revision recheck. The rule
-and SAM's contribution will be selected through experiments on representative
-drawings. Engineering applicability, measurements, and conclusions remain
-subject to reviewer verification.
+The first rule, `schedule-count-v1`, compares reviewer-accepted drawing and
+schedule quantities. The original two-sheet fixture demonstrates a supported
+issue, corrected false alarm, unchanged control, and revision recheck. It is a
+coordination check, not a verified code threshold. See [the hero case](docs/fixtures/hero-case.md).
 
 ## Current status
 
-**Early development.** The desktop foundation and an interactive UI study are
-in place. The drawing-review workflow above is not implemented yet.
+The production Nightdesk workbench imports PDFs, renders source regions, accepts
+reviewer facts, calculates count differences, retains corrections, and associates
+revisions. Muse inspects real overview/detail images and proposes observations.
+SAM is available to the Meta route for geometric proposals. Neither model accepts
+facts or declares engineering completeness.
 
-- **Working foundation:** Electron desktop shell, bundled Bun backend, local
-  SQLite with backup and restore, schema-validated Effect RPC, and desktop tests.
-- **UI study:** project-based conversations, a findings menu, and a source panel
-  using sample content. The running app still opens the notes smoke example.
-- **CLI experiments:** original-PDF crops, coordinate mapping, Muse/SAM inspection
-  tools, fixture reconciliation, and saved evidence with correction reports.
-- **Planned:** desktop integration of those tools, engineering checks and revision
-  rechecks, durable review execution, and cloud handoff.
+Pi Durable journals and a separate pre-send ledger retain execution progress.
+Pause/cancel, crash recovery, explicit uncertainty acknowledgement, bounded
+budgets, complete package export/restore, and source hashes protect local evidence.
+Missing evidence remains unresolved. Keys use Electron's protected startup pipe;
+packaged launches use OS-encrypted storage or an explicitly selected session file.
 
-Provider configuration and manual API checks are available. The app itself does
-not call Meta or Baseten yet.
+Normal tests require no provider keys. Live validation is explicit and budgeted:
+`bun --env-file=/path/to/private.env scripts/validate-core.ts --live`.
+See [validation evidence and limits](docs/research/core-validation.md).
 
 ## Review architecture
 
 The selected architecture keeps projects and review execution local by default,
-with an explicit **Continue in cloud** action planned for long reviews:
+with Modal checkpoint handoff deferred as an optional follow-up:
 
-| Part                       | Responsibility                                                                                  |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| Electron and SvelteKit     | Desktop workbench, project navigation, findings, and source inspection                          |
-| Bun and Effect             | Application services, shared contracts, SQLite, evidence, calculations, and dependency tracking |
-| Pi Durable, planned        | Persist the agent's execution state behind an Effect application service                        |
-| Meta Muse and SAM, planned | Choose useful inspection actions, interpret drawing evidence, and propose geometry              |
-| Modal Sandbox, planned     | Continue the same versioned review engine from a checkpoint after an explicit handoff           |
+| Part                   | Responsibility                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| Electron and SvelteKit | Desktop workbench, project navigation, findings, and source inspection                          |
+| Bun and Effect         | Application services, shared contracts, SQLite, evidence, calculations, and dependency tracking |
+| Pi Durable             | Persist the agent's execution state behind an Effect application service                        |
+| Meta Muse and SAM      | Choose useful inspection actions, interpret drawing evidence, and propose geometry              |
+| Modal Sandbox, planned | Continue the same versioned review engine from a checkpoint after an explicit handoff           |
 
 Local execution still uses hosted inference: selected drawing evidence is sent
 to Meta or Baseten. The planned cloud handoff also transfers the source material

@@ -117,10 +117,10 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
     const sql = yield* SqlClient.SqlClient;
 
     const counts =
-      yield* sql`SELECT count(*) AS n FROM review_execution_attempts WHERE run_id=${run.run_id} AND status='uncertain'`;
+      yield* sql`SELECT ((SELECT count(*) FROM review_execution_attempts WHERE run_id=${run.run_id} AND status='uncertain') + (SELECT count(*) FROM review_sam_attempts WHERE run_id=${run.run_id} AND status='uncertain')) AS n, EXISTS(SELECT 1 FROM review_execution_acknowledgements WHERE run_id=${run.run_id}) AS acknowledged`;
 
     const parsed = yield* Schema.decodeUnknownEffect(
-      Schema.Array(Schema.Struct({ n: Schema.Int })),
+      Schema.Array(Schema.Struct({ n: Schema.Int, acknowledged: Schema.Int })),
     )(counts);
 
     return new ExecutionStatus({
@@ -136,9 +136,49 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
       reservedInputTokens: run.reserved_input_tokens,
       reservedOutputTokens: run.reserved_output_tokens,
       unresolvedAttempts: parsed[0]?.n ?? 0,
+      uncertaintyAcknowledged: parsed[0]?.acknowledged === 1,
       costUsd: null,
       imageInputTokens: null,
     });
+  });
+
+  const receipt = Effect.fn("ExecutionStore.receipt")(function* (
+    commandId: string,
+    fingerprint: string,
+  ) {
+    const sql = yield* SqlClient.SqlClient;
+
+    const rows = yield* Schema.decodeUnknownEffect(
+      Schema.Array(Schema.Struct({ fingerprint: Schema.String, response_json: Schema.String })),
+    )(
+      yield* sql`SELECT fingerprint,response_json FROM review_execution_commands WHERE command_id=${commandId}`,
+    );
+
+    const previous = rows[0];
+
+    if (previous === undefined) return null;
+
+    if (previous.fingerprint !== fingerprint)
+      return yield* new ExecutionError({
+        reason: "conflict",
+        message: "This execution command was already used with different inputs.",
+      });
+
+    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionStatus))(
+      previous.response_json,
+    );
+  });
+
+  const saveReceipt = Effect.fn("ExecutionStore.saveReceipt")(function* (
+    commandId: string,
+    fingerprint: string,
+    run: RunRecord,
+  ) {
+    const sql = yield* SqlClient.SqlClient;
+    const response = yield* status(run);
+    yield* sql`INSERT INTO review_execution_commands(command_id,project_id,run_id,fingerprint,response_json) VALUES (${commandId},${run.project_id},${run.run_id},${fingerprint},${JSON.stringify(response)})`;
+
+    return response;
   });
 
   const events = Effect.fn("ExecutionStore.events")(function* (
@@ -152,5 +192,5 @@ export function executionPersistence(filename: string, queries: Semaphore.Semaph
     );
   });
 
-  return { query, load, event, transition, status, events };
+  return { query, load, event, transition, status, events, receipt, saveReceipt };
 }

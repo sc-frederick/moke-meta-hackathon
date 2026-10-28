@@ -6,13 +6,20 @@ import type { DocumentsConfig } from "./config.ts";
 import { validatePdfSource } from "./pdf-validation.ts";
 import { validateRenderRequest } from "./render-bounds.ts";
 import { ImportedPdf, RenderedPdf } from "./types.ts";
-import { openPdfWorker, type PdfWorkerSession, workerInspect, workerRender } from "./worker-client.ts";
+import {
+  openPdfWorker,
+  type PdfWorkerSession,
+  workerInspect,
+  workerRender,
+} from "./worker-client.ts";
 
 /** PDF import, bounded rendering, and artifact chunk reads for review evidence. */
 export class Documents extends Context.Service<
   Documents,
   {
-    readonly importPdf: (source: string) => Effect.Effect<ImportedPdf, DocumentError | ReviewStorageError>;
+    readonly importPdf: (
+      source: string,
+    ) => Effect.Effect<ImportedPdf, DocumentError | ReviewStorageError>;
     readonly render: (
       originalSha256: string,
       sheet: Sheet,
@@ -35,9 +42,19 @@ export class Documents extends Context.Service<
         const pdfJobs = yield* Semaphore.make(1);
 
         const withPdfJob = <A, E>(operation: (worker: PdfWorkerSession) => Effect.Effect<A, E>) =>
-          Effect.scoped(openPdfWorker(config).pipe(Effect.flatMap(operation), Effect.timeout("20 seconds"))).pipe(
-            Effect.mapError((cause) => cause instanceof DocumentError || cause instanceof ReviewStorageError ? cause : new DocumentError({ reason: "limit",message: "PDF work exceeded its processing limit." })),
-            Semaphore.withPermit(pdfJobs), Effect.interruptible,
+          Effect.scoped(
+            openPdfWorker(config).pipe(Effect.flatMap(operation), Effect.timeout("20 seconds")),
+          ).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof DocumentError || cause instanceof ReviewStorageError
+                ? cause
+                : new DocumentError({
+                    reason: "limit",
+                    message: "PDF work exceeded its processing limit.",
+                  }),
+            ),
+            Semaphore.withPermit(pdfJobs),
+            Effect.interruptible,
           );
 
         return Documents.of({
@@ -46,7 +63,13 @@ export class Documents extends Context.Service<
               Effect.gen(function* () {
                 yield* validatePdfSource(source);
                 const stored = yield* storeFile(config.dataDirectory, source, "application/pdf");
-                const pdfPath = artifactPath(config.dataDirectory, stored.sha256, "application/pdf");
+
+                const pdfPath = artifactPath(
+                  config.dataDirectory,
+                  stored.sha256,
+                  "application/pdf",
+                );
+
                 const inspected = yield* workerInspect(worker, pdfPath);
 
                 return new ImportedPdf({
@@ -61,17 +84,32 @@ export class Documents extends Context.Service<
             withPdfJob((worker) =>
               Effect.gen(function* () {
                 if (!/^[a-f0-9]{64}$/.test(originalSha256)) {
-                  return yield* new DocumentError({ reason: "invalid", message: "The original hash is not valid." });
+                  return yield* new DocumentError({
+                    reason: "invalid",
+                    message: "The original hash is not valid.",
+                  });
                 }
 
-                const pdfPath = artifactPath(config.dataDirectory, originalSha256, "application/pdf");
+                const pdfPath = artifactPath(
+                  config.dataDirectory,
+                  originalSha256,
+                  "application/pdf",
+                );
+
                 yield* Effect.try({
                   try: () => Bun.file(pdfPath).size,
-                  catch: () => new DocumentError({ reason: "unavailable", message: "The original PDF is missing." }),
+                  catch: () =>
+                    new DocumentError({
+                      reason: "unavailable",
+                      message: "The original PDF is missing.",
+                    }),
                 });
 
                 if (sheet.pageIndex < 0 || sheet.pageIndex > 199) {
-                  return yield* new DocumentError({ reason: "invalid", message: "The sheet page index is invalid." });
+                  return yield* new DocumentError({
+                    reason: "invalid",
+                    message: "The sheet page index is invalid.",
+                  });
                 }
 
                 yield* validateRenderRequest(sheet, region, dpi);
@@ -101,7 +139,8 @@ export class Documents extends Context.Service<
               }),
             ),
 
-          read: (sha256, mediaType, offset, limit) => readArtifactChunk(config.dataDirectory, sha256, mediaType, offset, limit),
+          read: (sha256, mediaType, offset, limit) =>
+            readArtifactChunk(config.dataDirectory, sha256, mediaType, offset, limit),
         });
       }),
     );
@@ -109,11 +148,7 @@ export class Documents extends Context.Service<
 }
 
 /** Round-trip a PDF point through a render's affine maps within one pixel tolerance. */
-export function roundTripPdfPoint(
-  rendered: RenderedPdf,
-  pdfX: number,
-  pdfY: number,
-) {
+export function roundTripPdfPoint(rendered: RenderedPdf, pdfX: number, pdfY: number) {
   const pixel = transformPoint(rendered.pdfToPixels, pdfX, pdfY);
   const restored = transformPoint(rendered.pixelsToPdf, pixel.x, pixel.y);
   const delta = Math.hypot(restored.x - pdfX, restored.y - pdfY);

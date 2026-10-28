@@ -131,6 +131,21 @@ export class CountFact extends Schema.Class<CountFact>("CountFact")({
   coverageConfirmed: Schema.Boolean,
   evidence: Evidence,
   actor: Schema.Literals(["reviewer", "muse", "recorded"]),
+  origin: Schema.optionalKey(
+    Schema.Struct({
+      runId: Schema.String.check(Schema.isUUID()),
+      journalId: Schema.String.check(Schema.isUUID()),
+      commandId: CommandId,
+      providerTaskId: Schema.Int,
+      responseId: Schema.NullOr(Schema.String),
+      route: Schema.Literals(["live", "recorded"]),
+      provider: Schema.Literals(["meta", "baseten"]),
+      model: Schema.String,
+      promptVersion: Schema.Literal("selected-finding-review-v1"),
+      sourceVersion: Schema.Int,
+      factVersion: Schema.Int,
+    }),
+  ),
   rationale: Reason,
   supersedes: Schema.NullOr(FactId),
   createdAt: Schema.String,
@@ -343,7 +358,11 @@ export class ReviewRpc extends RpcGroup.make(
     success: ReviewSnapshot,
     error: ReviewError,
   }),
-  Rpc.make("ReviewCommand", { payload: { command: ReviewCommand }, success: CommandReceipt, error: ReviewError }),
+  Rpc.make("ReviewCommand", {
+    payload: { command: ReviewCommand },
+    success: CommandReceipt,
+    error: ReviewError,
+  }),
   Rpc.make("RenderSource", { payload: RenderSource, success: Artifact, error: ReviewError }),
   Rpc.make("ReadArtifactChunk", {
     payload: {

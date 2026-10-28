@@ -5,11 +5,11 @@ import { appendFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ReviewDesktopRpc, ReviewShellRpc } from "#lib/review/shell.ts";
-import { ReviewStorageError } from "#lib/review/contracts.ts";
+import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
+import { ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
-import { ReviewProxy } from "./review-proxy.ts";
-import { readInferenceConfiguration } from "./credentials.ts";
+import { ReviewProxy, ExecutionProxy } from "./review-proxy.ts";
+import { readInferenceConfiguration, storeInferenceConfiguration } from "./credentials.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -57,10 +57,22 @@ if (!app.requestSingleInstanceLock()) {
       const logging = Logger.layer([fileLogger, Logger.consoleJson]);
 
       const executable = process.platform === "win32" ? "app-backend.exe" : "app-backend";
-      const backendDirectory = app.isPackaged ? join(process.resourcesPath,"backend") : join(root,"dist/backend");
-      const assetDirectory = join(backendDirectory,"pdf-assets");
-      const layout = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ nativeFile: Schema.String.check(Schema.isPattern(/^skia\.[a-z0-9-]+\.node$/)) })))(await readFile(join(assetDirectory,"layout.json"),"utf8"));
-      const inference = await readInferenceConfiguration(dataDirectory,app.isPackaged);
+
+      const backendDirectory = app.isPackaged
+        ? join(process.resourcesPath, "backend")
+        : join(root, "dist/backend");
+
+      const assetDirectory = join(backendDirectory, "pdf-assets");
+
+      const layout = Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({
+            nativeFile: Schema.String.check(Schema.isPattern(/^skia\.[a-z0-9-]+\.node$/)),
+          }),
+        ),
+      )(await readFile(join(assetDirectory, "layout.json"), "utf8"));
+
+      const inference = await readInferenceConfiguration(dataDirectory, app.isPackaged);
 
       const launchOptions: BackendLaunch = {
         command: app.isPackaged
@@ -69,9 +81,11 @@ if (!app.requestSingleInstanceLock()) {
         dataDirectory,
         migrationDirectory,
         processing: {
-          workerCommand: [join(backendDirectory,process.platform === "win32" ? "pdf-worker.exe" : "pdf-worker")],
-          assetsDirectory: join(assetDirectory,"pdfjs"),
-          nativeLibraryPath: join(assetDirectory,"native",layout.nativeFile),
+          workerCommand: [
+            join(backendDirectory, process.platform === "win32" ? "pdf-worker.exe" : "pdf-worker"),
+          ],
+          assetsDirectory: join(assetDirectory, "pdfjs"),
+          nativeLibraryPath: join(assetDirectory, "native", layout.nativeFile),
         },
         onUnexpectedExit: () => {
           dialog.showErrorBox(
@@ -81,29 +95,134 @@ if (!app.requestSingleInstanceLock()) {
           app.quit();
         },
       };
-      const backend = BackendApi.layer(inference === undefined ? launchOptions : { ...launchOptions,inference });
 
-      const shellHandlers = ReviewShellRpc.toLayer(Effect.gen(function* () {
-        const { api } = yield* BackendApi;
+      const backend = BackendApi.layer(
+        inference === undefined ? launchOptions : { ...launchOptions, inference },
+      );
 
-        return {
-          ChooseReviewPdf: (request) => Effect.tryPromise({
-            try: () => dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Drawing PDF", extensions: ["pdf"] }] }),
-            catch: () => new ReviewStorageError({ message: "The drawing chooser could not open." }),
-          }).pipe(Effect.flatMap((result) => {
-            const source = result.filePaths[0];
+      const shellHandlers = ReviewShellRpc.toLayer(
+        Effect.gen(function* () {
+          const { api } = yield* BackendApi;
 
-            return result.canceled || source === undefined ? Effect.succeed(null) : api.ImportReviewPdf({ ...request, source, name: basename(source) }).pipe(Effect.mapError(() => new ReviewStorageError({ message: "The PDF could not be imported. Check the source and reload the project." })));
-          })),
-          ChooseReviewExport: () => Effect.fail(new ReviewStorageError({ message: "Complete review package export is being configured." })),
-          ChooseReviewRestore: () => Effect.fail(new ReviewStorageError({ message: "Complete review package restore is being configured." })),
-        };
-      }));
+          return {
+            ChooseReviewPdf: (request) =>
+              Effect.tryPromise({
+                try: () =>
+                  dialog.showOpenDialog({
+                    properties: ["openFile"],
+                    filters: [{ name: "Drawing PDF", extensions: ["pdf"] }],
+                  }),
+                catch: () =>
+                  new ReviewStorageError({ message: "The drawing chooser could not open." }),
+              }).pipe(
+                Effect.flatMap((result) => {
+                  const source = result.filePaths[0];
+
+                  return result.canceled || source === undefined
+                    ? Effect.succeed(null)
+                    : api.ImportReviewPdf({ ...request, source, name: basename(source) }).pipe(
+                        Effect.mapError(
+                          () =>
+                            new ReviewStorageError({
+                              message:
+                                "The PDF could not be imported. Check the source and reload the project.",
+                            }),
+                        ),
+                      );
+                }),
+              ),
+            ChooseReviewExport: () =>
+              Effect.tryPromise({
+                try: () =>
+                  dialog.showOpenDialog({
+                    title: "Choose the parent folder for a complete review package",
+                    properties: ["openDirectory", "createDirectory"],
+                  }),
+                catch: () =>
+                  new ReviewStorageError({ message: "The package folder chooser could not open." }),
+              }).pipe(
+                Effect.flatMap((result) => {
+                  const parent = result.filePaths[0];
+
+                  if (result.canceled || parent === undefined) return Effect.succeed(false);
+
+                  const destination = join(
+                    parent,
+                    `Moke-review-${new Date().toISOString().replaceAll(":", "-")}`,
+                  );
+
+                  return api.ExportReviewPackage({ destination }).pipe(
+                    Effect.as(true),
+                    Effect.mapError(
+                      () =>
+                        new ReviewStorageError({
+                          message:
+                            "The complete review package could not be exported. Check available storage and unresolved work.",
+                        }),
+                    ),
+                  );
+                }),
+              ),
+            ChooseReviewRestore: () =>
+              Effect.tryPromise({
+                try: async () => {
+                  const result = await dialog.showOpenDialog({
+                    title: "Choose a complete Moke review package",
+                    properties: ["openDirectory"],
+                  });
+
+                  const source = result.filePaths[0];
+
+                  if (result.canceled || source === undefined) return undefined;
+
+                  const confirmation = await dialog.showMessageBox({
+                    type: "warning",
+                    buttons: ["Cancel", "Restore complete package"],
+                    defaultId: 0,
+                    cancelId: 0,
+                    message: "Replace local projects with this package?",
+                    detail:
+                      "A complete pre-restore package is retained. Restored reviews open as non-executing history. The app restarts after restore.",
+                  });
+
+                  return confirmation.response === 1 ? source : undefined;
+                },
+                catch: () =>
+                  new ReviewStorageError({ message: "The restore chooser could not open." }),
+              }).pipe(
+                Effect.flatMap((source) =>
+                  source === undefined
+                    ? Effect.succeed(false)
+                    : api.RestoreReviewPackage({ source }).pipe(
+                        Effect.tap(() =>
+                          Effect.sync(() => {
+                            app.relaunch();
+                            app.quit();
+                          }),
+                        ),
+                        Effect.as(true),
+                        Effect.mapError(
+                          () =>
+                            new ReviewStorageError({
+                              message:
+                                "The review package could not be restored. Existing data was preserved; reopen the app if recovery is required.",
+                            }),
+                        ),
+                      ),
+                ),
+              ),
+          };
+        }),
+      );
 
       const server = MainRpcServer.layer(ReviewDesktopRpc, {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
-      }).pipe(Layer.provide(Layer.merge(ReviewProxy,shellHandlers)), Layer.provideMerge(backend), Layer.provide(logging));
+      }).pipe(
+        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, shellHandlers)),
+        Layer.provideMerge(backend),
+        Layer.provide(logging),
+      );
 
       const runtime = ManagedRuntime.make(server);
 
@@ -174,7 +293,64 @@ if (!app.requestSingleInstanceLock()) {
             label: "File",
             submenu: [
               {
-                label: "Export database…",
+                label: "Export complete review package…",
+                click: () => {
+                  void runtime
+                    .runPromise(
+                      Effect.flatMap(BackendApi, ({ api }) =>
+                        Effect.tryPromise({
+                          try: () =>
+                            dialog.showOpenDialog({
+                              title: "Choose export parent folder",
+                              properties: ["openDirectory", "createDirectory"],
+                            }),
+                          catch: () =>
+                            new ReviewStorageError({ message: "The folder chooser failed." }),
+                        }).pipe(
+                          Effect.flatMap((selection) =>
+                            selection.canceled || selection.filePaths[0] === undefined
+                              ? Effect.void
+                              : api
+                                  .ExportReviewPackage({
+                                    destination: join(
+                                      selection.filePaths[0],
+                                      `Moke-review-${new Date().toISOString().replaceAll(":", "-")}`,
+                                    ),
+                                  })
+                                  .pipe(Effect.asVoid),
+                          ),
+                        ),
+                      ),
+                    )
+                    .catch(showFailure);
+                },
+              },
+              {
+                label: "Import provider credential configuration…",
+                click: async () => {
+                  const result = await dialog.showOpenDialog({
+                    properties: ["openFile"],
+                    filters: [{ name: "Provider credential configuration", extensions: ["json"] }],
+                  });
+
+                  const source = result.filePaths[0];
+
+                  if (result.canceled || source === undefined) return;
+
+                  try {
+                    await storeInferenceConfiguration(dataDirectory, source);
+                    app.relaunch();
+                    app.quit();
+                  } catch {
+                    dialog.showErrorBox(
+                      "Credential unavailable",
+                      "The configuration could not be saved with OS encryption. Select an explicit session-only configuration when secure storage is unavailable.",
+                    );
+                  }
+                },
+              },
+              {
+                label: "Export database (partial)…",
                 click: async () => {
                   const result = await dialog.showSaveDialog({
                     defaultPath: "app-backup.sqlite",

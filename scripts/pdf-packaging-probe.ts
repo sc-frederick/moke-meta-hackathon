@@ -4,14 +4,15 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { canvasNativeFileName } from "./prepare-pdf-assets.ts";
+import { Schema } from "effect";
+import { buildMinimalPdf } from "../tests/fixtures/generated/minimal-pdf.ts";
 
 const root = resolve(import.meta.dir, "..");
 const assetsRoot = join(root, "dist/backend/pdf-assets");
 
-const layout = JSON.parse(readFileSync(join(assetsRoot, "layout.json"), "utf8")) as {
-  nativeFile: string;
-};
+const layout = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ nativeFile: Schema.String })),
+)(readFileSync(join(assetsRoot, "layout.json"), "utf8"));
 
 const layoutDir = mkdtempSync(join(tmpdir(), "moke-pdf-packaged-"));
 
@@ -24,7 +25,10 @@ cpSync(join(assetsRoot, "pdfjs"), join(layoutDir, "pdfjs"), { recursive: true })
 cpSync(join(assetsRoot, "native", layout.nativeFile), join(layoutDir, "native", layout.nativeFile));
 
 const probeBinary = join(root, "dist/backend/pdf-packaging-probe");
-const pdfFixture = process.argv[2] ?? join(root, "tests/fixtures/generated/original.pdf");
+const pdfFixture = process.argv[2] ?? join(layoutDir, "original.pdf");
+
+if (process.argv[2] === undefined) writeFileSync(pdfFixture, buildMinimalPdf());
+
 const outDir = join(layoutDir, "out");
 
 mkdirSync(outDir, { recursive: true });
@@ -62,7 +66,10 @@ const result = {
   arch: process.arch,
 };
 
-writeFileSync(join(root, "docs/research/pdf-packaging-probe-result.json"), JSON.stringify(result, null, 2));
+writeFileSync(
+  join(root, "docs/research/pdf-packaging-probe-result.json"),
+  JSON.stringify(result, null, 2),
+);
 
 console.log(JSON.stringify(result, null, 2));
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createCanvas } from "@napi-rs/canvas";
-import { Effect, Layer, ManagedRuntime, Redacted, Schema, Semaphore } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted, Schema, Semaphore, Stream } from "effect";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,7 +15,7 @@ import {
   type ExecutionPort,
   type ExecutionFence,
 } from "../backend/review/execution-port.ts";
-import { Artifact, CommandReceipt } from "../src/lib/review/contracts.ts";
+import { Artifact, CommandId, CommandReceipt } from "../src/lib/review/contracts.ts";
 import {
   ExecutionBudget,
   ExecutionError,
@@ -101,6 +101,12 @@ async function directory() {
   const db = new Database(join(path, "app.sqlite"));
   db.exec(
     await readFile(new URL("../migrations/0003_review_execution.sql", import.meta.url), "utf8"),
+  );
+  db.exec(
+    await readFile(new URL("../migrations/0004_sam_observations.sql", import.meta.url), "utf8"),
+  );
+  db.exec(
+    await readFile(new URL("../migrations/0005_execution_commands.sql", import.meta.url), "utf8"),
   );
   db.exec(
     "CREATE TABLE fixture_receipts (command_id TEXT PRIMARY KEY, receipt TEXT NOT NULL); CREATE TABLE fixture_proposals (command_id TEXT PRIMARY KEY, value INTEGER NOT NULL)",
@@ -249,6 +255,7 @@ function open(
       runtime.runPromise(
         Effect.flatMap(ReviewExecution, (execution) =>
           execution.start({
+            commandId: Schema.decodeUnknownSync(CommandId)(crypto.randomUUID()),
             projectId: evidence.finding.projectId,
             findingId: evidence.finding.id,
             budget: limits,
@@ -420,7 +427,12 @@ test("timeout remains uncertain across reopen, resume, and a fresh generation", 
 
     const startError = await second.runtime.runPromise(
       Effect.flatMap(ReviewExecution, (execution) =>
-        execution.start({ projectId: recovered.projectId, findingId: recovered.findingId, budget }),
+        execution.start({
+          commandId: Schema.decodeUnknownSync(CommandId)(crypto.randomUUID()),
+          projectId: recovered.projectId,
+          findingId: recovered.findingId,
+          budget,
+        }),
       ).pipe(Effect.flip),
     );
 
@@ -559,6 +571,7 @@ import { acquireDataDirectoryOwnership } from ${JSON.stringify(resolve("backend/
 import { ReviewExecution } from ${JSON.stringify(resolve("backend/review/execution.ts"))};
 import { ExecutionEvidence } from ${JSON.stringify(resolve("backend/review/execution-port.ts"))};
 import { ExecutionBudget,ExecutionError,RunId } from ${JSON.stringify(resolve("src/lib/review/execution.ts"))};
+import { CommandId } from ${JSON.stringify(resolve("src/lib/review/contracts.ts"))};
 const evidence=Schema.decodeUnknownSync(ExecutionEvidence)(${JSON.stringify(evidence)});
 const dataDirectory=process.argv[4]??${JSON.stringify(path)};
 const sent=Promise.withResolvers();
@@ -570,7 +583,7 @@ const runtime=ManagedRuntime.make(Layer.unwrap(Effect.gen(function*(){
 })));
 const execution=await runtime.runPromise(ReviewExecution);
 if(process.argv[2]==="start"||process.argv[2]==="bounded"){
- const run=await runtime.runPromise(execution.start({projectId:evidence.finding.projectId,findingId:evidence.finding.id,budget:new ExecutionBudget(${JSON.stringify(budget)})}));
+ const run=await runtime.runPromise(execution.start({ commandId: Schema.decodeUnknownSync(CommandId)(crypto.randomUUID()),projectId:evidence.finding.projectId,findingId:evidence.finding.id,budget:new ExecutionBudget(${JSON.stringify(budget)})}));
  if(process.argv[2]==="bounded"){
   await sent.promise;
   const started=performance.now();
@@ -585,7 +598,7 @@ if(process.argv[2]==="start"||process.argv[2]==="bounded"){
  const runId=Schema.decodeUnknownSync(RunId)(process.argv[3]);
  const status=await runtime.runPromise(execution.status(evidence.finding.projectId,runId));
  const resume=await runtime.runPromise(Effect.result(execution.control(status.projectId,status.runId,status.version,"resume")));
- const fresh=await runtime.runPromise(Effect.result(execution.start({projectId:status.projectId,findingId:status.findingId,budget:new ExecutionBudget(${JSON.stringify(budget)})})));
+ const fresh=await runtime.runPromise(Effect.result(execution.start({ commandId: Schema.decodeUnknownSync(CommandId)(crypto.randomUUID()),projectId:status.projectId,findingId:status.findingId,budget:new ExecutionBudget(${JSON.stringify(budget)})})));
  console.log(JSON.stringify({status,resume,fresh}));
  await runtime.dispose();
 }`;
@@ -1015,4 +1028,215 @@ test("existing journal identity mismatch is explicit and cannot dispatch", async
     await fixture.runtime.dispose();
     await rm(path, { recursive: true, force: true });
   }
+});
+
+test("lifecycle commands replay before freshness checks and reject changed input", async () => {
+  const path = await directory();
+  const sent = Promise.withResolvers<void>();
+  const answer = Promise.withResolvers<Response>();
+  let sends = 0;
+
+  const fixture = open(path, async () => {
+    sends++;
+    sent.resolve();
+
+    return answer.promise;
+  });
+
+  const commandId = Schema.decodeUnknownSync(CommandId)(randomUUID());
+
+  const request = {
+    commandId,
+    projectId: evidence.finding.projectId,
+    findingId: evidence.finding.id,
+    budget,
+  };
+
+  try {
+    const execution = await fixture.runtime.runPromise(ReviewExecution);
+    const first = await fixture.runtime.runPromise(execution.start(request));
+    await sent.promise;
+    const pauseId = Schema.decodeUnknownSync(CommandId)(randomUUID());
+
+    const paused = await fixture.runtime.runPromise(
+      execution.control(first.projectId, first.runId, first.version, "pause", pauseId),
+    );
+
+    expect(await fixture.runtime.runPromise(execution.start(request))).toEqual(first);
+    expect(
+      await fixture.runtime.runPromise(
+        execution.control(first.projectId, first.runId, first.version, "pause", pauseId),
+      ),
+    ).toEqual(paused);
+
+    const changed = await fixture.runtime.runPromise(
+      execution
+        .start({ ...request, budget: new ExecutionBudget({ ...budget, maxCalls: 1 }) })
+        .pipe(Effect.flip),
+    );
+
+    expect(changed.reason).toBe("conflict");
+    expect(sends).toBe(1);
+  } finally {
+    answer.resolve(response());
+    await fixture.runtime.dispose();
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
+test("explicit uncertainty acknowledgement preserves the old ledger and permits only a new run", async () => {
+  const path = await directory();
+  let sends = 0;
+
+  const fixture = open(
+    path,
+    async (_input, init) => {
+      sends++;
+
+      if (sends > 1) return response();
+
+      return new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener("abort", () => reject(new Error("fixture abort")), {
+          once: true,
+        }),
+      );
+    },
+    { timeoutMs: 20 },
+  );
+
+  try {
+    const original = await fixture.start();
+    const uncertain = await until(() => fixture.status(original), "uncertain");
+    const execution = await fixture.runtime.runPromise(ReviewExecution);
+    const commandId = Schema.decodeUnknownSync(CommandId)(randomUUID());
+
+    const acknowledged = await fixture.runtime.runPromise(
+      execution.acknowledge(uncertain.projectId, uncertain.runId, uncertain.version, commandId),
+    );
+
+    expect(acknowledged.state).toBe("cancelled");
+    expect(acknowledged.unresolvedAttempts).toBe(1);
+    expect(
+      await fixture.runtime.runPromise(
+        execution.acknowledge(uncertain.projectId, uncertain.runId, uncertain.version, commandId),
+      ),
+    ).toEqual(acknowledged);
+    expect(sends).toBe(1);
+    const fresh = await fixture.start();
+    expect(fresh.runId).not.toBe(original.runId);
+    await until(() => fixture.status(fresh), "completed");
+    expect(sends).toBe(2);
+    expect((await fixture.status(original)).unresolvedAttempts).toBe(1);
+  } finally {
+    await fixture.runtime.dispose();
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
+test("progress reconnect drains persisted pages without needing a new operation", async () => {
+  const path = await directory();
+  const fixture = open(path, async () => response());
+
+  try {
+    const run = await fixture.start();
+    await until(() => fixture.status(run), "completed");
+    const db = new Database(join(path, "app.sqlite"));
+    db.transaction(() => {
+      for (let index = 0; index < 205; index++)
+        db.query(
+          "INSERT INTO review_execution_events(run_id,project_id,state,version) VALUES (?,?,?,?)",
+        ).run(run.runId, run.projectId, "completed", index);
+    })();
+
+    const rows = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ sequence: Schema.Int })))(
+      db.query("SELECT sequence FROM review_execution_events ORDER BY sequence").all(),
+    );
+
+    db.close();
+
+    const events = await fixture.runtime.runPromise(
+      Effect.flatMap(ReviewExecution, (execution) =>
+        execution
+          .observe(run.projectId, 0)
+          .pipe(Stream.take(rows.length), Stream.runCollect, Effect.timeout("3 seconds")),
+      ),
+    );
+
+    expect(events.map((event) => event.sequence)).toEqual(rows.map((row) => row.sequence));
+  } finally {
+    await fixture.runtime.dispose();
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
+test("recent image window keeps six actual images and metadata without growing a request", async () => {
+  const images = Array.from({ length: 8 }, (_, index) => {
+    const canvas = createCanvas(32, 32);
+    const context = canvas.getContext("2d");
+    context.fillText(String(index), 5, 20);
+
+    return {
+      type: "image" as const,
+      mimeType: "image/png",
+      data: canvas.toBuffer("image/png").toString("base64"),
+    };
+  });
+
+  let sends = 0;
+  let receipt: string | null = null;
+  const fingerprints: string[] = [];
+
+  const admitted = createAdmittedModels(
+    {
+      apiKey: Redacted.make("fixture"),
+      route: "recorded",
+      transport: async (_input, init) => {
+        sends++;
+        const body = Schema.decodeUnknownSync(Schema.String)(init?.body);
+        expect(body.split("data:image/png;base64,").length - 1).toBe(6);
+        expect(body).toContain("Earlier image omitted");
+        expect(body).not.toContain(images[0]?.data ?? "invalid");
+        expect(body).toContain(images[7]?.data ?? "invalid");
+
+        return response();
+      },
+    },
+    {
+      maxInputTokens: 64000,
+      maxOutputTokens: 256,
+      begin: async (_phase, fingerprint) => {
+        fingerprints.push(fingerprint);
+
+        return receipt;
+      },
+      send: async () => undefined,
+      complete: async (_phase, saved) => {
+        receipt = saved;
+      },
+      end: async () => undefined,
+    },
+  );
+
+  const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+  if (model === undefined) throw new Error("Pinned model missing");
+  const context = { messages: [{ role: "user" as const, content: images, timestamp: 0 }] };
+
+  const phase = {
+    name: "pi.durable.phase",
+    attributes: { "task.id": 42, "task.name": "pi.generation", phase: "request", attempt: 1 },
+  };
+
+  const first = await admitted.telemetry.startSpan(phase, (telemetry) =>
+    admitted.models.completeSimple(model, context, { telemetry }),
+  );
+
+  const replay = await admitted.telemetry.startSpan(phase, (telemetry) =>
+    admitted.models.completeSimple(model, context, { telemetry }),
+  );
+
+  expect(first.stopReason).toBe("stop");
+  expect(replay.content).toEqual(first.content);
+  expect(fingerprints[1]).toBe(fingerprints[0]);
+  expect(sends).toBe(1);
 });

@@ -9,8 +9,9 @@
     Sheet,
   } from "#lib/review/contracts.ts";
   import { Schema } from "effect";
-  import { ReviewCommand, OperationId } from "#lib/review/contracts.ts";
+  import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
+  import ExecutionControls from "./ExecutionControls.svelte";
   import FindingInspector from "./FindingInspector.svelte";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
@@ -35,7 +36,7 @@
   let snapshot = $state.raw<ReviewSnapshot | null>(null);
   let eventCursor = $state(0);
 
-  let selectedProjectId = $state<string | null>(null);
+  let selectedProjectId = $state<Project["id"] | null>(null);
   let selectedConversationId = $state<string | null>(null);
   let selectedFindingId = $state<string | null>(null);
   let sourceTab = $state<"evidence" | "sheets" | "revision">("evidence");
@@ -48,13 +49,35 @@
   let createFindingOpen = $state(false);
   let newProjectOpen = $state(false);
   let sourceSide = $state<"drawn" | "scheduled">("drawn");
-  let revisionChoices = $state<Array<{ oldSheetId: string; newSheetId: string; confirmed: boolean; content: "changed" | "unchanged" }>>([]);
-  function stageRevision(oldSheetId: string, update: { newSheetId?: string; confirmed?: boolean; content?: "changed" | "unchanged" }) {
+
+  let revisionChoices = $state<
+    Array<{
+      oldSheetId: string;
+      newSheetId: string;
+      confirmed: boolean;
+      content: "changed" | "unchanged";
+    }>
+  >([]);
+
+  function stageRevision(
+    oldSheetId: string,
+    update: { newSheetId?: string; confirmed?: boolean; content?: "changed" | "unchanged" },
+  ) {
     const previous = revisionChoices.find((pair) => pair.oldSheetId === oldSheetId);
-    revisionChoices = [...revisionChoices.filter((pair) => pair.oldSheetId !== oldSheetId), { oldSheetId, newSheetId: previous?.newSheetId ?? "", confirmed: previous?.confirmed ?? false, content: previous?.content ?? "changed", ...update }];
+    revisionChoices = [
+      ...revisionChoices.filter((pair) => pair.oldSheetId !== oldSheetId),
+      {
+        oldSheetId,
+        newSheetId: previous?.newSheetId ?? "",
+        confirmed: previous?.confirmed ?? false,
+        content: previous?.content ?? "changed",
+        ...update,
+      },
+    ];
   }
+
   let findingTitle = $state("Schedule coordination");
-  let findingObjectClass = $state("Electrical panel");
+  let findingObjectClass = $state("Selected fixture type");
   let findingDrawnSheet = $state("");
   let findingScheduledSheet = $state("");
   let findingApplicability = $state(false);
@@ -115,7 +138,22 @@
       return;
     }
 
-    snapshot = result.value;
+    const sameProject = snapshot?.project?.id === result.value.project?.id;
+
+    const events = sameProject
+      ? [...(snapshot?.events ?? []), ...result.value.events]
+      : result.value.events;
+
+    const seen = new Set<number>();
+    snapshot = {
+      ...result.value,
+      events: events.filter((event) => {
+        if (seen.has(event.sequence)) return false;
+        seen.add(event.sequence);
+
+        return true;
+      }),
+    };
     error = "";
 
     if (result.value.events.length > 0) {
@@ -138,6 +176,7 @@
   async function runCommand(command: Parameters<ReviewClient["command"]>[0]) {
     busy = true;
     const result = await client.command(command);
+
     if (!result.ok) {
       busy = false;
       error = result.error.message;
@@ -159,8 +198,7 @@
     if (!name) return;
 
     const ok = await runCommand(
-      reviewCommand(ReviewCommand.cases.CreateProject.make({commandId: newCommandId(),
-name})),
+      reviewCommand(ReviewCommand.cases.CreateProject.make({ commandId: newCommandId(), name })),
     );
 
     if (!ok) return;
@@ -171,6 +209,7 @@ name})),
   }
 
   async function selectProject(entry: Project) {
+    eventCursor = 0;
     selectedProjectId = entry.id;
     selectedConversationId = null;
     selectedFindingId = null;
@@ -182,10 +221,14 @@ name})),
   async function createConversation() {
     if (project === null) return;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.CreateConversation.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-title: newConversationTitle.trim() || "Drawing coordination"})),
+      reviewCommand(
+        ReviewCommand.cases.CreateConversation.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          title: newConversationTitle.trim() || "Drawing coordination",
+        }),
+      ),
     );
     const latest = snapshot?.conversations.at(-1);
     selectedConversationId = latest?.id ?? selectedConversationId;
@@ -199,11 +242,15 @@ title: newConversationTitle.trim() || "Drawing coordination"})),
 
     if (!text) return;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.PostMessage.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-conversationId: activeConversation.id,
-text})),
+      reviewCommand(
+        ReviewCommand.cases.PostMessage.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          conversationId: activeConversation.id,
+          text,
+        }),
+      ),
     );
     draft = "";
     await tick();
@@ -237,12 +284,16 @@ text})),
     if (project === null) return;
     const trimmed = label.trim() || `Sheet ${sheet.pageIndex + 1}`;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.ConfirmSheet.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-sheetId: sheet.id,
-label: trimmed,
-coverage: coverage === "unreviewed" ? "partial" : coverage})),
+      reviewCommand(
+        ReviewCommand.cases.ConfirmSheet.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          sheetId: sheet.id,
+          label: trimmed,
+          coverage: coverage === "unreviewed" ? "partial" : coverage,
+        }),
+      ),
     );
   }
 
@@ -250,15 +301,28 @@ coverage: coverage === "unreviewed" ? "partial" : coverage})),
     event.preventDefault();
 
     if (project === null || !findingDrawnSheet || !findingScheduledSheet) return;
+    const drawn = sheets.find((sheet) => sheet.id === findingDrawnSheet);
+    const scheduled = sheets.find((sheet) => sheet.id === findingScheduledSheet);
+
+    if (drawn === undefined || scheduled === undefined) {
+      error = "Choose both source sheets.";
+
+      return;
+    }
+
     await runCommand(
-      reviewCommand(ReviewCommand.cases.CreateFinding.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-title: findingTitle.trim(),
-objectClass: findingObjectClass.trim(),
-drawnSheetId: findingDrawnSheet,
-scheduledSheetId: findingScheduledSheet,
-applicabilityConfirmed: findingApplicability})),
+      reviewCommand(
+        ReviewCommand.cases.CreateFinding.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          title: findingTitle.trim(),
+          objectClass: findingObjectClass.trim(),
+          drawnSheetId: drawn.id,
+          scheduledSheetId: scheduled.id,
+          applicabilityConfirmed: findingApplicability,
+        }),
+      ),
     );
     createFindingOpen = false;
     const latest = snapshot?.findings.at(-1);
@@ -274,7 +338,10 @@ applicabilityConfirmed: findingApplicability})),
   ) {
     if (project === null) return;
     sourceSide = side;
-    const sheet = sheets.find((item) => item.id === (side === "drawn" ? finding.drawnSheetId : finding.scheduledSheetId));
+
+    const sheet = sheets.find(
+      (item) => item.id === (side === "drawn" ? finding.drawnSheetId : finding.scheduledSheetId),
+    );
 
     if (sheet === undefined) return;
 
@@ -322,8 +389,12 @@ applicabilityConfirmed: findingApplicability})),
     );
 
     sourceOverlays = [
-      ...(drawn?.evidence.sheetId === sheet.id ? [{ region: drawn.evidence.region, title: "Drawn evidence" }] : []),
-      ...(scheduled?.evidence.sheetId === sheet.id ? [{ region: scheduled.evidence.region, title: "Scheduled evidence" }] : []),
+      ...(drawn?.evidence.sheetId === sheet.id
+        ? [{ region: drawn.evidence.region, title: "Drawn evidence" }]
+        : []),
+      ...(scheduled?.evidence.sheetId === sheet.id
+        ? [{ region: scheduled.evidence.region, title: "Scheduled evidence" }]
+        : []),
     ];
   }
 
@@ -423,44 +494,65 @@ applicabilityConfirmed: findingApplicability})),
       side === "drawn" ? selectedFinding.drawnSheetId : selectedFinding.scheduledSheetId;
 
     await runCommand(
-      reviewCommand(ReviewCommand.cases.AcceptCount.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-findingId: selectedFinding.id,
-side,
-value: payload.value,
-unit: "count",
-coverageConfirmed: payload.coverageConfirmed,
-evidence: { sheetId, region: payload.region, statement: payload.statement },
-rationale: payload.rationale})),
+      reviewCommand(
+        ReviewCommand.cases.AcceptCount.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          findingId: selectedFinding.id,
+          side,
+          value: payload.value,
+          unit: "count",
+          coverageConfirmed: payload.coverageConfirmed,
+          evidence: { sheetId, region: payload.region, statement: payload.statement },
+          rationale: payload.rationale,
+        }),
+      ),
     );
 
-    if (selectedFinding) await loadSourceForFinding(selectedFinding, sourceArtifact?.dpi ?? 96, sourceArtifact?.region ?? undefined,sourceSide);
+    if (selectedFinding)
+      await loadSourceForFinding(
+        selectedFinding,
+        sourceArtifact?.dpi ?? 96,
+        sourceArtifact?.region ?? undefined,
+        sourceSide,
+      );
   }
 
   async function evaluateFinding() {
     if (project === null || selectedFinding === null) return;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.EvaluateFinding.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-findingId: selectedFinding.id})),
+      reviewCommand(
+        ReviewCommand.cases.EvaluateFinding.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          findingId: selectedFinding.id,
+        }),
+      ),
     );
   }
 
   async function setFindingStatus(closed: boolean, taskCompleted: boolean) {
     if (project === null || selectedFinding === null) return;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.SetFindingStatus.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-findingId: selectedFinding.id,
-closed,
-taskCompleted})),
+      reviewCommand(
+        ReviewCommand.cases.SetFindingStatus.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          findingId: selectedFinding.id,
+          closed,
+          taskCompleted,
+        }),
+      ),
     );
   }
 
-  async function requestDetail(side: "drawn" | "scheduled", selectedRegion?: import("#lib/review/contracts.ts").Region) {
+  async function requestDetail(
+    side: "drawn" | "scheduled",
+    selectedRegion?: import("#lib/review/contracts.ts").Region,
+  ) {
     if (selectedFinding === null) return;
 
     const sheetId =
@@ -474,12 +566,13 @@ taskCompleted})),
       (entry) => entry.findingId === selectedFinding.id && entry.side === side,
     );
 
-    const region = selectedRegion ?? fact?.evidence.region ?? {
-      x: sheet.box.x + sheet.box.width * 0.25,
-      y: sheet.box.y + sheet.box.height * 0.25,
-      width: sheet.box.width * 0.5,
-      height: sheet.box.height * 0.5,
-    };
+    const region = selectedRegion ??
+      fact?.evidence.region ?? {
+        x: sheet.box.x + sheet.box.width * 0.25,
+        y: sheet.box.y + sheet.box.height * 0.25,
+        width: sheet.box.width * 0.5,
+        height: sheet.box.height * 0.5,
+      };
 
     await loadSourceForFinding(selectedFinding, 300, region, side);
   }
@@ -495,11 +588,17 @@ taskCompleted})),
   ) {
     if (project === null) return;
     await runCommand(
-      reviewCommand(ReviewCommand.cases.AssociateRevision.make({commandId: newCommandId(),
-projectId: project.id,
-expectedVersion: project.version,
-revisionId,
-correspondence: pairs})),
+      reviewCommand(
+        ReviewCommand.cases.AssociateRevision.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          revisionId: Schema.decodeUnknownSync(RevisionId)(revisionId),
+          correspondence: Schema.decodeUnknownSync(
+            ReviewCommand.cases.AssociateRevision.fields.correspondence,
+          )(pairs),
+        }),
+      ),
     );
   }
 
@@ -522,7 +621,11 @@ correspondence: pairs})),
       ready = true;
     });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+
+      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+    };
   });
 </script>
 
@@ -621,7 +724,7 @@ correspondence: pairs})),
               >
             </form>
           {:else}
-            <button class="new-chat" onclick={() => newProjectOpen = true}>New project</button>
+            <button class="new-chat" onclick={() => (newProjectOpen = true)}>New project</button>
             <button
               class="new-chat"
               data-testid="new-conversation"
@@ -745,6 +848,26 @@ correspondence: pairs})),
               {/each}
             </nav>
           {/if}
+          <div class="package-actions">
+            <button
+              disabled={busy || !project}
+              onclick={async () => {
+                busy = true;
+                const result = await client.chooseReviewExport();
+                busy = false;
+                if (!result.ok) error = result.error.message;
+              }}>Export complete package</button
+            >
+            <button
+              disabled={busy}
+              onclick={async () => {
+                busy = true;
+                const result = await client.chooseReviewRestore();
+                busy = false;
+                if (!result.ok) error = result.error.message;
+              }}>Restore package</button
+            >
+          </div>
         </aside>
       {/if}
 
@@ -842,18 +965,23 @@ correspondence: pairs})),
                 <p role="status">Rendering source…</p>
               {/if}
               {#key selectedFinding.id}
-              <FindingInspector
-                finding={selectedFinding}
-                {sheets}
-                {facts}
-                {checks}
-                {busy}
-                onAccept={acceptCount}
-                onEvaluate={evaluateFinding}
-                onCorrect={() => {}}
-                onStatus={setFindingStatus}
-                onRequestDetail={requestDetail}
-              />
+                <ExecutionControls
+                  {client}
+                  finding={selectedFinding}
+                  onProgress={() => refresh()}
+                />
+                <FindingInspector
+                  finding={selectedFinding}
+                  {sheets}
+                  {facts}
+                  {checks}
+                  {busy}
+                  onAccept={acceptCount}
+                  onEvaluate={evaluateFinding}
+                  onCorrect={() => {}}
+                  onStatus={setFindingStatus}
+                  onRequestDetail={requestDetail}
+                />
               {/key}
             {:else if sourceTab === "sheets"}
               <ul class="sheet-list" data-testid="sheet-list">
@@ -935,22 +1063,80 @@ correspondence: pairs})),
                   <ul class="sheet-list">
                     {#each sheets.filter((s) => s.revisionId === previous.id) as oldSheet (oldSheet.id)}
                       {@const candidates = sheets.filter((s) => s.revisionId === latest.id)}
+                      {@const choice = revisionChoices.find(
+                        (pair) => pair.oldSheetId === oldSheet.id,
+                      )}
                       <li>
                         {oldSheet.label}
-                        {@const choice = revisionChoices.find((pair) => pair.oldSheetId === oldSheet.id)}
-                        <label>New sheet<select value={choice?.newSheetId ?? ""} data-testid={`revision-map-${oldSheet.id}`} onchange={(event) => stageRevision(oldSheet.id,{ newSheetId: event.currentTarget.value })}>
-                          <option value="">Select new sheet…</option>
-                          {#each candidates as candidate (candidate.id)}<option value={candidate.id}>{candidate.label}</option>{/each}
-                        </select></label>
-                        <label>Contents<select value={choice?.content ?? "changed"} data-testid={`revision-content-${oldSheet.id}`} onchange={(event) => stageRevision(oldSheet.id,{ content: event.currentTarget.value === "unchanged" ? "unchanged" : "changed" })}>
-                          <option value="changed">Changed</option><option value="unchanged">Unchanged</option>
-                        </select></label>
-                        <label><input type="checkbox" checked={choice?.confirmed ?? false} data-testid={`revision-confirm-${oldSheet.id}`} onchange={(event) => stageRevision(oldSheet.id,{ confirmed: event.currentTarget.checked })} />Sheet correspondence confirmed</label>
+                        <label
+                          >New sheet<select
+                            value={choice?.newSheetId ?? ""}
+                            data-testid={`revision-map-${oldSheet.id}`}
+                            onchange={(event) =>
+                              stageRevision(oldSheet.id, { newSheetId: event.currentTarget.value })}
+                          >
+                            <option value="">Select new sheet…</option>
+                            {#each candidates as candidate (candidate.id)}<option
+                                value={candidate.id}>{candidate.label}</option
+                              >{/each}
+                          </select></label
+                        >
+                        <label
+                          >Contents<select
+                            value={choice?.content ?? "changed"}
+                            data-testid={`revision-content-${oldSheet.id}`}
+                            onchange={(event) =>
+                              stageRevision(oldSheet.id, {
+                                content:
+                                  event.currentTarget.value === "unchanged"
+                                    ? "unchanged"
+                                    : "changed",
+                              })}
+                          >
+                            <option value="changed">Changed</option><option value="unchanged"
+                              >Unchanged</option
+                            >
+                          </select></label
+                        >
+                        <label
+                          ><input
+                            type="checkbox"
+                            checked={choice?.confirmed ?? false}
+                            data-testid={`revision-confirm-${oldSheet.id}`}
+                            onchange={(event) =>
+                              stageRevision(oldSheet.id, {
+                                confirmed: event.currentTarget.checked,
+                              })}
+                          />Sheet correspondence confirmed</label
+                        >
                       </li>
                     {/each}
                   </ul>
                   <p>Confirm each match. Unsure sheets remain unresolved.</p>
-                  <button data-testid="apply-revision" disabled={busy || sheets.filter((sheet) => sheet.revisionId === previous.id).some((sheet) => !revisionChoices.some((pair) => pair.oldSheetId === sheet.id && pair.newSheetId))} onclick={async () => { await associateRevision(latest.id,revisionChoices.filter((pair) => sheets.some((sheet) => sheet.id === pair.oldSheetId && sheet.revisionId === previous.id))); revisionChoices = []; }}>Apply revision correspondence</button>
+                  <button
+                    data-testid="apply-revision"
+                    disabled={busy ||
+                      sheets
+                        .filter((sheet) => sheet.revisionId === previous.id)
+                        .some(
+                          (sheet) =>
+                            !revisionChoices.some(
+                              (pair) => pair.oldSheetId === sheet.id && pair.newSheetId,
+                            ),
+                        )}
+                    onclick={async () => {
+                      await associateRevision(
+                        latest.id,
+                        revisionChoices.filter((pair) =>
+                          sheets.some(
+                            (sheet) =>
+                              sheet.id === pair.oldSheetId && sheet.revisionId === previous.id,
+                          ),
+                        ),
+                      );
+                      revisionChoices = [];
+                    }}>Apply revision correspondence</button
+                  >
                 {/if}
               {:else}
                 <p>Import a revision PDF to map sheet correspondence.</p>
@@ -1172,6 +1358,21 @@ correspondence: pairs})),
   .desktop.sidebar-closed.source-open .app-body {
     grid-template-columns: 1fr var(--source-width);
   }
+  .package-actions {
+    margin-top: auto;
+    display: grid;
+    gap: 8px;
+    padding-top: 16px;
+  }
+  .package-actions button {
+    font: inherit;
+    color: inherit;
+    background: var(--nd-raised);
+    border: 1px solid var(--nd-hairline);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+  }
   .sidebar {
     background: var(--nd-panel);
     border-right: 1px solid var(--nd-hairline);
@@ -1363,6 +1564,8 @@ correspondence: pairs})),
     flex-direction: column;
     gap: 8px;
   }
+  .sheet-list input,
+  .sheet-list select,
   .create-project input,
   .finding-form input,
   .finding-form select {
