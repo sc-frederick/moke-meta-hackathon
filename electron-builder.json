@@ -5,7 +5,9 @@
   "files": ["build/**/*", "dist/electron/**/*", "dist/preload/**/*", "package.json"],
   "extraResources": [
     { "from": "migrations", "to": "migrations" },
-    { "from": "dist/backend", "to": "backend" }
+    { "from": "dist/backend/app-backend", "to": "backend/app-backend" },
+    { "from": "dist/backend/pdf-worker", "to": "backend/pdf-worker" },
+    { "from": "dist/backend/pdf-assets", "to": "backend/pdf-assets" }
   ],
   "asar": true,
   "forceCodeSigning": false,

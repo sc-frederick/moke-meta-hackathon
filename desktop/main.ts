@@ -1,13 +1,15 @@
 import { app, BrowserWindow, dialog, Menu, net, protocol } from "electron";
-import { Effect, Layer, Logger, ManagedRuntime } from "effect";
+import { Effect, Layer, Logger, ManagedRuntime, Schema } from "effect";
 import { MainRpcServer } from "electron-effect-rpc/main";
 import { appendFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { NotesRpc } from "../src/lib/notes.ts";
-import { BackendApi } from "./backend.ts";
-import { NotesProxy } from "./notes-proxy.ts";
+import { ReviewDesktopRpc, ReviewShellRpc } from "#lib/review/shell.ts";
+import { ReviewStorageError } from "#lib/review/contracts.ts";
+import { BackendApi, type BackendLaunch } from "./backend.ts";
+import { ReviewProxy } from "./review-proxy.ts";
+import { readInferenceConfiguration } from "./credentials.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -55,13 +57,22 @@ if (!app.requestSingleInstanceLock()) {
       const logging = Logger.layer([fileLogger, Logger.consoleJson]);
 
       const executable = process.platform === "win32" ? "app-backend.exe" : "app-backend";
+      const backendDirectory = app.isPackaged ? join(process.resourcesPath,"backend") : join(root,"dist/backend");
+      const assetDirectory = join(backendDirectory,"pdf-assets");
+      const layout = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ nativeFile: Schema.String.check(Schema.isPattern(/^skia\.[a-z0-9-]+\.node$/)) })))(await readFile(join(assetDirectory,"layout.json"),"utf8"));
+      const inference = await readInferenceConfiguration(dataDirectory,app.isPackaged);
 
-      const backend = BackendApi.layer({
+      const launchOptions: BackendLaunch = {
         command: app.isPackaged
           ? [join(process.resourcesPath, "backend", executable)]
           : ["bun", "--no-orphans", join(root, "backend/main.ts")],
         dataDirectory,
         migrationDirectory,
+        processing: {
+          workerCommand: [join(backendDirectory,process.platform === "win32" ? "pdf-worker.exe" : "pdf-worker")],
+          assetsDirectory: join(assetDirectory,"pdfjs"),
+          nativeLibraryPath: join(assetDirectory,"native",layout.nativeFile),
+        },
         onUnexpectedExit: () => {
           dialog.showErrorBox(
             "Backend stopped",
@@ -69,12 +80,30 @@ if (!app.requestSingleInstanceLock()) {
           );
           app.quit();
         },
-      });
+      };
+      const backend = BackendApi.layer(inference === undefined ? launchOptions : { ...launchOptions,inference });
 
-      const server = MainRpcServer.layer(NotesRpc, {
+      const shellHandlers = ReviewShellRpc.toLayer(Effect.gen(function* () {
+        const { api } = yield* BackendApi;
+
+        return {
+          ChooseReviewPdf: (request) => Effect.tryPromise({
+            try: () => dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Drawing PDF", extensions: ["pdf"] }] }),
+            catch: () => new ReviewStorageError({ message: "The drawing chooser could not open." }),
+          }).pipe(Effect.flatMap((result) => {
+            const source = result.filePaths[0];
+
+            return result.canceled || source === undefined ? Effect.succeed(null) : api.ImportReviewPdf({ ...request, source, name: basename(source) }).pipe(Effect.mapError(() => new ReviewStorageError({ message: "The PDF could not be imported. Check the source and reload the project." })));
+          })),
+          ChooseReviewExport: () => Effect.fail(new ReviewStorageError({ message: "Complete review package export is being configured." })),
+          ChooseReviewRestore: () => Effect.fail(new ReviewStorageError({ message: "Complete review package restore is being configured." })),
+        };
+      }));
+
+      const server = MainRpcServer.layer(ReviewDesktopRpc, {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
-      }).pipe(Layer.provide(NotesProxy), Layer.provideMerge(backend), Layer.provide(logging));
+      }).pipe(Layer.provide(Layer.merge(ReviewProxy,shellHandlers)), Layer.provideMerge(backend), Layer.provide(logging));
 
       const runtime = ManagedRuntime.make(server);
 

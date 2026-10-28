@@ -1,0 +1,11 @@
+{
+  "layoutDir": "/tmp/moke-pdf-packaged-UkJ4GT",
+  "probeBinary": "/home/scfred/.t3/worktrees/moke-meta-hackathon/t3-9e930b33/dist/backend/pdf-packaging-probe",
+  "exitCode": 0,
+  "stdout": "ok 512 663",
+  "stderr": "Warning: Indexing all PDF objects\nWarning: Unknown command \"\u0005\".\nWarning: Skipping command re: expected 4 args, but received 1 args.\nWarning: Skipping command g: expected 1 args, but received 0 args.\nWarning: Unknown command \"ellisch\".",
+  "overviewBytes": 2850,
+  "elapsedMs": 130,
+  "platform": "linux",
+  "arch": "x64"
+}
