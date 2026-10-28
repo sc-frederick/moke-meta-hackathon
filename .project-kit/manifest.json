@@ -58,7 +58,13 @@
       "pi-telemetry": "1.4.0"
     },
     "heroCase": "docs/fixtures/hero-case.md",
-    "primaryDemoPlatform": "linux-x64"
+    "primaryDemoPlatform": "linux-x64",
+    "promptInstructions": {
+      "version": "moke-selected-coordination-v2",
+      "source": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review",
+      "provenance": "backend/review/prompts/provenance.json",
+      "scope": "Selected drawn-to-schedule coordination; governing code unverified"
+    }
   },
   "hackathon": {
     "bonusDocumentation": "docs/hackathon-bonuses.md",

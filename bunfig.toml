@@ -26,6 +26,7 @@ ignorePatterns = [
   "coverage/**",
   ".project-kit/**",
   "design/reference/**",
+  "backend/review/prompts/assets/**",
   "design/concepts/**",
   ".agents/**",
   ".codex/**",

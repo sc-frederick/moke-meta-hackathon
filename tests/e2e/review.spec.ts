@@ -88,7 +88,8 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await form.locator("select").nth(1).selectOption({ index: 2 });
       await form.locator('input[type="checkbox"]').check();
       await page.getByTestId("create-finding-submit").click();
-      await openFinding(title);
+      await expect(page.getByTestId("finding-inspector")).toContainText(title);
+      await expect(page.getByTestId("evaluate-finding")).toBeEnabled();
     };
 
     const accept = async (side: "drawn" | "scheduled", count: number, rationale: string) => {
@@ -214,6 +215,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       controlId ?? "missing",
     );
 
+    await page.getByLabel("Message action").selectOption("note");
     await page
       .getByLabel("Message", { exact: true })
       .fill("Rechecked Revision B; keep the original issue and correction history.");
@@ -224,13 +226,22 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await page.locator(".source-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
+    await expect(sourceImage).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("review-workbench.png") });
     const packageParent = test.info().outputPath("packages");
     await mkdir(packageParent, { recursive: true });
     await app.evaluate(({ dialog }, parent) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [parent] });
     }, packageParent);
-    await page.getByRole("button", { name: "Export complete package", exact: true }).click();
+
+    const exportPackage = page.getByRole("button", {
+      name: "Export complete package",
+      exact: true,
+    });
+
+    if (!(await exportPackage.isVisible()))
+      await page.getByRole("button", { name: "Toggle conversation sidebar" }).click();
+    await exportPackage.click();
     await expect
       .poll(
         async () =>

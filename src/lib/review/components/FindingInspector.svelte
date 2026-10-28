@@ -1,6 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { CheckRun, CountFact, Finding, Region, Sheet } from "#lib/review/contracts.ts";
+  import { Schema } from "effect";
+  import {
+    Region,
+    type CheckRun,
+    type CountFact,
+    type Finding,
+    type Sheet,
+  } from "#lib/review/contracts.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import { checksForFinding, formatOutcome, latestAcceptedFact } from "./review-format.ts";
 
@@ -12,7 +19,6 @@
     busy = false,
     onAccept,
     onEvaluate,
-    onCorrect,
     onStatus,
     onRequestDetail,
   }: {
@@ -32,7 +38,6 @@
       },
     ) => void;
     onEvaluate: () => void;
-    onCorrect: (side: "drawn" | "scheduled") => void;
     onStatus: (closed: boolean, taskCompleted: boolean) => void;
     onRequestDetail: (side: "drawn" | "scheduled", region: Region) => void;
   } = $props();
@@ -51,9 +56,14 @@
   let scheduledRationale = $state("");
   let drawnCoverage = $state(false);
   let scheduledCoverage = $state(false);
+  let drawnInput: HTMLInputElement | undefined = $state();
+  let scheduledInput: HTMLInputElement | undefined = $state();
 
   let drawnRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
   let scheduledRegion = $state({ x: 0, y: 0, width: 100, height: 100 });
+  const RegionInput = Schema.Struct(Region.fields);
+  const drawnRegionValid = $derived(Schema.is(RegionInput)(drawnRegion));
+  const scheduledRegionValid = $derived(Schema.is(RegionInput)(scheduledRegion));
   const drawnIdentity = $derived(`${finding.drawnSheetId}:${drawnFact?.id ?? ""}`);
   const scheduledIdentity = $derived(`${finding.scheduledSheetId}:${scheduledFact?.id ?? ""}`);
 
@@ -107,7 +117,21 @@
         {#if proposal.origin}<p class="meta">
             {proposal.origin.route} · {proposal.origin.provider} / {proposal.origin.model} · response
             {proposal.origin.responseId ?? "ID unavailable"}
+          </p>
+          <p class="meta">
+            {proposal.origin.promptVersion} · {proposal.origin.discipline?.replaceAll("_", " ") ??
+              "general"} · skills {proposal.origin.instructionRevision?.slice(0, 12) ?? "legacy"}
           </p>{/if}
+        <p class="meta">
+          {sheets.find((sheet) => sheet.id === proposal.evidence.sheetId)?.label} · PDF region {proposal
+            .evidence.region.x}, {proposal.evidence.region.y}, {proposal.evidence.region.width} × {proposal
+            .evidence.region.height}
+        </p>
+        <button
+          disabled={busy}
+          onclick={() => onRequestDetail(proposal.side, proposal.evidence.region)}
+          >View proposal evidence</button
+        >
         <button
           disabled={busy}
           onclick={() => {
@@ -133,7 +157,8 @@
     <h3>Drawn count</h3>
     <p class="sheet-line">{drawnSheet ? drawnSheet.label : "Missing sheet"}</p>
     {#if drawnFact && drawnFact.evidence.sheetId !== finding.drawnSheetId}<p class="warn">
-        Accepted input cites an earlier revision. Inspect and accept fresh evidence.
+        Accepted input cites an earlier revision. Confirm unchanged correspondence or accept fresh
+        evidence.
       </p>{/if}
     {#if drawnSheet && !drawnSheet.confirmed}
       <p class="warn" role="status">Confirm this sheet before accepting evidence.</p>
@@ -143,7 +168,9 @@
         disabled={busy}
         type="number"
         min="0"
+        max="100000"
         bind:value={drawnValue}
+        bind:this={drawnInput}
         data-testid="drawn-count-input"
       /></label
     >
@@ -186,6 +213,7 @@
       >Visible statement<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={drawnStatement}
         data-testid="drawn-statement-input"></textarea></label
     >
@@ -193,6 +221,7 @@
       >Rationale<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={drawnRationale}
         data-testid="drawn-rationale-input"></textarea></label
     >
@@ -213,8 +242,8 @@
           !drawnRationale.trim() ||
           !Number.isInteger(drawnValue) ||
           drawnValue < 0 ||
-          drawnRegion.width <= 0 ||
-          drawnRegion.height <= 0}
+          drawnValue > 100000 ||
+          !drawnRegionValid}
         data-testid="accept-drawn-count"
         onclick={() =>
           onAccept("drawn", {
@@ -227,7 +256,7 @@
       >
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !drawnRegionValid}
         data-testid="detail-drawn"
         onclick={() => onRequestDetail("drawn", drawnRegion)}>300 DPI detail</button
       >
@@ -235,7 +264,10 @@
           type="button"
           disabled={busy}
           data-testid="correct-drawn"
-          onclick={() => onCorrect("drawn")}>Correct drawn</button
+          onclick={() => {
+            drawnInput?.scrollIntoView({ block: "center" });
+            drawnInput?.focus();
+          }}>Correct drawn</button
         >{/if}
     </div>
     {#if drawnFact}<p class="fact-id">
@@ -260,7 +292,9 @@
         disabled={busy}
         type="number"
         min="0"
+        max="100000"
         bind:value={scheduledValue}
+        bind:this={scheduledInput}
         data-testid="scheduled-count-input"
       /></label
     >
@@ -303,6 +337,7 @@
       >Visible statement<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={scheduledStatement}
         data-testid="scheduled-statement-input"></textarea></label
     >
@@ -310,6 +345,7 @@
       >Rationale<textarea
         disabled={busy}
         rows="2"
+        maxlength="2000"
         bind:value={scheduledRationale}
         data-testid="scheduled-rationale-input"></textarea></label
     >
@@ -330,8 +366,8 @@
           !scheduledRationale.trim() ||
           !Number.isInteger(scheduledValue) ||
           scheduledValue < 0 ||
-          scheduledRegion.width <= 0 ||
-          scheduledRegion.height <= 0}
+          scheduledValue > 100000 ||
+          !scheduledRegionValid}
         data-testid="accept-scheduled-count"
         onclick={() =>
           onAccept("scheduled", {
@@ -344,7 +380,7 @@
       >
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !scheduledRegionValid}
         data-testid="detail-scheduled"
         onclick={() => onRequestDetail("scheduled", scheduledRegion)}>300 DPI detail</button
       >
@@ -352,7 +388,10 @@
           type="button"
           disabled={busy}
           data-testid="correct-scheduled"
-          onclick={() => onCorrect("scheduled")}>Correct scheduled</button
+          onclick={() => {
+            scheduledInput?.scrollIntoView({ block: "center" });
+            scheduledInput?.focus();
+          }}>Correct scheduled</button
         >{/if}
     </div>
     {#if scheduledFact}<p class="fact-id">
@@ -372,17 +411,15 @@
       ><input
         type="checkbox"
         checked={finding.closed}
-        onchange={(event) =>
-          onStatus((event.currentTarget as HTMLInputElement).checked, finding.taskCompleted)}
+        onchange={(event) => onStatus(event.currentTarget.checked, finding.taskCompleted)}
       />Reviewer closed</label
     >
     <label class="checkbox"
       ><input
         type="checkbox"
         checked={finding.taskCompleted}
-        onchange={(event) =>
-          onStatus(finding.closed, (event.currentTarget as HTMLInputElement).checked)}
-      />Task complete</label
+        onchange={(event) => onStatus(finding.closed, event.currentTarget.checked)}
+      />Completed task</label
     >
   </div>
 
@@ -474,7 +511,7 @@
     color: inherit;
   }
   .warn {
-    color: #e8a020;
+    color: var(--nd-warning);
     margin: 0;
   }
   .sheet-line {

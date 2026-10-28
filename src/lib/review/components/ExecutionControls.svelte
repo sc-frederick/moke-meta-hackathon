@@ -1,40 +1,70 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Finding } from "#lib/review/contracts.ts";
-  import type { ExecutionStatus } from "#lib/review/execution.ts";
+  import { ReviewCommand, type Conversation, type Finding } from "#lib/review/contracts.ts";
+  import type {
+    ExecutionBudget,
+    ExecutionSetup,
+    ExecutionStatus,
+    ReviewDiscipline,
+  } from "#lib/review/execution.ts";
+  import { sendReviewMessage } from "#lib/review/conversation.ts";
   import { newCommandId, type ReviewClient } from "#lib/review/client.ts";
 
   let {
     client,
     finding,
+    setup,
+    budget,
+    conversation,
+    projectVersion,
+    discipline,
+    status = $bindable(null),
     onProgress,
-  }: { client: ReviewClient; finding: Finding; onProgress: () => Promise<void> } = $props();
+  }: {
+    client: ReviewClient;
+    finding: Finding;
+    setup: ExecutionSetup | null;
+    budget: ExecutionBudget;
+    conversation: Conversation | null;
+    projectVersion: number;
+    discipline: typeof ReviewDiscipline.Type;
+    status?: ExecutionStatus | null;
+    onProgress: () => Promise<void>;
+  } = $props();
 
-  let status = $state.raw<ExecutionStatus | null>(null);
   let busy = $state(false);
   let chargeAcknowledged = $state(false);
-
   let error = $state("");
 
-  let active = $derived(
+  const active = $derived(
     status?.state === "running" || status?.state === "pausing" || status?.state === "paused",
   );
 
   async function start() {
+    if (conversation === null) return;
     busy = true;
     error = "";
 
-    const result = await client.startExecution({
-      commandId: newCommandId(),
-      projectId: finding.projectId,
+    const result = await sendReviewMessage(client, {
+      command: ReviewCommand.cases.PostMessage.make({
+        commandId: newCommandId(),
+        projectId: finding.projectId,
+        expectedVersion: projectVersion,
+        conversationId: conversation.id,
+        text: "Inspect the selected coordination check and propose counts with exact drawing evidence. Identify missing inputs and keep governing-code claims unverified.",
+      }),
+      executionCommandId: newCommandId(),
       findingId: finding.id,
-      budget: { maxCalls: 12, maxInputTokens: 64000, maxOutputTokens: 4096 },
+      discipline,
+      budget,
     });
 
-    if (result.ok) {
-      status = result.value;
+    if (result.saved) {
+      status = result.execution;
       chargeAcknowledged = false;
-    } else error = result.error.message;
+    }
+
+    error = result.error ?? "";
     busy = false;
     await onProgress();
   }
@@ -68,9 +98,8 @@
       status.version,
     );
 
-    if (result.ok) {
-      status = result.value;
-    } else error = result.error.message;
+    if (result.ok) status = result.value;
+    else error = result.error.message;
     busy = false;
     await onProgress();
   }
@@ -101,7 +130,7 @@
       )
       .then(() => {
         if (!controller.signal.aborted)
-          error = "Progress disconnected. Reopen this finding to reconnect.";
+          error = "Progress disconnected. Select this check again to reconnect.";
       });
 
     return () => controller.abort();
@@ -109,42 +138,50 @@
 </script>
 
 <section class="execution" aria-label="Review execution" data-testid="execution-controls">
-  <h3>Muse inspection</h3>
-  <p>
-    Inspect selected source images with the configured provider. Observations remain proposed until
-    you accept them.
-  </p>
-  <p class="muted">
-    Budget: 12 calls, including at most 2 SAM calls. Cost and image-token usage remain unknown.
-  </p>
   {#if status}
-    <p role="status" data-testid="execution-status">
-      {status.route} · {status.provider} / {status.model} · {status.state} · {status.admittedCalls}/12
-      calls
-    </p>
+    <div class="status-line" role="status" data-testid="execution-status">
+      <span class:running={status.state === "running"} class="status-dot"></span><span
+        >{status.provider === "meta" ? "Meta" : "Baseten"} · {status.state} · {status.admittedCalls} calls</span
+      >
+    </div>
+    {#if status.state === "completed"}<p>
+        Inspection finished. Review proposed counts in Findings before accepting them.
+      </p>{/if}
+    {#if status.state === "failed"}<p>
+        The inspection stopped. Check the evidence, configuration and call limit before starting
+        another.
+      </p>{/if}
+    {#if status.state === "incompatible"}<p>
+        This saved inspection uses an earlier engine or instruction version. Start a separate
+        inspection to use this build.
+      </p>{/if}
     {#if status.state === "uncertain" || (status.unresolvedAttempts > 0 && status.state === "cancelled")}
       <p class="uncertain">
         An earlier request may have been billed. It will not be sent again automatically.
       </p>
       <label
-        ><input type="checkbox" bind:checked={chargeAcknowledged} /> I understand the prior request may
-        have been charged.</label
+        ><input type="checkbox" bind:checked={chargeAcknowledged} />I understand the prior request
+        may have been charged.</label
       >
       <button
         disabled={busy || !chargeAcknowledged || status.uncertaintyAcknowledged}
-        onclick={acknowledge}>Record acknowledgement; permit a new inspection</button
+        onclick={acknowledge}
+        >{status.uncertaintyAcknowledged
+          ? "Acknowledgement recorded"
+          : "Acknowledge possible charge"}</button
       >
     {/if}
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
   <div class="controls">
-    <button
-      data-testid="start-inspection"
-      disabled={busy ||
-        active ||
-        ((status?.unresolvedAttempts ?? 0) > 0 && !status?.uncertaintyAcknowledged)}
-      onclick={start}>Start live inspection</button
-    >
+    {#if !active}<button
+        data-testid="start-inspection"
+        disabled={busy ||
+          !setup?.configured ||
+          ((status?.unresolvedAttempts ?? 0) > 0 && !status?.uncertaintyAcknowledged) ||
+          status?.state === "uncertain"}
+        onclick={start}>Inspect selected check</button
+      >{/if}
     {#if status?.state === "running"}<button disabled={busy} onclick={() => control("pause")}
         >Pause</button
       >{/if}
@@ -160,27 +197,53 @@
 
 <style>
   .execution {
-    padding-block: 8px 16px;
-    border-bottom: 1px solid var(--nd-hairline);
     font-size: 13px;
-  }
-  h3 {
-    font-size: 14px;
-    margin: 0;
-  }
-  p {
-    line-height: 1.5;
-    margin: 8px 0;
-  }
-  .muted {
+    display: grid;
+    gap: 8px;
+    padding: 10px 0;
     color: var(--nd-ink-muted);
   }
+  p {
+    line-height: 1.6;
+    margin: 0;
+  }
+  .status-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--nd-ink);
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--nd-ink-muted);
+  }
+  .status-dot.running {
+    background: var(--nd-ink);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot.running {
+      animation: none;
+    }
+  }
   .uncertain {
-    color: #e8a020;
+    color: var(--nd-warning);
   }
   .controls {
     display: flex;
     flex-wrap: wrap;
+    gap: 8px;
+  }
+  label {
+    display: flex;
+    align-items: start;
     gap: 8px;
   }
   button {
@@ -188,8 +251,8 @@
     border: 1px solid var(--nd-hairline-strong);
     border-radius: 6px;
     padding: 6px 10px;
-    background: var(--nd-raised);
-    color: inherit;
+    background: var(--nd-panel);
+    color: var(--nd-ink);
     cursor: pointer;
   }
   button:disabled {

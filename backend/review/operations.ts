@@ -339,16 +339,30 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
               message: "The finding is outside the selected project.",
             });
           const allowed = new Set([finding.drawnSheetId, finding.scheduledSheetId]);
+          const request = selection.reviewRequest;
+
+          const instruction =
+            request === undefined
+              ? undefined
+              : state.messages.find(
+                  (message) =>
+                    message.id === request.messageId &&
+                    message.conversationId === request.conversationId &&
+                    message.role === "reviewer",
+                );
+
+          if (request !== undefined && instruction === undefined)
+            return yield* new ReviewInputError({
+              message:
+                "The reviewer request does not belong to the selected conversation and project.",
+            });
 
           return new ExecutionEvidence({
             sourceVersion: project.sourceVersion,
             factVersion: project.factVersion,
             finding,
             sheets: state.sheets.filter((sheet) => allowed.has(sheet.id)),
-            reviewerInstructions: state.messages
-              .filter((message) => message.role === "reviewer")
-              .slice(-8)
-              .map((message) => message.text),
+            reviewerInstructions: instruction === undefined ? [] : [instruction.text],
             facts: state.facts.filter((fact) => fact.findingId === finding.id),
             checks: state.checks.filter((check) => check.findingId === finding.id),
             artifacts: state.artifacts.filter(

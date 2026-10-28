@@ -300,6 +300,7 @@ export const BackendHandlers = BackendRpc.toLayer(
       ImportReviewPdf: (request) => application.review.importPdf(request),
       ExportReviewPackage: ({ destination }) => application.exportPackage(destination),
       RestoreReviewPackage: ({ source }) => application.restorePackage(source),
+      ExecutionSetup: () => application.execution.setup,
       StartExecution: (request) => application.execution.start(request),
       ExecutionStatus: ({ projectId, runId }) => application.execution.status(projectId, runId),
       ControlExecution: ({ projectId, runId, expectedVersion, action, commandId }) =>

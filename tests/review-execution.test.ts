@@ -120,6 +120,12 @@ async function directory() {
     await readFile(new URL("../migrations/0005_execution_commands.sql", import.meta.url), "utf8"),
   );
   db.exec(
+    await readFile(
+      new URL("../migrations/0007_review_prompt_context.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  db.exec(
     "CREATE TABLE fixture_receipts (command_id TEXT PRIMARY KEY, receipt TEXT NOT NULL); CREATE TABLE fixture_proposals (command_id TEXT PRIMARY KEY, value INTEGER NOT NULL)",
   );
   db.close();

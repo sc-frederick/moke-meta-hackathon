@@ -31,6 +31,8 @@ export const RunRecord = Schema.Struct({
   admitted_calls: Schema.Int,
   reserved_input_tokens: Schema.Int,
   reserved_output_tokens: Schema.Int,
+  prompt_version: Schema.optionalKey(Schema.String),
+  review_context_json: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 /** SQLite row after boundary decoding. */

@@ -34,6 +34,8 @@ import { containsRegion } from "#lib/review/geometry.ts";
 import type { ImportedPdf } from "../documents/types.ts";
 import { CountProposal, DetailRequest, ExecutionFence } from "./execution-port.ts";
 import { RunRecord } from "./execution-store.ts";
+import { ExecutionReviewContext } from "#lib/review/execution.ts";
+import { reviewInstructionRevision, reviewPromptVersion } from "./prompts/review-prompt.ts";
 
 /** Inputs used for tool command identity exclude the newly generated artifact identity. */
 export const AgentInput = Schema.Union([
@@ -863,6 +865,13 @@ export class ReviewStore extends Context.Service<
           return yield* failure("The execution finding is outside this project.");
         const createdAt = yield* now;
 
+        const context =
+          run.review_context_json == null
+            ? null
+            : yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionReviewContext))(
+                run.review_context_json,
+              );
+
         return yield* Match.value(mutation).pipe(
           Match.tagsExhaustive({
             Evaluate: () =>
@@ -915,6 +924,23 @@ export class ReviewStore extends Context.Service<
                     "A model proposal requires its committed provider response receipt.",
                   );
 
+                const origin = {
+                  runId: fence.runId,
+                  journalId: fence.journalId,
+                  commandId: fence.commandId,
+                  providerTaskId: response.task_id,
+                  responseId: response.response_id,
+                  route: run.route,
+                  provider: run.provider,
+                  model: run.model,
+                  promptVersion:
+                    run.prompt_version === reviewPromptVersion
+                      ? reviewPromptVersion
+                      : "selected-finding-review-v1",
+                  sourceVersion: fence.sourceVersion,
+                  factVersion: fence.factVersion,
+                } satisfies NonNullable<CountFact["origin"]>;
+
                 const fact = new CountFact({
                   id: Schema.decodeUnknownSync(FactId)(randomUUID()),
                   projectId: project.id,
@@ -927,19 +953,17 @@ export class ReviewStore extends Context.Service<
                   coverageConfirmed: false,
                   evidence: proposal.evidence,
                   actor: run.route === "recorded" ? "recorded" : "muse",
-                  origin: {
-                    runId: fence.runId,
-                    journalId: fence.journalId,
-                    commandId: fence.commandId,
-                    providerTaskId: response.task_id,
-                    responseId: response.response_id,
-                    route: run.route,
-                    provider: run.provider,
-                    model: run.model,
-                    promptVersion: "selected-finding-review-v1",
-                    sourceVersion: fence.sourceVersion,
-                    factVersion: fence.factVersion,
-                  },
+                  origin:
+                    context === null
+                      ? run.prompt_version === reviewPromptVersion
+                        ? { ...origin, instructionRevision: reviewInstructionRevision }
+                        : origin
+                      : {
+                          ...origin,
+                          instructionRevision: context.instructionRevision,
+                          discipline: context.request.discipline,
+                          reviewerMessageId: context.request.messageId,
+                        },
                   rationale: proposal.rationale,
                   supersedes: null,
                   createdAt,
@@ -959,7 +983,12 @@ export class ReviewStore extends Context.Service<
               }),
             Message: (mutation) =>
               Effect.gen(function* () {
-                const conversation = state.conversations[0];
+                const conversation =
+                  context === null
+                    ? state.conversations[0]
+                    : state.conversations.find(
+                        (item) => item.id === context.request.conversationId,
+                      );
 
                 if (conversation === undefined)
                   return yield* failure("This project has no review conversation.");
@@ -971,6 +1000,17 @@ export class ReviewStore extends Context.Service<
                   role: "application",
                   text: mutation.text,
                   createdAt,
+                  origin: {
+                    runId: fence.runId,
+                    findingId: finding.id,
+                    promptVersion: run.prompt_version ?? "selected-finding-review-v1",
+                    instructionRevision:
+                      context?.instructionRevision ??
+                      (run.prompt_version === reviewPromptVersion
+                        ? reviewInstructionRevision
+                        : null),
+                    discipline: context?.request.discipline ?? null,
+                  },
                 });
 
                 yield* save("message", entry);

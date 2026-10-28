@@ -1,6 +1,60 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { CommandId, FindingId, ProjectId } from "./contracts.ts";
+import { CommandId, ConversationId, FindingId, ProjectId } from "./contracts.ts";
+
+/** Discipline routing preserves the four distinct fire responsibilities from Moke. */
+export const ReviewDiscipline = Schema.Literals([
+  "general",
+  "civil",
+  "building_design",
+  "life_safety",
+  "structural",
+  "mechanical",
+  "electrical",
+  "plumbing",
+  "fire_alarm",
+  "fire_sprinkler",
+  "fire_protection",
+]);
+
+/** Human-readable scope names shared by setup and the execution summary. */
+export const reviewDisciplines = [
+  { id: "general", label: "General" },
+  { id: "civil", label: "Civil" },
+  { id: "building_design", label: "Building design" },
+  { id: "life_safety", label: "Life safety" },
+  { id: "structural", label: "Structural" },
+  { id: "mechanical", label: "Mechanical" },
+  { id: "electrical", label: "Electrical" },
+  { id: "plumbing", label: "Plumbing" },
+  { id: "fire_alarm", label: "Fire alarm" },
+  { id: "fire_sprinkler", label: "Fire sprinkler" },
+  { id: "fire_protection", label: "Fire protection" },
+] as const;
+
+/** A review send names an already persisted reviewer message. */
+export const ReviewRequest = Schema.Struct({
+  conversationId: ConversationId,
+  messageId: Schema.String.check(Schema.isUUID()),
+  discipline: ReviewDiscipline,
+});
+
+/** Frozen request content survives pause/reopen without consulting newer messages. */
+export const ExecutionReviewContext = Schema.Struct({
+  request: ReviewRequest,
+  instruction: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)),
+  instructionRevision: Schema.String,
+});
+
+/** Renderer-safe setup contains no credentials or credential locations. */
+export class ExecutionSetup extends Schema.Class<ExecutionSetup>("ExecutionSetup")({
+  configured: Schema.Boolean,
+  provider: Schema.NullOr(Schema.Literals(["meta", "baseten"])),
+  model: Schema.NullOr(Schema.String),
+  segmentation: Schema.Boolean,
+  promptVersion: Schema.String,
+  instructionRevision: Schema.String,
+}) {}
 
 /** Public execution identifiers reveal neither journal locations nor provider sessions. */
 export const RunId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("RunId"));
@@ -75,10 +129,16 @@ export const StartExecution = Schema.Struct({
   projectId: ProjectId,
   findingId: FindingId,
   budget: ExecutionBudget,
+  reviewRequest: Schema.optionalKey(ReviewRequest),
 });
 
 /** Public controls deliberately omit retry, credentials, compaction, and raw transcripts. */
 export class ExecutionRpc extends RpcGroup.make(
+  Rpc.make("ExecutionSetup", {
+    payload: Schema.Struct({}),
+    success: ExecutionSetup,
+    error: ExecutionError,
+  }),
   Rpc.make("StartExecution", {
     payload: StartExecution,
     success: ExecutionStatus,

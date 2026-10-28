@@ -15,13 +15,19 @@ import {
   Sheet,
   SheetId,
 } from "../../src/lib/review/contracts.ts";
-import { ExecutionError, ExecutionVersion, RunId } from "../../src/lib/review/execution.ts";
+import {
+  ExecutionError,
+  ExecutionVersion,
+  ReviewRequest,
+  RunId,
+} from "../../src/lib/review/execution.ts";
 import { SamInspectionRequest, SamObservation } from "#lib/review/segmentation.ts";
 
 /** Every tool is restricted to the finding and immutable inputs captured on start. */
 export class ExecutionSelection extends Schema.Class<ExecutionSelection>("ExecutionSelection")({
   projectId: ProjectId,
   findingId: FindingId,
+  reviewRequest: Schema.optionalKey(ReviewRequest),
 }) {}
 
 /** Selected source evidence, with versions used by the mutation fence. */

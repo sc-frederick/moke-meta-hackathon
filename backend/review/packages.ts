@@ -84,6 +84,8 @@ const runColumns = [
   "reserved_output_tokens",
 ] as const;
 
+const promptRunColumns = [...runColumns, "prompt_version", "review_context_json"] as const;
+
 const attemptColumns = [
   "journal_id",
   "task_id",
@@ -687,14 +689,16 @@ const readDomain = (filename: string) =>
         ).pipe(Effect.mapError(() => fail("incompatible", "Execution columns could not be read.")));
 
         if (
-          !sameColumns(
-            columns.map((column) => column.name),
-            runColumns,
+          ![runColumns, promptRunColumns].some((known) =>
+            sameColumns(
+              columns.map((column) => column.name),
+              known,
+            ),
           )
         ) {
           return yield* fail(
             "incompatible",
-            "Execution tables are not the known migration 0003 shape, so run state was not changed.",
+            "Execution columns do not match migrations 0003 or 0007, so run state was not changed.",
           );
         }
 

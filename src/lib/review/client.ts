@@ -67,6 +67,11 @@ export function createReviewClient() {
   };
 
   return {
+    executionSetup: () =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.ExecutionSetup({})),
+        "Review configuration is unavailable. Reopen the application to reconnect.",
+      ),
     observeExecution: (
       projectId: typeof ProjectId.Type,
       afterSequence: number,

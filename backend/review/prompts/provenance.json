@@ -1,0 +1,78 @@
+{
+  "repository": "https://github.com/sc-frederick/skills",
+  "revision": "8a0e2648738018631eaa6d24ee0b6ebaa239afb1",
+  "source": "moke-review",
+  "promptVersion": "moke-selected-coordination-v2",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "source": "SKILL.md",
+      "sha256": "31a5fd53b28d936241a44abe517edfdaaafa32743df96af27e3d36656b287bb8"
+    },
+    {
+      "path": "AGENTS.md",
+      "source": "references/AGENTS.md",
+      "sha256": "c254e47ed7decdc50436cdce7f9b9157c043774a71f8cc962704d8e0b7ac0e08"
+    },
+    {
+      "path": "REVIEW_METHOD.md",
+      "source": "references/REVIEW_METHOD.md",
+      "sha256": "fa3c8364ab3a282a7409f4bb071806f8d12fb5d06f1b21d6284d869ffb6efe24"
+    },
+    {
+      "path": "disciplines/building_design.md",
+      "source": "references/disciplines/building_design.md",
+      "sha256": "c959cd0942fa9bcf40d9cc851809c65eb10287af247666d0d59c1c0eb7fa6d13"
+    },
+    {
+      "path": "disciplines/civil.md",
+      "source": "references/disciplines/civil.md",
+      "sha256": "1c8d1c6e09bfc2c25f245849bddd22e9985e3d99ac1967297c802c5684fca495"
+    },
+    {
+      "path": "disciplines/electrical.md",
+      "source": "references/disciplines/electrical.md",
+      "sha256": "75dd771db91cf76bfd20f8e4a83c88b8d6f4da3e9eb0f8ddf61eeca30456aca4"
+    },
+    {
+      "path": "disciplines/fire_alarm.md",
+      "source": "references/disciplines/fire_alarm.md",
+      "sha256": "6ae6278b87fbd4f186cce6d971a080ae95754ebef25fbb4a543817b831cd682b"
+    },
+    {
+      "path": "disciplines/fire_protection.md",
+      "source": "references/disciplines/fire_protection.md",
+      "sha256": "cb7ec26aee0f9eba19fbf593a06c30dd9c59c9e35fef28b5a8fe14f52381be77"
+    },
+    {
+      "path": "disciplines/fire_sprinkler.md",
+      "source": "references/disciplines/fire_sprinkler.md",
+      "sha256": "67232d027c5a56ebb9dd8c35da3264ed681f066e9e70c47af072e8da1f81ceee"
+    },
+    {
+      "path": "disciplines/general.md",
+      "source": "references/disciplines/general.md",
+      "sha256": "67f2fb29f9e05182116396ce138affd19c113a6ef68539626afb453e93000721"
+    },
+    {
+      "path": "disciplines/life_safety.md",
+      "source": "references/disciplines/life_safety.md",
+      "sha256": "e8228b19f630cf62967484f1bd06f887715cbc16e69329c28090c75dd0f0efc5"
+    },
+    {
+      "path": "disciplines/mechanical.md",
+      "source": "references/disciplines/mechanical.md",
+      "sha256": "97c29f8a6ccd48ce2987a33cda0830175e9560c8a133813bfe5cd9ccd86bfdf3"
+    },
+    {
+      "path": "disciplines/plumbing.md",
+      "source": "references/disciplines/plumbing.md",
+      "sha256": "8787d7bcd5e6101a717d0d6ab3ebd522b6c8c402c6048f5e13ef5b5067456cb7"
+    },
+    {
+      "path": "disciplines/structural.md",
+      "source": "references/disciplines/structural.md",
+      "sha256": "b30491a08e7fafbb9c75501c4bc8fc1c01d8f25401c4a6b0bf7baaf95e0d95e4"
+    }
+  ]
+}
