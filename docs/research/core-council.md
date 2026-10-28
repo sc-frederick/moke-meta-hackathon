@@ -39,3 +39,11 @@ read use the same opened handle and enforce the target's permissions. An alias
 to a private target does not bypass that check; the caller explicitly selects
 the session path. No should/blocker findings remain. Final review freeze was
 `a81b45226`; subsequent edits only record these review results.
+
+## CI filesystem follow-up
+
+Windows job 122586407781 on `cf89fe062` failed package tests because O_NOFOLLOW was
+undefined. The follow-up preserves link rejection through opened-file identity
+checks, exclusive output creation, portable manifest/restore separators, and
+platform-specific directory flushing. No provider or engineering-rule behavior
+changed. A third, bounded council pass reviews this filesystem diff before push.

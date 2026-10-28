@@ -4,7 +4,7 @@ import { SqlClient } from "effect/sql";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { Artifact, Revision } from "#lib/review/contracts.ts";
@@ -29,6 +29,7 @@ import {
 import { exportDatabase } from "../database-files.ts";
 import { journalFormat } from "../inference/journal.ts";
 import { RunRecord } from "./execution-store.ts";
+import { openRegularFile, portablePackagePath } from "./package-files.ts";
 
 /**
  * Parent-supplied dependencies.
@@ -174,7 +175,7 @@ const fail = (reason: PackageError["reason"], message: string) =>
 const asPackageError = (cause: unknown, message: string) =>
   Schema.is(PackageError)(cause) ? cause : fail("unavailable", message);
 
-const noFollow = constants.O_NOFOLLOW;
+const noFollow = constants.O_NOFOLLOW ?? 0;
 
 const artifactName = (sha256: string, mediaType: ArtifactRef["mediaType"]) => {
   const extension = mediaType === "application/pdf" ? "pdf" : "png";
@@ -246,15 +247,18 @@ const makeDirectory = (path: string, message: string) =>
   }, message);
 
 const fsyncDirectory = (directory: string) =>
-  io(async () => {
-    const handle = await open(directory, "r");
+  // POSIX directory fsync supplements file flushes; Windows uses flushed files and journaled renames.
+  process.platform === "win32"
+    ? Effect.void
+    : io(async () => {
+        const handle = await open(directory, "r");
 
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  }, "A directory could not be saved.");
+        try {
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+      }, "A directory could not be saved.");
 
 const removeTree = (path: string) =>
   Effect.tryPromise({
@@ -265,25 +269,13 @@ const removeTree = (path: string) =>
 const hashFile = (path: string, maxBytes: number) =>
   Effect.tryPromise({
     try: async () => {
-      if (noFollow === undefined) {
-        throw fail("unavailable", "This system cannot reject symbolic links.");
-      }
-
-      const info = await lstat(path);
-
-      if (info.isSymbolicLink() || !info.isFile()) {
-        throw fail("corrupt", "A package file is a symbolic link or not a regular file.");
-      }
-
-      if (info.size > maxBytes) {
-        throw fail("limit", "A package file exceeds the size limit.");
-      }
-
-      const handle = await open(path, constants.O_RDONLY | noFollow);
+      const handle = await openRegularFile(path, noFollow);
       const hash = createHash("sha256");
       let bytes = 0;
 
       try {
+        if ((await handle.stat()).size > maxBytes)
+          throw fail("limit", "A package file exceeds the size limit.");
         const stream = handle.createReadStream();
 
         for await (const chunk of stream) {
@@ -308,36 +300,34 @@ const hashFile = (path: string, maxBytes: number) =>
 
 const copyRegularFile = (source: string, destination: string, maxBytes: number) =>
   Effect.gen(function* () {
-    if (noFollow === undefined) {
-      return yield* fail("unavailable", "This system cannot reject symbolic links.");
-    }
-
     const identity = yield* hashFile(source, maxBytes);
 
     yield* Effect.tryPromise({
       try: async () => {
         await mkdir(dirname(destination), { recursive: true });
-        const input = await open(source, constants.O_RDONLY | noFollow);
-
-        const output = await open(
-          destination,
-          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
-        );
+        const input = await openRegularFile(source, noFollow);
 
         try {
-          const stream = input.createReadStream();
+          const output = await open(
+            destination,
+            constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
+          );
 
-          for await (const chunk of stream) {
-            if (!Buffer.isBuffer(chunk))
-              throw fail("corrupt", "A package file could not be copied.");
+          try {
+            const stream = input.createReadStream();
 
-            await output.write(chunk);
+            for await (const chunk of stream) {
+              if (!Buffer.isBuffer(chunk))
+                throw fail("corrupt", "A package file could not be copied.");
+              await output.write(chunk);
+            }
+
+            await output.sync();
+          } finally {
+            await output.close();
           }
-
-          await output.sync();
         } finally {
           await input.close();
-          await output.close();
         }
       },
       catch: (cause) => asPackageError(cause, "A package file could not be copied."),
@@ -355,9 +345,6 @@ const copyRegularFile = (source: string, destination: string, maxBytes: number) 
 const writeBytes = (path: string, bytes: Uint8Array | string) =>
   Effect.tryPromise({
     try: async () => {
-      if (noFollow === undefined)
-        throw fail("unavailable", "This system cannot reject symbolic links.");
-
       await mkdir(dirname(path), { recursive: true });
       const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
 
@@ -1266,7 +1253,7 @@ const listPackage = (root: string, limits: typeof PackageLimits.Type) =>
           }
 
           if (info.isDirectory()) {
-            const rel = relative(root, path);
+            const rel = portablePackagePath(relative(root, path));
 
             if (rel !== "artifacts" && rel !== "journals") {
               throw fail("corrupt", "The package contains an unexpected directory.");
@@ -1278,7 +1265,7 @@ const listPackage = (root: string, limits: typeof PackageLimits.Type) =>
 
           if (!info.isFile()) throw fail("corrupt", "The package contains a non-regular file.");
 
-          found.push({ relativePath: relative(root, path), bytes: info.size });
+          found.push({ relativePath: portablePackagePath(relative(root, path)), bytes: info.size });
 
           if (found.length > limits.maxFiles)
             throw fail("limit", "The package exceeds the file limit.");
@@ -1520,11 +1507,15 @@ const placeOf = (
   dataDirectory: string,
 ): "untouched" | "aside" | "replaced" | "corrupt" => {
   const live = safeJoin(dataDirectory, entry.relativePath);
-  const saved = safeJoin(dataDirectory, join(".package-restore", "saved", entry.relativePath));
+
+  const saved = safeJoin(
+    dataDirectory,
+    posix.join(".package-restore", "saved", entry.relativePath),
+  );
 
   const incoming = safeJoin(
     dataDirectory,
-    join(".package-restore", "incoming", entry.relativePath),
+    posix.join(".package-restore", "incoming", entry.relativePath),
   );
 
   if (live === undefined || saved === undefined || incoming === undefined) return "corrupt";
@@ -1560,7 +1551,11 @@ const placeOf = (
 const rollbackEntry = (dataDirectory: string, entry: SwapEntry) =>
   Effect.gen(function* () {
     const live = safeJoin(dataDirectory, entry.relativePath);
-    const saved = safeJoin(dataDirectory, join(".package-restore", "saved", entry.relativePath));
+
+    const saved = safeJoin(
+      dataDirectory,
+      posix.join(".package-restore", "saved", entry.relativePath),
+    );
 
     if (
       live !== undefined &&
@@ -1599,7 +1594,11 @@ const rollbackEntry = (dataDirectory: string, entry: SwapEntry) =>
     if (place === "replaced") {
       const discarded = safeJoin(
         dataDirectory,
-        join(".package-restore", "discarded", `${randomUUID()}-${basename(entry.relativePath)}`),
+        posix.join(
+          ".package-restore",
+          "discarded",
+          `${randomUUID()}-${basename(entry.relativePath)}`,
+        ),
       );
 
       if (discarded === undefined)
@@ -1688,7 +1687,7 @@ const recoverJournal = (dataDirectory: string, journal: RestoreJournal) =>
         if (entry.hadOriginal) {
           const saved = safeJoin(
             dataDirectory,
-            join(".package-restore", "saved", entry.relativePath),
+            posix.join(".package-restore", "saved", entry.relativePath),
           );
 
           if (saved === undefined)
@@ -1721,11 +1720,15 @@ const swapEntry = (dataDirectory: string, journal: RestoreJournal, index: number
     }
 
     const live = safeJoin(dataDirectory, current.relativePath);
-    const saved = safeJoin(dataDirectory, join(".package-restore", "saved", current.relativePath));
+
+    const saved = safeJoin(
+      dataDirectory,
+      posix.join(".package-restore", "saved", current.relativePath),
+    );
 
     const incoming = safeJoin(
       dataDirectory,
-      join(".package-restore", "incoming", current.relativePath),
+      posix.join(".package-restore", "incoming", current.relativePath),
     );
 
     if (live === undefined || saved === undefined || incoming === undefined) {

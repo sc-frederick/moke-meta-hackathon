@@ -1,0 +1,35 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openRegularFile, portablePackagePath } from "../backend/review/package-files.ts";
+
+test("package reads without O_NOFOLLOW retain regular-file identity and reject links", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-package-file-"));
+
+  try {
+    const source = join(directory, "source");
+    await writeFile(source, "original bytes");
+    const handle = await openRegularFile(source, 0);
+
+    try {
+      expect(await handle.readFile("utf8")).toBe("original bytes");
+    } finally {
+      await handle.close();
+    }
+
+    const link = join(directory, "link");
+    await symlink(source, link, "file");
+    await expect(openRegularFile(link, 0)).rejects.toThrow("symbolic link");
+    await mkdir(join(directory, "folder"));
+    await expect(openRegularFile(join(directory, "folder"), 0)).rejects.toThrow("regular file");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Windows-generated package paths use portable separators without accepting manifest escapes", () => {
+  expect(portablePackagePath("artifacts\\abc.png", "\\")).toBe("artifacts/abc.png");
+  expect(portablePackagePath("journals/abc.sqlite", "/")).toBe("journals/abc.sqlite");
+  expect(portablePackagePath("artifacts\\escape.png", "/")).toBe("artifacts\\escape.png");
+});

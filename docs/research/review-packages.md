@@ -135,3 +135,19 @@ Tests cut before discard, after discard and after the original returns; a wrong
 identity stays blocked without changing the original. Another test leaves the
 incoming database installed, verifies application writes are refused, then
 reopens and confirms post-recovery writes survive another restart.
+
+## Windows filesystem compatibility
+
+Windows CI exposed the absence of `fs.constants.O_NOFOLLOW`. Package reads now
+reject symlinks before opening and compare bigint device/file identities from
+`lstat`, the opened handle and another `lstat`. Without a native no-follow flag,
+a filesystem with no usable file identity is refused. New files still use
+exclusive creation. The same fallback is exercised on Linux by passing flag 0.
+See the [Node file-handle stat API](https://nodejs.org/api/fs.html#filehandlestatoptions)
+and [Bun Stats API](https://bun.com/reference/node/fs/Stats) for the underlying APIs.
+
+OS-generated relative paths are converted to slash-separated manifest paths;
+internal restore paths use portable joins. Untrusted manifest paths are still
+validated without rewriting backslashes. POSIX directory fsync remains enabled.
+Windows flushes files before atomic rename; this adapter omits POSIX directory
+fsync there, so directory metadata durability on hardware power loss is not claimed. Process-interruption recovery remains journaled.
