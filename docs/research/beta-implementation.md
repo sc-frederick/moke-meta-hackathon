@@ -9,7 +9,8 @@ boundary; it does not review the rest of the discipline or permit packet.
 This account follows the [product context](../../PRODUCT.md),
 [implementation](../../src/lib/review/components/ReviewWorkbench.svelte), and
 [project manifest](../../.project-kit/manifest.json). It records implemented
-behavior, not completed acceptance testing.
+behavior. The [validation record](beta-validation.md) contains acceptance proof
+and remaining limits.
 
 ## Work surface and review flow
 
@@ -155,11 +156,11 @@ or repackaging the design-system pack. Preserve its attribution and keep the
 reference source outside public distributions. This extension does not replace
 those source materials or create a second UI system.
 
-## Validation to record
+## Validation
 
-Use Bun `1.4.4` from [.bun-version](../../.bun-version). Tests, bounded live
-acceptance, responsive review, and council review are still in progress. No
-passing result is asserted here; the parent implementation record owns proof.
+Use Bun `1.4.4` from [.bun-version](../../.bun-version). Completed automated checks,
+bounded live acceptance, responsive review, and actual limitations are recorded
+in [beta validation](beta-validation.md). Council results belong to the pull request.
 Relevant commands from [package.json](../../package.json) are:
 
 ```sh

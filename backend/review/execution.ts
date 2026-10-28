@@ -538,15 +538,6 @@ export class ReviewExecution extends Context.Service<
               end: (uncertain) => leave(run, uncertain),
             });
 
-            let messageRecorded = false;
-
-            const message = async (taskId: number, text: string) => {
-              const receipt = await jsonTool(run, port.message(fence(run, taskId), text));
-              messageRecorded = true;
-
-              return receipt;
-            };
-
             const selectedTools = {
               inspect: (taskId: number) => tool(run, inspectEvidence(run, taskId)),
               render: (
@@ -558,8 +549,10 @@ export class ReviewExecution extends Context.Service<
                 proposal: typeof import("./execution-port.ts").CountProposal.Type,
               ) => jsonTool(run, port.propose(fence(run, taskId), proposal)),
               evaluate: (taskId: number) => jsonTool(run, port.evaluate(fence(run, taskId))),
-              message,
-              finish: message,
+              message: (taskId: number, text: string) =>
+                jsonTool(run, port.message(fence(run, taskId), text)),
+              finish: (taskId: number, text: string) =>
+                jsonTool(run, port.message(fence(run, taskId), text)),
             };
 
             const segment = (taskId: number, request: SamInspectionRequest) =>
@@ -654,17 +647,18 @@ export class ReviewExecution extends Context.Service<
             void submission
               .wait(BACKGROUND_CONTEXT)
               .then(async (result) => {
-                // A terminal answer is still only conversation prose. Preserve it when the model
-                // did not call a message tool, through the same admission and source/fact fence.
-                if (
-                  result.status === "done" &&
-                  run.review_context_json != null &&
-                  !messageRecorded
-                ) {
+                // Pi may already be committed when a paused run resumes. Persisted messages,
+                // rather than this launch's tool callbacks, determine whether a reply is missing.
+                if (result.status === "done" && run.review_context_json != null) {
                   const answer = await runPromise(
                     store.query(
                       Effect.gen(function* () {
                         const sql = yield* SqlClient.SqlClient;
+
+                        const messages =
+                          yield* sql`SELECT id FROM review_records WHERE project_id=${run.project_id} AND kind='message' AND json_extract(payload,'$.role')='application' AND json_extract(payload,'$.origin.runId')=${run.run_id} LIMIT 1`;
+
+                        if (messages.length > 0) return null;
 
                         const rows = yield* Schema.decodeUnknownEffect(
                           Schema.Array(
@@ -687,18 +681,16 @@ export class ReviewExecution extends Context.Service<
                           .join("\n")
                           .trim();
 
-                        return { taskId: row.task_id, text };
+                        return text.length > 0 ? { taskId: row.task_id, text } : null;
                       }),
                     ),
                   );
 
                   if (answer !== null) {
                     const text =
-                      answer.text.length === 0
-                        ? "The inspection returned no review summary. No facts were accepted. Narrow the request or inspect the selected evidence before trying again."
-                        : answer.text.length > 2000
-                          ? `${answer.text.slice(0, 1850)}\n[Response shortened. The full provider response is retained in the execution journal.]`
-                          : answer.text;
+                      answer.text.length > 2000
+                        ? `${answer.text.slice(0, 1850)}\n[Response shortened. The full provider response is retained in the execution journal.]`
+                        : answer.text;
 
                     await tool(run, port.message(fence(run, answer.taskId, "answer"), text));
                   }

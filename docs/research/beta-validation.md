@@ -7,7 +7,7 @@ selected drawn-to-schedule count coordination, as described in the
 
 ## Automated proof
 
-- `DISPLAY=:0 bun run verify`: 176 tests, 1,205 assertions, type and Svelte checks,
+- `DISPLAY=:0 bun run verify`: 177 tests, 1,210 assertions, type and Svelte checks,
   lint, formatting, all builds, and both Electron flows passed.
 - `bun run build:concepts` passed.
 - `bun --bun electron-builder --publish never --linux dir` and
@@ -58,6 +58,23 @@ The final configured check made no new inference calls: before and after it,
 the isolated database held one run, seven model attempts, and zero SAM attempts.
 Temporary session credentials were private, excluded from artifacts, and removed
 after testing. Test applications were closed.
+
+## Review regressions
+
+Sol and Grok identified four additional defects. Each was reproduced against the
+earlier behavior and fixed through the existing source loader or durable journal:
+
+| Finding                                               | Fix and regression proof                                                                                                                                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Earlier-revision proposals could target a newer sheet | Only proposals for the finding's current operand sheet remain actionable. A captured pre-acceptance fixture showed Revision A proposals opening Revision B before the fix; afterward neither proposal was actionable, and both records remained stored. |
+| Evidence could retain an unrelated sheet preview      | Entering Evidence reloads the selected finding's current source and invalidates older render requests. The desktop regression switches from another sheet preview back to the finding and verifies its source page.                                     |
+| Resume could duplicate a committed tool reply         | The terminal fallback checks persisted application messages for that run. A simulated interruption between Pi completion and domain completion resumes with no extra model request or application message.                                              |
+| Empty terminal output created misleading prose        | The fallback saves only nonempty terminal text. The real SDK/SQLite integration covers both an actual answer and an empty response, without inventing a summary.                                                                                        |
+
+The repeated full suite and packaged desktop flows passed after these changes.
+The review added one empty-response case and extended existing integration and
+desktop tests for the reproduced failures. It did not restore vendor conformance
+tests or add another recovery mechanism.
 
 The parent inspected dark and light captures at 1440×900 and 1100×733, plus the
 findings interaction at 390×844. Source images were loaded before final capture.

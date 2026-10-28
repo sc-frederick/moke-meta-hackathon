@@ -5,6 +5,7 @@ import { SqlClient } from "effect/sql";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Database } from "bun:sqlite";
 import { DataDirectoryOwnership } from "../backend/ownership.ts";
 import { migrateDatabase } from "../backend/database-files.ts";
 import { ImportedPdf } from "../backend/documents/types.ts";
@@ -213,6 +214,7 @@ async function fixture(transport?: ProviderTransport) {
   const findingId = Schema.decodeUnknownSync(FindingId)(created.entityId);
 
   return {
+    filename,
     state,
     command,
     execution,
@@ -310,6 +312,8 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
       { id: "fire_protection", heading: "# Fire protection coordination review" },
     ];
 
+    let lastExecution: ExecutionStatus | undefined;
+
     for (const scope of scopes) {
       state = await session.state();
 
@@ -332,7 +336,7 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
 
       if (!sent.saved || sent.execution === null)
         throw new Error(sent.error ?? "Review did not start");
-      await completed(session, sent.execution);
+      lastExecution = await completed(session, sent.execution);
       const firstRequest = requests.at(-2) ?? "";
       expect(firstRequest).toContain(scope.heading);
       expect(firstRequest).toContain(submission.command.text);
@@ -363,6 +367,33 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
     expect(state.facts).toHaveLength(0);
     expect(state.sheets[0]?.coverage).toBe("partial");
     expect(state.findings[0]?.closed).toBe(false);
+
+    if (lastExecution === undefined) throw new Error("Missing completed execution");
+    await Effect.runPromise(session.execution.quiesce);
+    {
+      using database = new Database(session.filename);
+      // Simulate a crash after Pi committed completion but before the domain run recorded it.
+      database.run(
+        "UPDATE review_execution_runs SET state='paused',version=version+1 WHERE run_id=?",
+        [lastExecution.runId],
+      );
+    }
+
+    const paused = await Effect.runPromise(
+      session.execution.status(session.projectId, lastExecution.runId),
+    );
+
+    const beforeResume = requests.length;
+
+    const resumed = await Effect.runPromise(
+      session.execution.control(session.projectId, paused.runId, paused.version, "resume"),
+    );
+
+    await completed(session, resumed);
+    expect(requests).toHaveLength(beforeResume);
+    expect(
+      (await session.state()).messages.filter((entry) => entry.role === "application"),
+    ).toHaveLength(scopes.length);
   } finally {
     await session.dispose();
   }
@@ -406,10 +437,10 @@ test("missing credentials preserve the saved request and return an actionable ad
   }
 });
 
-test("a terminal provider answer is preserved in the requesting conversation when no message tool was used", async () => {
-  const text =
-    "Needs input: inspect the Room 101 type A legend. Governing sources remain unverified.";
-
+test.each([
+  "Needs input: inspect the Room 101 type A legend. Governing sources remain unverified.",
+  "",
+])("a terminal answer persists only nonempty conversation prose: %j", async (text) => {
   const session = await fixture(async () => response(false, text));
 
   try {
@@ -437,9 +468,12 @@ test("a terminal provider answer is preserved in the requesting conversation whe
     await completed(session, sent.execution);
     const saved = await session.state();
     const answer = saved.messages.find((message) => message.role === "application");
-    expect(answer?.text).toBe(text);
-    expect(answer?.conversationId).toBe(conversation.id);
-    expect(answer?.origin?.runId).toBe(sent.execution.runId);
+
+    if (text.length > 0) {
+      expect(answer?.text).toBe(text);
+      expect(answer?.conversationId).toBe(conversation.id);
+      expect(answer?.origin?.runId).toBe(sent.execution.runId);
+    } else expect(answer).toBeUndefined();
     expect(saved.facts).toHaveLength(0);
     expect(saved.checks).toHaveLength(0);
   } finally {

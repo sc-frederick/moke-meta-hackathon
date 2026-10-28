@@ -1184,7 +1184,11 @@
               <button
                 class={{ current: sourceTab === "evidence" }}
                 disabled={busy || !selectedFinding}
-                onclick={() => (sourceTab = "evidence")}>Evidence</button
+                onclick={() => {
+                  if (selectedFinding === null) return;
+                  sourceTab = "evidence";
+                  void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
+                }}>Evidence</button
               ><button
                 disabled={busy}
                 class={{ current: sourceTab === "sheets" }}
@@ -1219,9 +1223,10 @@
                   ></label
                 >
                 <p class="muted">
-                  Includes at most 2 SAM requests when available. Each model request reserves up to
-                  64,000 text-input tokens and 4,096 output tokens. Billing and image-token usage
-                  are unknown. Nothing starts automatically on reopen.
+                  The selection resets to 12 on restart. Includes at most 2 SAM requests when
+                  available. Each model request reserves up to 64,000 text-input tokens and 4,096
+                  output tokens. Billing and image-token usage are unknown. Nothing starts
+                  automatically on reopen.
                 </p>
               </section>
               <section class="settings-section">

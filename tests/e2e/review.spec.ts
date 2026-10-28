@@ -124,6 +124,21 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await createFinding("Room 101 type A");
 
+    await expect(
+      page.getByRole("region", { name: "Original source render" }).locator("img"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Sheets", exact: true }).click();
+    const otherSheet = page.getByTestId("sheet-list").locator("details").nth(1);
+
+    if ((await otherSheet.getAttribute("open")) === null)
+      await otherSheet.locator("summary").click();
+    await otherSheet.getByRole("button", { name: "View sheet" }).click();
+    await expect(
+      page.getByRole("region", { name: "Original source render" }).locator("img"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Evidence", exact: true }).click();
+    await expect(page.locator(".source-provenance")).toContainText("page 1");
+
     if (live) {
       await page.getByTestId("start-inspection").click();
       await expect(page.getByTestId("execution-status")).toHaveText(

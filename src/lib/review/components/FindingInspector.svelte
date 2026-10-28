@@ -58,6 +58,8 @@
       (fact) =>
         fact.findingId === finding.id &&
         fact.state === "proposed" &&
+        fact.evidence.sheetId ===
+          (fact.side === "drawn" ? finding.drawnSheetId : finding.scheduledSheetId) &&
         fact.version > ((fact.side === "drawn" ? drawnFact : scheduledFact)?.version ?? 0),
     ),
   );
