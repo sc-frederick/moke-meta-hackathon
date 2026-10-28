@@ -3,6 +3,7 @@
   import { Match } from "effect";
   import type { ArtifactId, SheetId, Region } from "#lib/review/contracts.ts";
   import type { PacketReview } from "#lib/review/packet.ts";
+  import { packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { formatElapsed } from "./review-format.ts";
 
   let {
@@ -60,20 +61,13 @@
     ),
   );
 
-  const pendingCoverage = $derived(review.coverage.filter((item) => item.status === "unreviewed"));
-  const missingCoverage = $derived(review.coverage.filter((item) => item.status === "needs_input"));
-  const completedCoverage = $derived(review.coverage.length - pendingCoverage.length);
+  const coverageProgress = $derived(packetCoverageProgress(review));
 
-  const hasCoverageGaps = $derived(
-    review.sheets.some((sheet) =>
-      Object.keys(passLabels).some(
-        (pass) =>
-          !review.coverage.some(
-            (item) =>
-              item.sheetId === sheet.id && item.pass === pass && item.status !== "unreviewed",
-          ),
-      ),
-    ),
+  const hasReviewGaps = $derived(
+    !coverageProgress.complete ||
+      review.missingInputs.length > 0 ||
+      review.findings.some((finding) => finding.status === "Needs input") ||
+      review.citations.some((citation) => citation.status !== "verified"),
   );
 
   const stateLabel = $derived(
@@ -87,11 +81,7 @@
             ? "Review cancelled"
             : review.state === "failed"
               ? "Review stopped"
-              : !review.finished ||
-                  hasCoverageGaps ||
-                  pendingCoverage.length > 0 ||
-                  missingCoverage.length > 0 ||
-                  review.missingInputs.length > 0
+              : !review.finished || hasReviewGaps
                 ? "Review finished with gaps"
                 : "Review finished",
   );
@@ -114,8 +104,9 @@
     <span class="duration" aria-label="Review elapsed time">{formatElapsed(elapsed)}</span>
   </header>
   <p class="progress" role="status">
-    {review.inspectedSheetIds.length} of {review.sheets.length} sheets opened · {completedCoverage} of
-    {review.coverage.length} review passes recorded
+    {review.inspectedSheetIds.length} of {review.sheets.length} sheets opened · {coverageProgress.recorded}
+    of
+    {coverageProgress.total} review passes recorded
   </p>
   {#if review.summary}<p class="summary">{review.summary}</p>{/if}
   {#if review.error}<p class="attention" role="alert">{review.error}</p>{/if}
@@ -273,13 +264,17 @@
               <span>{name}</span><strong>{value}</strong>
             </p>{/each}
         </section>{/if}
+      <p class="muted">
+        Progress follows the requested scope. Compatible coverage from earlier scopes remains in
+        this ledger. Excluded disciplines require an explicit Not applicable reason.
+      </p>
       {#each review.sheets as sheet (sheet.id)}
         <section>
           <h4>
             {sheet.label}
             <span class="muted">· {sheet.documentName}, page {sheet.pageIndex + 1}</span>
           </h4>
-          {#each review.coverage.filter((item) => item.sheetId === sheet.id) as item (`${item.pass}:${item.discipline}`)}<p
+          {#each coverageProgress.ledger.filter((item) => item.sheetId === sheet.id) as item (`${item.pass}:${item.discipline}`)}<p
             >
               <span>{passLabels[item.pass]} · {item.discipline.replaceAll("_", " ")}</span><strong
                 >{item.status.replaceAll("_", " ")}</strong

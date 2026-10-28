@@ -1,6 +1,7 @@
 import type { PacketReview } from "../../src/lib/review/packet.ts";
 import { reviewDisciplines } from "../../src/lib/review/execution.ts";
 import { Match } from "effect";
+import { packetCoverageProgress } from "../../src/lib/review/packet-coverage.ts";
 
 const escape = (value: string | number) =>
   String(value).replace(/[&<>"']/g, (character) => {
@@ -80,18 +81,16 @@ export function renderPacketReport(
       left.id.localeCompare(right.id),
   );
 
-  const gaps = review.sheets.flatMap((sheet) =>
-    passes.flatMap(([pass, title]) => {
-      const entries = review.coverage.filter(
-        (entry) => entry.sheetId === sheet.id && entry.pass === pass,
-      );
+  const coverageProgress = packetCoverageProgress(review);
 
-      return entries.length === 0 ||
-        entries.some((entry) => entry.status === "unreviewed" || entry.status === "needs_input")
-        ? [`${sheet.label}: ${title}`]
-        : [];
-    }),
-  );
+  const gaps = coverageProgress.gaps.map((gap) => {
+    const pass = passes.find(([id]) => id === gap.pass)?.[1] ?? gap.pass;
+
+    const reason =
+      gap.reason === "needs_reason" ? "Not applicable needs a reason" : statusLabel(gap.reason);
+
+    return `${sheetLabel(gap.sheetId)}: ${discipline(gap.discipline)} · ${pass} (${reason})`;
+  });
 
   const unresolvedCitations = review.citations.filter(
     (citation) => citation.status !== "verified",
@@ -100,8 +99,7 @@ export function renderPacketReport(
   const complete =
     review.finished &&
     review.state === "completed" &&
-    review.sheets.length > 0 &&
-    gaps.length === 0 &&
+    coverageProgress.complete &&
     review.missingInputs.length === 0 &&
     !findings.some((finding) => finding.status === "Needs input") &&
     unresolvedCitations === 0;
@@ -127,11 +125,28 @@ export function renderPacketReport(
       (sheet) =>
         `<tr><th scope="row">${escape(sheet.label)}<small>${escape(sheet.documentName)} · PDF page ${sheet.pageIndex + 1}<br>Source ${escape(sheet.sha256)}<br>${review.inspectedSheetIds.includes(sheet.id) ? "Source image opened" : "Source image not opened"}</small></th>${passes
           .map(([pass]) => {
-            const rows = review.coverage.filter(
+            const rows = coverageProgress.ledger.filter(
               (entry) => entry.sheetId === sheet.id && entry.pass === pass,
             );
 
-            return `<td>${rows.length ? rows.map((entry) => `<div class="coverage-entry">${badge(entry.status)}<strong>${escape(discipline(entry.discipline))}</strong>${paragraph(entry.note)}</div>`).join("") : `${badge("unreviewed")}${paragraph("No coverage entry recorded.")}`}</td>`;
+            return `<td>${rows
+              .map((entry) => {
+                const gap = coverageProgress.gaps.find(
+                  (item) =>
+                    item.sheetId === entry.sheetId &&
+                    item.discipline === entry.discipline &&
+                    item.pass === entry.pass,
+                );
+
+                const note = Match.value(gap?.reason).pipe(
+                  Match.when("missing", () => "No coverage entry recorded."),
+                  Match.when("needs_reason", () => "Not applicable requires an explicit reason."),
+                  Match.orElse(() => entry.note),
+                );
+
+                return `<div class="coverage-entry">${badge(entry.status)}<strong>${escape(discipline(entry.discipline))}</strong>${paragraph(note)}</div>`;
+              })
+              .join("")}</td>`;
           })
           .join("")}</tr>`,
     )
@@ -183,7 +198,7 @@ ${findings
       )}<h4>Observed condition</h4>${paragraph(finding.observed)}<h4>Specific correction or missing input</h4>${paragraph(finding.correction)}<h4>Source and calculation references</h4>${list([...finding.citationIds.map((id) => `Citation ${id}`), ...finding.calculationIds.map((id) => `Calculation ${id}`), ...(finding.priorCommentId === null ? [] : [`Prior comment ${finding.priorCommentId}`])], finding.classification === "Drawing conflict" ? "Drawing coordination; see source locations and evidence." : "No supporting citation or calculation was recorded.")}<h4>Focused evidence</h4>${finding.evidenceIds.map((id) => evidenceImage(id, finding.evidenceNote || finding.observed)).join("") || paragraph(finding.evidenceNote || "No image evidence or explanation was recorded.")}</article>`,
   )
   .join("")}</section>
-<section aria-labelledby="coverage"><h2 id="coverage">Document inventory and review coverage</h2><p>Coverage is recorded for each pass. Opening a source image does not establish completion of its checks. Missing entries remain unreviewed.</p>${review.sheets.length ? `<div class="table-wrap"><table class="coverage"><thead><tr><th>Document / sheet</th>${passes.map(([, title]) => `<th>${title}</th>`).join("")}</tr></thead><tbody>${coverageRows}</tbody></table></div>` : paragraph("No source sheets were recorded for this review.")}</section>
+<section aria-labelledby="coverage"><h2 id="coverage">Document inventory and review coverage</h2><p>Coverage is recorded for every requested sheet, discipline and pass. Whole-set reviews account for all 11 disciplines; excluded work requires an explicit Not applicable reason. Opening a source image does not establish completion of its checks. Missing entries remain unreviewed. Compatible coverage from earlier scopes remains visible but does not settle a different discipline's checks.</p>${review.sheets.length ? `<div class="table-wrap"><table class="coverage"><thead><tr><th>Document / sheet</th>${passes.map(([, title]) => `<th>${title}</th>`).join("")}</tr></thead><tbody>${coverageRows}</tbody></table></div>` : paragraph("No source sheets were recorded for this review.")}</section>
 <section aria-labelledby="citations"><h2 id="citations">Governing-source and citation log</h2>${review.sources.length ? review.sources.map((source) => `<article class="record"><h3>${escape(source.title || "Untitled source")}</h3><p>${badge(source.status)} · ${source.official ? "Official source" : "Other source"}</p><p class="url">${sourceLink(source.url)}</p><dl><dt>Source ID</dt><dd>${escape(source.id)}</dd><dt>Retrieved</dt><dd>${escape(source.retrievedAt)}</dd><dt>Content SHA-256</dt><dd>${escape(source.sha256 ?? "Not available")}</dd></dl>${source.status === "unavailable" ? paragraph(source.text || "Source access was unavailable.") : ""}</article>`).join("") : paragraph("No governing sources have been retrieved.")}${review.citations.map((citation) => `<article class="record"><h3>${escape(citation.document || "Governing document needs input")} ${escape(citation.section)}</h3><p>${badge(citation.status)} · Citation ${escape(citation.id)}</p><dl><dt>Jurisdiction</dt><dd>${escape(citation.jurisdiction || "Needs input")}</dd><dt>Edition / date</dt><dd>${escape(citation.edition || "Needs input")}</dd><dt>Retrieved source</dt><dd>${escape(citation.sourceId ?? "Not available")}</dd></dl><h4>Governing text</h4>${citation.quote ? `<blockquote class="prose">${escape(citation.quote)}</blockquote>` : paragraph("No governing text was recorded.")}<h4>Application to the observed condition</h4>${paragraph(citation.application)}${paragraph(citation.note)}</article>`).join("")}</section>
 <section aria-labelledby="calculations"><h2 id="calculations">Supporting calculations</h2>${
     review.calculations.length

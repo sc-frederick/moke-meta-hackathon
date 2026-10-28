@@ -139,6 +139,7 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(panel).toContainText("Whole-set review");
     await expect(panel).toContainText("Review finished with gaps");
     await expect(panel).toContainText("1 of 2 sheets opened");
+    await expect(panel.locator(".progress")).toContainText("1 of 88 review passes recorded");
     await expect(panel).toContainText("Offline desktop fixture");
     await expect(page.getByRole("button", { name: /^Check:/ })).toHaveCount(0);
     await panel.getByText("Sheet coverage and review records", { exact: true }).click();

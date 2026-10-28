@@ -24,14 +24,15 @@ export function selectPacketReviewScope(
   instruction: string,
   selection: typeof ReviewDisciplineSelection.Type,
 ): typeof PacketScope.Type {
+  if (selection !== "auto") return PacketScope.cases.Discipline.make({ discipline: selection });
+
   if (
-    selection === "auto" &&
-    /\b(?:(?:whole|entire|full|complete)\s+(?:drawing\s+)?(?:set|packet|project)|all\s+(?:sheets|disciplines|drawings))\b/i.test(
+    /\b(?:(?:whole|entire|full|complete)\s+(?:(?:drawing|permit|plan|construction|document|submission|building|revised)\s+)*(?:set|packet|project)|all\s+(?:(?:supplied|drawing|permit|plan)\s+)*(?:sheets|disciplines|drawings))\b/i.test(
       instruction,
     )
   )
     return PacketScope.cases.WholeSet.make({});
-  const discipline = selection === "auto" ? routeReviewDiscipline(instruction) : selection;
+  const discipline = routeReviewDiscipline(instruction);
 
   return discipline === "general"
     ? PacketScope.cases.WholeSet.make({})
@@ -164,6 +165,8 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   instructionRevision: Schema.String,
   sheets: Schema.Array(PacketSheet),
   inspectedSheetIds: Schema.Array(SheetId),
+  baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
+  inspectedThisReviewSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   evidenceIds: Schema.Array(ArtifactId),
   conversationContext: Schema.optionalKey(
     Schema.Array(Schema.Struct({ role: Schema.Literals(["reviewer", "application"]), text: Text })),

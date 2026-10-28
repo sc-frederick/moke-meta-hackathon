@@ -24,6 +24,11 @@ source images and details, retrieves public governing text, performs repeatable
 calculations, and records findings, coverage, citations and prior comments.
 Fire Alarm, Fire Sprinkler, Life Safety and Fire Protection remain distinct.
 
+Whole-set coverage tracks every discipline and all four passes for each supplied
+sheet. An excluded discipline needs an explicit Not applicable reason. Follow-up
+reviews retain coverage for unchanged sources; a prior comment can close only
+after its revised deliverable is inspected in the current review.
+
 Source access and review coverage stay explicit. Inaccessible official text,
 unknown governing editions and absent project inputs remain Needs input. A
 successful download does not establish applicability of a code requirement.

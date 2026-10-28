@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { Schema } from "effect";
 import { renderPacketReport } from "../../backend/packet-review/report.ts";
 import { PacketReview, PacketScope } from "#lib/review/packet.ts";
+import { initializePacketCoverage } from "#lib/review/packet-coverage.ts";
 
 const identifiers = {
   review: "10000000-0000-4000-8000-000000000001",
@@ -321,4 +322,126 @@ test("a finished run does not hide an unresolved finding behind complete coverag
 
   expect(html).toContain("Review has unresolved coverage or inputs");
   expect(html).not.toContain("Requested review recorded");
+});
+
+test("whole-set reports expose every missing discipline instead of accepting General-only coverage", () => {
+  const base = review();
+  const scope = PacketScope.cases.WholeSet.make({});
+
+  const coverage = initializePacketCoverage(
+    PacketScope.cases.Discipline.make({ discipline: "general" }),
+    base.sheets,
+  ).map((entry) => ({ ...entry, status: "checked" as const }));
+
+  const html = renderPacketReport(
+    review({
+      scope,
+      coverage,
+      findings: [],
+      citations: [],
+      sources: [],
+      priorComments: [],
+      missingInputs: [],
+    }),
+    new Map(),
+  );
+
+  expect(html).toContain("Review has unresolved coverage or inputs");
+  expect(html).not.toContain("Requested review recorded");
+  expect(html).toContain("Civil · Document completeness (missing)");
+  expect(html).toContain("Fire alarm · Code and agency requirements (missing)");
+  expect(html.match(/No coverage entry recorded\./g)).toHaveLength(40);
+});
+
+test("whole-set report coverage settles all disciplines only with explicit exclusion reasons", () => {
+  const base = review();
+  const scope = PacketScope.cases.WholeSet.make({});
+
+  const coverage = initializePacketCoverage(scope, base.sheets).map((entry) =>
+    entry.discipline === "electrical" || entry.discipline === "general"
+      ? {
+          ...entry,
+          status: "checked" as const,
+          note: "Reviewed the supplied drawing and its references.",
+        }
+      : {
+          ...entry,
+          status: "not_applicable" as const,
+          note: "No work in this discipline appears in the supplied electrical-only sheet.",
+        },
+  );
+
+  const completion = {
+    scope,
+    coverage,
+    findings: [],
+    citations: [],
+    sources: [],
+    priorComments: [],
+    missingInputs: [],
+  };
+
+  const completed = review(completion);
+
+  expect(renderPacketReport(completed, new Map())).toContain("Requested review recorded");
+
+  const withoutReason = review({
+    ...completion,
+    coverage: coverage.map((entry) =>
+      entry.discipline === "civil" && entry.pass === "requirements"
+        ? { ...entry, note: "" }
+        : entry,
+    ),
+  });
+
+  const html = renderPacketReport(withoutReason, new Map());
+  expect(html).not.toContain("Requested review recorded");
+  expect(html).toContain("Not applicable requires an explicit reason.");
+});
+
+test("discipline reports cannot borrow General coverage and do not inherit unrelated scope gaps", () => {
+  const base = review();
+
+  const generalRows = initializePacketCoverage(
+    PacketScope.cases.Discipline.make({ discipline: "general" }),
+    base.sheets,
+  ).map((entry) => ({ ...entry, status: "checked" as const }));
+
+  const input = review({
+    coverage: generalRows,
+    findings: [],
+    citations: [],
+    sources: [],
+    priorComments: [],
+    missingInputs: [],
+  });
+
+  const absent = renderPacketReport(input, new Map());
+  expect(absent).not.toContain("Requested review recorded");
+  expect(absent.match(/No coverage entry recorded\./g)).toHaveLength(4);
+
+  const scopedRows = initializePacketCoverage(base.scope, base.sheets).map((entry) => ({
+    ...entry,
+    status: "checked" as const,
+  }));
+
+  const scoped = review({
+    findings: [],
+    citations: [],
+    sources: [],
+    priorComments: [],
+    missingInputs: [],
+    coverage: [
+      ...generalRows.map((entry) => ({
+        ...entry,
+        status: "needs_input" as const,
+        note: "An earlier General check still needs its source.",
+      })),
+      ...scopedRows,
+    ],
+  });
+
+  const html = renderPacketReport(scoped, new Map());
+  expect(html).toContain("Requested review recorded");
+  expect(html).toContain("An earlier General check still needs its source.");
 });

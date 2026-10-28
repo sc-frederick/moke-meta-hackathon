@@ -62,6 +62,14 @@ before any count finding exists. SQLite records and Pi journals preserve its
 progress independently of the workbench connection. Reopening the app does not
 start a saved review or issue new model requests automatically.
 
+Follow-ups retain coverage and inspection history only for the same sheet,
+revision, source hash, page and page box. Optional payload metadata separately
+records baseline sheets and inspections made in the current review, so retained
+baseline evidence cannot close a newly revised comment. Whole-set coverage
+requires every discipline and pass, including reasons for Not applicable entries.
+Shutdown and startup classify a review as uncertain while any admitted attempt
+has no completed receipt; reopening never retries that request automatically.
+
 The partial database export creates a consistent backup, including committed WAL data,
 then finalizes it in DELETE journal mode so it can be opened as a standalone,
 read-only file on every OS. Automatic backups use the same format.

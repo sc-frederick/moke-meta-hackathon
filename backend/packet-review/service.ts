@@ -59,6 +59,8 @@ import { readSource, searchSources } from "./sources.ts";
 import { renderPacketReport } from "./report.ts";
 import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 import { preparePacketSamRequest, decodePacketSamResponse } from "./sam.ts";
+import { citationHasSourceSupport } from "./citations.ts";
+import { initializePacketCoverage, samePacketSheetSource } from "#lib/review/packet-coverage.ts";
 
 const promptVersion = "moke-packet-review-v1";
 
@@ -263,6 +265,23 @@ export class PacketReviews extends Context.Service<
               "conflict",
               "The packet changed. Pause this review and start a review of the updated documents.",
             );
+        });
+
+        const settleInterrupted = Effect.fn("PacketReviews.interrupted")(function* (row: Row) {
+          const sql = yield* SqlClient.SqlClient;
+
+          const unresolved =
+            yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain' LIMIT 1`;
+
+          const state = unresolved.length ? "uncertain" : "paused";
+
+          const message = unresolved.length
+            ? "A request was interrupted with an unresolved outcome. It will not be sent again."
+            : "Review paused. Resume explicitly to continue.";
+
+          if (row.payload.state === state && row.payload.error === message) return row.payload;
+
+          return yield* save(row, new PacketReview({ ...row.payload, state, error: message }));
         });
 
         const mutate = (
@@ -509,6 +528,9 @@ export class PacketReviews extends Context.Service<
                     new PacketReview({
                       ...review,
                       inspectedSheetIds: [...new Set([...review.inspectedSheetIds, sheet.id])],
+                      inspectedThisReviewSheetIds: [
+                        ...new Set([...(review.inspectedThisReviewSheetIds ?? []), sheet.id]),
+                      ],
                       evidenceIds: [...new Set([...review.evidenceIds, artifact.id])],
                     }),
                   { artifactId: artifact.id },
@@ -688,41 +710,37 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_citation",
-              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires actually retrieved official text containing the quote; unavailable access remains unverified.",
+              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires matching retrieved official document, edition, section and a substantive quoted clause. Unsupported claims are saved as unverified.",
               PacketCitation,
-              async (task, input) =>
-                await recordTool(
+              async (task, input) => {
+                const current = await run(get(row.project_id, row.id));
+                const source = current.sources.find((entry) => entry.id === input.sourceId);
+
+                const citation =
+                  input.status === "verified" && !citationHasSourceSupport(input, source)
+                    ? {
+                        ...input,
+                        status: "unverified" as const,
+                        note: (
+                          "Retrieved official text does not support the claimed document, edition, section and substantive quote. " +
+                          input.note
+                        ).slice(0, 32000),
+                      }
+                    : input;
+
+                return await recordTool(
                   row,
                   task,
                   "citation",
                   (review) => {
-                    const source = review.sources.find((entry) => entry.id === input.sourceId);
-
-                    const normalize = (text: string) =>
-                      text.replace(/\s+/g, " ").trim().toLowerCase();
-
-                    if (
-                      input.status === "verified" &&
-                      (!source?.official ||
-                        source.status !== "available" ||
-                        !input.quote.trim() ||
-                        !input.edition.trim() ||
-                        !input.section.trim() ||
-                        !input.application.trim() ||
-                        !normalize(source.text).includes(normalize(input.quote)))
-                    )
-                      throw error(
-                        "input",
-                        "A verified citation needs the retrieved official text, edition, section, quote and project applicability.",
-                      );
-
                     return new PacketReview({
                       ...review,
-                      citations: upsert(review.citations, input),
+                      citations: upsert(review.citations, citation),
                     });
                   },
-                  input,
-                ),
+                  citation,
+                );
+              },
             ),
             tool(
               "record_finding",
@@ -793,19 +811,43 @@ export class PacketReviews extends Context.Service<
               "record_prior_comment",
               "Track an agency comment, response and changed source. Resolved requires inspected revision evidence; user completion does not close it.",
               PacketPriorComment,
-              async (task, input) =>
-                await recordTool(
+              async (task, input) => {
+                const snapshot = await run(asExecution(config.review.snapshot(row.project_id, 0)));
+
+                return await recordTool(
                   row,
                   task,
                   "prior_comment",
                   (review) => {
                     if (
                       input.evidenceIds.some((id) => !review.evidenceIds.includes(id)) ||
-                      (input.status === "Resolved" && !input.evidenceIds.length)
+                      (input.status === "Resolved" &&
+                        (!input.changedSources.trim() ||
+                          !input.evidenceIds.some((id) => {
+                            const artifact = snapshot.artifacts.find((item) => item.id === id);
+
+                            const changed = review.sheets.filter(
+                              (sheet) => !(review.baselineSheetIds ?? []).includes(sheet.id),
+                            );
+
+                            const relevant = changed.length ? changed : review.sheets;
+
+                            return (
+                              artifact?.sheetId != null &&
+                              (review.inspectedThisReviewSheetIds ?? []).includes(
+                                artifact.sheetId,
+                              ) &&
+                              relevant.some(
+                                (sheet) =>
+                                  sheet.id === artifact.sheetId &&
+                                  sheet.revisionId === artifact.revisionId,
+                              )
+                            );
+                          })))
                     )
                       throw error(
                         "input",
-                        "Comment closure needs current inspected revision evidence.",
+                        "Comment closure needs a named changed source and revision evidence inspected in this review.",
                       );
 
                     return new PacketReview({
@@ -814,7 +856,8 @@ export class PacketReviews extends Context.Service<
                     });
                   },
                   input,
-                ),
+                );
+              },
             ),
             tool(
               "ask_reviewer",
@@ -971,7 +1014,7 @@ export class PacketReviews extends Context.Service<
                       query(
                         Effect.gen(function* () {
                           const fresh = yield* load(row.project_id, row.id);
-                          yield* assertActive(fresh);
+                          yield* assertActive(fresh, true);
                           const sql = yield* SqlClient.SqlClient;
                           yield* sql`UPDATE packet_review_attempts SET sent=1 WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam' AND sent=0`;
                         }),
@@ -1030,10 +1073,11 @@ export class PacketReviews extends Context.Service<
                         }),
                       ),
                     );
+                    await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
                     await run(
                       query(
                         Effect.gen(function* () {
-                          yield* assertActive(yield* load(row.project_id, row.id));
+                          yield* assertActive(yield* load(row.project_id, row.id), true);
                         }),
                       ),
                     );
@@ -1053,18 +1097,32 @@ export class PacketReviews extends Context.Service<
                     };
                   } catch (cause) {
                     await run(
-                      mutate(
-                        row.project_id,
-                        row.id,
-                        (review) =>
-                          new PacketReview({
-                            ...review,
-                            state: review.state === "cancelled" ? "cancelled" : "uncertain",
-                            error:
-                              "A SAM request has an unresolved outcome. Its saved intent prevents automatic repetition.",
-                          }),
-                        false,
-                      ),
+                      query(
+                        Effect.gen(function* () {
+                          const fresh = yield* load(row.project_id, row.id);
+                          const sql = yield* SqlClient.SqlClient;
+
+                          const completed =
+                            yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam' AND status='completed' AND response_json IS NOT NULL`;
+
+                          if (
+                            completed.length ||
+                            fresh.owner_generation !== config.owner.generation
+                          )
+                            return fresh.payload;
+
+                          return yield* save(
+                            fresh,
+                            new PacketReview({
+                              ...fresh.payload,
+                              state:
+                                fresh.payload.state === "cancelled" ? "cancelled" : "uncertain",
+                              error:
+                                "A SAM request has an unresolved outcome. Its saved intent prevents automatic repetition.",
+                            }),
+                          );
+                        }),
+                      ).pipe(Effect.flatMap(publish)),
                     );
                     throw cause;
                   } finally {
@@ -1456,13 +1514,6 @@ export class PacketReviews extends Context.Service<
 
           const scope = selectPacketReviewScope(message.text, request.discipline);
 
-          const selected = Match.value(scope).pipe(
-            Match.tagsExhaustive({
-              WholeSet: () => "general" as const,
-              Discipline: ({ discipline }) => discipline,
-            }),
-          );
-
           const earlier = (yield* list(request.projectId)).find(
             (item) => item.conversationId === request.conversationId,
           );
@@ -1485,6 +1536,10 @@ export class PacketReviews extends Context.Service<
 
           const timestamp = now(yield* DateTime.now);
 
+          const unchanged = sheets.filter((sheet) =>
+            earlier?.sheets.some((previous) => samePacketSheetSource(previous, sheet)),
+          );
+
           const review = new PacketReview({
             id: randomUUID(),
             projectId: project.id,
@@ -1504,23 +1559,21 @@ export class PacketReviews extends Context.Service<
             promptVersion,
             instructionRevision: reviewInstructionRevision,
             sheets,
-            inspectedSheetIds: [],
+            inspectedSheetIds: (earlier?.inspectedSheetIds ?? []).filter((id) =>
+              unchanged.some((sheet) => sheet.id === id),
+            ),
+            baselineSheetIds: unchanged.map((sheet) => sheet.id),
+            inspectedThisReviewSheetIds: [],
             evidenceIds: earlier?.evidenceIds ?? [],
             conversationContext: state.messages
               .filter((item) => item.conversationId === request.conversationId)
               .slice(-24)
               .map(({ role, text }) => ({ role, text })),
             projectConfiguration: earlier?.projectConfiguration ?? {},
-            coverage: sheets.flatMap((sheet) =>
-              ["completeness", "requirements", "coordination", "prior_comments"].map((pass) =>
-                Schema.decodeUnknownSync(PacketCoverage)({
-                  sheetId: sheet.id,
-                  pass,
-                  discipline: selected,
-                  status: "unreviewed",
-                  note: "",
-                }),
-              ),
+            coverage: initializePacketCoverage(
+              scope,
+              sheets,
+              earlier ? { sheets: earlier.sheets, coverage: earlier.coverage } : undefined,
             ),
             sources: earlier?.sources ?? [],
             citations: earlier?.citations ?? [],
@@ -1845,7 +1898,7 @@ export class PacketReviews extends Context.Service<
                 const sql = yield* SqlClient.SqlClient;
 
                 return yield* Schema.decodeUnknownEffect(Schema.Array(Row))(
-                  yield* sql`SELECT * FROM packet_reviews WHERE owner_generation=${config.owner.generation} AND json_extract(payload,'$.state')='running'`,
+                  yield* sql`SELECT * FROM packet_reviews WHERE owner_generation=${config.owner.generation} AND json_extract(payload,'$.state') IN ('running','paused','uncertain')`,
                 );
               }),
             ),
@@ -1853,12 +1906,16 @@ export class PacketReviews extends Context.Service<
 
           for (const row of rows)
             await run(
-              mutate(
-                row.project_id,
-                row.id,
-                (value) => new PacketReview({ ...value, state: "paused" }),
-                false,
-              ),
+              query(
+                Effect.gen(function* () {
+                  const current = yield* load(row.project_id, row.id);
+
+                  if (!["running", "paused", "uncertain"].includes(current.payload.state))
+                    return current.payload;
+
+                  return yield* settleInterrupted(current);
+                }),
+              ).pipe(Effect.flatMap(publish)),
             );
 
           for (const controllers of samControllers.values())
@@ -1884,8 +1941,23 @@ export class PacketReviews extends Context.Service<
               }),
             ]);
 
-            if (drained) runtimes.clear();
-            else config.owner.retainUntilExit();
+            if (drained) {
+              runtimes.clear();
+
+              for (const row of rows)
+                await run(
+                  query(
+                    Effect.gen(function* () {
+                      const current = yield* load(row.project_id, row.id);
+
+                      if (!["paused", "uncertain"].includes(current.payload.state))
+                        return current.payload;
+
+                      return yield* settleInterrupted(current);
+                    }),
+                  ).pipe(Effect.flatMap(publish)),
+                );
+            } else config.owner.retainUntilExit();
 
             return drained;
           } finally {
@@ -1898,24 +1970,10 @@ export class PacketReviews extends Context.Service<
             const sql = yield* SqlClient.SqlClient;
 
             const rows = yield* Schema.decodeUnknownEffect(Schema.Array(Row))(
-              yield* sql`SELECT * FROM packet_reviews WHERE owner_generation<>${config.owner.generation} AND json_extract(payload,'$.state')='running'`,
+              yield* sql`SELECT * FROM packet_reviews WHERE owner_generation<>${config.owner.generation} AND engine=${journalFormat} AND json_extract(payload,'$.state') IN ('running','paused','uncertain')`,
             );
 
-            for (const row of rows) {
-              const unresolved =
-                yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain' LIMIT 1`;
-
-              yield* save(
-                row,
-                new PacketReview({
-                  ...row.payload,
-                  state: unresolved.length ? "uncertain" : "paused",
-                  error: unresolved.length
-                    ? "A request was interrupted with an unresolved outcome. It will not be sent again."
-                    : "Review paused after restart. Resume explicitly to continue.",
-                }),
-              );
-            }
+            for (const row of rows) yield* settleInterrupted(row);
           }),
         );
         yield* Effect.addFinalizer(() =>
