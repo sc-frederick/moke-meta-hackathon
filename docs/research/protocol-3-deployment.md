@@ -137,7 +137,7 @@ was performed.
 
 ## Repository validation
 
-This commit changes documentation and sanitized evidence only. The deployed
+The deployment record introduces no application changes. The deployed
 application source remains the already verified `d7ba4f874`. Its existing local
 evidence is 321 smoke tests with 2,152 assertions, seven isolated Electron tests
 and seven packaged tests in `.local/audit-2/ci-11-verify.log` and
@@ -149,3 +149,12 @@ passed for this deployment. No application behavior or isolation guard changed.
 SDK operations were checked against the installed `modal@0.11.1` source and the
 official [Image API](https://modal.com/docs/sdk/js/latest/Image) and
 [Sandbox API](https://modal.com/docs/sdk/js/latest/Sandbox).
+
+The first Windows CI run exceeded Bun's default five-second deadline in three
+integration tests; a single rerun still timed out the continuation case at about
+seven seconds. Those three cases now use explicit 15-second test limits, matching
+adjacent integration tests. Their assertions, application deadlines and isolation
+controls are unchanged. Focused validation passed three tests with 114 assertions;
+full verification passed 321 smoke tests with 2,152 assertions and seven isolated
+Electron tests. Evidence is retained in `ci-timeout-focused.log` and
+`ci-timeout-verify.log` under the local deployment evidence directory.

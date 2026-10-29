@@ -120,7 +120,7 @@ test("a drop claim rejects fresh-command reuse and preserves same-command receip
     await api.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 15000);
 
 test.each(["complete", "budget", "cancel", "admission failure"] as const)(
   "finish-boundary steering owns its idle Pi continuation: %s",

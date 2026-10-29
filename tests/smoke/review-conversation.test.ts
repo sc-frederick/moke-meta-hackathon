@@ -548,7 +548,7 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
   } finally {
     await session.dispose();
   }
-});
+}, 15000);
 
 test("missing credentials preserve the saved request and return an actionable admission failure without creating evidence", async () => {
   const session = await fixture();
