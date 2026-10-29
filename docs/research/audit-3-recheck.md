@@ -67,7 +67,8 @@ problems, green for what works, and blue for fixes re-checked after a rebuild.
 
 ## Review and verification
 
-The Sol review (gpt-6.1-sol, xhigh) is still in progress. Round 1 found
+Five Sol review rounds (gpt-6.1-sol, xhigh) covered this pass. The user accepted
+the final correction using parent validation, without another review. Round 1 found
 two problems. The pre-send blocker list could go stale after switching
 conversations (S1). A ticked source confirmation survived changing the sheet
 (S2). Round 2 found that the thread's own automatic scroll could cancel
@@ -207,3 +208,14 @@ consecutive runs. The latest native board contains 71 selected screenshots.
 Sol round 5 accepted shutdown fix C1; its remaining resize finding is corrected
 and parent-verified, with any further independent recheck awaiting the user's
 review-budget decision. Fresh macOS CI is still pending.
+
+## Delivery decision
+
+The user chose **Finish using completed validation** after round 5. The final
+exact-top correction in `7461428ec` is accepted on its parent verification:
+native before/after frames, a regression that fails without the fix, three
+consecutive scoped passes and the complete 359-smoke/13-desktop verification.
+No sixth review is requested, and no new Sol approval is claimed. C1 was accepted
+by Sol; its remaining resize concern is corrected with the recommended observer
+condition. The PR can be updated and watched for fresh CI. Merge still requires
+all checks and the remaining merge gate to pass.
