@@ -494,6 +494,24 @@ test("a thread keeps following rapid updates until the reader scrolls up", async
     await page.setViewportSize({ width: 1200, height: 700 });
     await grow(5);
     await expect.poll(distanceFromLatest).toBeLessThan(4);
+
+    // At the exact top, fitting the thread does not need to emit another scroll event.
+    await viewport.hover();
+    await page.mouse.wheel(0, -100000);
+    await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
+    await page.setViewportSize({ width: 1200, height: 10000 });
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollHeight === element.clientHeight))
+      .toBe(true);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await page.setViewportSize({ width: 1200, height: 700 });
+    await grow(5);
+    await expect.poll(distanceFromLatest).toBeLessThan(4);
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

@@ -174,3 +174,36 @@ that the thread fitted, so it is not counted as acceptance. File → Exit closed
 the rebuilt app, its PID disappeared from the running-app list, and reopening
 retained both notes (frame 1593). The audit copy is idle; the user workspace is
 unchanged.
+
+## Fifth review: exact-top resize case
+
+Round 5 returned CHANGES, not approval. It accepted C1 (the shutdown order) and
+found V1: U1 remained open when the reader was already at scroll position zero.
+Making the whole thread fit then need not produce a scroll event, so the earlier
+nullable marker fix could not restore following on its own.
+
+The observer now follows when following is already enabled **or the whole thread
+fits in the viewport**. The nullable automatic-scroll marker stays in place.
+The regression keeps the prior cases and adds an explicit scroll to zero before
+the fit/shrink sequence. It verifies full fit before shrinking; the meaningful
+pre-fix run failed at 6,315 pixels behind after shrinking, then three post-fix
+runs passed. An initial probe that did not reach full fit is excluded.
+
+Five rounds exhaust this recheck's budget. The current correction has parent
+validation but has not been approved by a further Sol review. Nothing is pushed
+or merged on the basis of the exhausted budget. Usage was not exposed.
+
+The exact-top case was then repeated in the packaged Windows app, using the
+same two saved notes. The previous build remained on note A after the
+fit/shrink sequence (frame 1647). In the corrected build, Ctrl+Home established
+the top (frame 1677); both full notes fitted in the enlarged window (frame 1681);
+after shrinking, the end of note B stayed visible (frame 1685). No inference was
+sent for these checks. This is direct native evidence, independent of the test.
+
+The final V1 implementation passed `bun run verify` on Bun 1.4.4: all 359 smoke
+tests (39 files), 13 desktop tests, typecheck, lint, formatting and builds. The
+Svelte autofixer reported no issues. The scoped regression also passed three
+consecutive runs. The latest native board contains 71 selected screenshots.
+Sol round 5 accepted shutdown fix C1; its remaining resize finding is corrected
+and parent-verified, with any further independent recheck awaiting the user's
+review-budget decision. Fresh macOS CI is still pending.

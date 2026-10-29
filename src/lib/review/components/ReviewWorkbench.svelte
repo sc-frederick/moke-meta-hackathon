@@ -222,7 +222,7 @@
     if (!viewport || !content) return;
 
     const observer = new ResizeObserver(() => {
-      if (followLatest) scrollToLatest(viewport);
+      if (followLatest || viewport.scrollHeight <= viewport.clientHeight) scrollToLatest(viewport);
     });
 
     observer.observe(viewport);
