@@ -13,7 +13,7 @@ import {
   type SheetId,
 } from "#lib/review/contracts.ts";
 import { ReviewDesktopRpc } from "#lib/review/shell.ts";
-import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
+import type { PacketReview, StartPacketReview, SteerPacketReview } from "#lib/review/packet.ts";
 import {
   CloudReviewError,
   type CloudReviewUpdate,
@@ -73,6 +73,11 @@ export function createReviewClient() {
   };
 
   return {
+    steerPacketReview: (request: typeof SteerPacketReview.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.SteerPacketReview(request)),
+        "The follow-up could not be delivered. Your draft is preserved.",
+      ),
     startPacketReview: (request: typeof StartPacketReview.Type) =>
       run(
         Effect.flatMap(ReviewDesktopApi, (api) => api.StartPacketReview(request)),
@@ -93,17 +98,16 @@ export function createReviewClient() {
       onReview: (review: PacketReview) => Promise<void>,
       signal: AbortSignal,
     ) =>
-      runtime
-        .runPromise(
-          Effect.gen(function* () {
-            const api = yield* ReviewDesktopApi;
-            yield* Stream.runForEach(api.ObservePacketReviews({ projectId }), (review) =>
-              Effect.promise(() => onReview(review)),
-            );
-          }),
-          { signal },
-        )
-        .catch(() => undefined),
+      run(
+        Effect.gen(function* () {
+          const api = yield* ReviewDesktopApi;
+          yield* Stream.runForEach(api.ObservePacketReviews({ projectId }), (review) =>
+            Effect.promise(() => onReview(review)),
+          );
+        }),
+        "Local progress subscription ended. Reconnecting will reload saved review records.",
+        signal,
+      ),
     controlPacketReview: (
       projectId: typeof ProjectId.Type,
       reviewId: string,
@@ -309,6 +313,8 @@ export function createReviewClient() {
       projectId: typeof ProjectId.Type;
       expectedVersion: number;
       commandId: typeof CommandId.Type;
+      revisionLabel?: string;
+      dropToken?: string;
     }) =>
       run(
         Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewPdf(payload)),

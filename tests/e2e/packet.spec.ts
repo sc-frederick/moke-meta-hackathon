@@ -1,16 +1,18 @@
-import { _electron as electron, expect, test } from "@playwright/test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+import { electron } from "./isolated-electron.ts";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Struct } from "effect";
 import { CloudReviewRecord } from "../../backend/cloud/contracts.ts";
 import { writeCloudState } from "../../backend/cloud/files.ts";
 import { Artifact, Project, Revision, ReviewMessage, Sheet } from "#lib/review/contracts.ts";
 import { PacketReview, PacketScope, ReviewPass } from "#lib/review/packet.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
+import { installRpcBoundary } from "./rpc-boundary.ts";
 
-test("document QA needs no count check and persisted findings support evidence, completion, export, and reopen", async () => {
+test("document QA needs no count check and persisted findings support evidence, completion, and reopen", async () => {
   test.setTimeout(90000);
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-desktop-"));
   const fixture = join(directory, "Drawing packet.pdf");
@@ -86,21 +88,28 @@ test("document QA needs no count check and persisted findings support evidence, 
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixture);
     await page.getByTestId("import-pdf").click();
+    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
+    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
     await expect(page.getByRole("button", { name: /^Check:/ })).toHaveCount(0);
     await page
       .getByLabel("Message", { exact: true })
       .fill("Run a quick QA pass on this drawing set.");
     await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
-    await expect(page.getByText("Whole set or selected discipline", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Scope:/ })).toContainText("Whole set");
 
+    await page.getByRole("button", { name: /^Scope:/ }).click();
+    await page.getByRole("option", { name: "Selected discipline", exact: true }).click();
     const reviewer = page.getByRole("button", { name: /^Reviewer:/ });
     await reviewer.click();
     await page.getByRole("option", { name: "Electrical", exact: true }).click();
     await expect(reviewer).toContainText("Electrical");
     await reviewer.click();
-    await page.getByRole("option", { name: "Auto", exact: false }).click();
-    await expect(reviewer).toContainText("Auto");
+    await page.getByRole("option", { name: "Choose discipline…", exact: false }).click();
+    await expect(reviewer).toContainText("Choose discipline…");
+    await page.getByRole("button", { name: /^Scope:/ }).click();
+    await page.getByRole("option", { name: "Whole set", exact: true }).click();
+    await expect(reviewer).toContainText("All disciplines");
     const model = page.getByRole("button", { name: /^Model:/ });
     await model.click();
     await expect(page.getByRole("option", { name: /SAM/ })).toHaveCount(0);
@@ -129,6 +138,7 @@ test("document QA needs no count check and persisted findings support evidence, 
     await page.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Note saved." })).toBeVisible();
     await expect(page.getByTestId("packet-review-panel")).toHaveCount(0);
+    await page.locator(".sheets-trigger").click();
     await page.getByRole("button", { name: "View sheet", exact: true }).first().click();
     await expect(
       page.getByRole("region", { name: "Original source render" }).locator("img"),
@@ -141,6 +151,8 @@ test("document QA needs no count check and persisted findings support evidence, 
     );
     app = await electron.launch(options);
     page = await app.firstWindow();
+    await installRpcBoundary(page);
+    await page.reload();
     monitor();
     await page.setViewportSize({ width: 1440, height: 1000 });
     const cloud = page.getByTestId("cloud-review-controls");
@@ -152,47 +164,110 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(panel).toContainText("1 of 2 sheets opened");
     await expect(panel.locator(".progress")).toContainText("1 of 88 review passes recorded");
     await expect(panel).toContainText("Offline desktop fixture");
+    await expect(page.locator(".application-message")).toContainText(seeded.previousSummary);
+    await expect(page.locator(".application-message")).not.toContainText(seeded.currentSummary);
     await expect(page.getByRole("button", { name: /^Check:/ })).toHaveCount(0);
     await panel.getByText("Sheet coverage and review records", { exact: true }).click();
     await expect(panel).toContainText("unreviewed");
     const finding = page.getByTestId(`packet-finding-${seeded.findingId}`);
-    await finding.locator("summary").click();
-    await finding.getByRole("button", { name: "Open source evidence", exact: true }).click();
+    await finding.click();
     await expect(
       page.getByRole("region", { name: "Original source render" }).locator("img"),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
-    const elapsed = await panel.getByLabel("Review elapsed time", { exact: true }).innerText();
+    await expect(page.locator(".viewer .overlay")).toHaveCount(1);
+    await page.screenshot({ path: test.info().outputPath("audit-finding-canvas.png") });
 
-    const completed = finding.getByRole("checkbox", {
-      name: `Completed: ${seeded.findingTitle}`,
-      exact: true,
+    await page.evaluate(() => {
+      window.auditRpc.holdRender = true;
     });
+    await page
+      .getByRole("button", {
+        name: "Supplied synthetic drawing packet · Focus detail",
+        exact: true,
+      })
+      .click();
+    await expect.poll(() => page.evaluate(() => window.auditRpc.held)).toBe(true);
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: "Second source finding", exact: false })
+      .click();
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Second sheet source");
+    const secondImage = await page.locator(".viewer img").getAttribute("src");
+    const secondOverlay = await page.locator(".viewer .overlay").getAttribute("style");
+    await page.evaluate(() => window.auditRpc.release());
+    await expect.poll(() => page.evaluate(() => window.auditRpc.held)).toBe(false);
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Second sheet source");
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute("style", secondOverlay ?? "");
+    await expect(page.locator(".viewer img")).toHaveAttribute("src", secondImage ?? "");
+    await page.screenshot({ path: test.info().outputPath("audit-source-race.png") });
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: seeded.findingTitle, exact: false })
+      .click();
+    await expect(page.locator(".viewer img")).toBeVisible();
+
+    // Exercise the no-artifact fallback with the opposite ordering too.
+    await page.evaluate(() => {
+      window.auditRpc.holdRender = true;
+    });
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: "Second source finding", exact: false })
+      .click();
+    await expect.poll(() => page.evaluate(() => window.auditRpc.held)).toBe(true);
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: seeded.findingTitle, exact: false })
+      .click();
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute(
+      "title",
+      "Supplied synthetic drawing packet",
+    );
+    const firstImage = await page.locator(".viewer img").getAttribute("src");
+    await page.evaluate(async () => {
+      window.auditRpc.release();
+      await new Promise(requestAnimationFrame);
+    });
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute(
+      "title",
+      "Supplied synthetic drawing packet",
+    );
+    await expect(page.locator(".viewer img")).toHaveAttribute("src", firstImage ?? "");
+
+    const completed = page.getByTestId("selected-packet-finding").getByRole("checkbox");
 
     await completed.click();
     await expect(completed).toBeChecked();
-    await expect(finding.locator(".finding-status")).toHaveText("Needs input");
-    await expect(panel.getByLabel("Review elapsed time", { exact: true })).toHaveText(elapsed);
+    await expect(page.getByTestId("selected-packet-finding")).toContainText("Needs input");
+    await page.evaluate(() => {
+      window.auditRpc.holdRender = true;
+    });
+    await page
+      .getByRole("button", {
+        name: "Supplied synthetic drawing packet · Focus detail",
+        exact: true,
+      })
+      .click();
+    await expect.poll(() => page.evaluate(() => window.auditRpc.held)).toBe(true);
+    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
+    await page.evaluate(async () => {
+      window.auditRpc.release();
+      await new Promise(requestAnimationFrame);
+    });
+    await expect(page.locator(".viewer")).toHaveCount(0);
     await page.getByTestId("new-conversation").click();
     await expect(panel).toHaveCount(0);
     await page.getByLabel("Message", { exact: true }).fill("Review the electrical discipline.");
     await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
     await page.getByTestId(`conversation-${seeded.conversationId}`).click();
     await expect(panel).toContainText(seeded.findingTitle);
-    const reportFile = test.info().outputPath("packet-review.html");
-    await app.evaluate(({ dialog }, destination) => {
-      dialog.showSaveDialog = async () => ({ canceled: false, filePath: destination });
-    }, reportFile);
-    await panel.getByRole("button", { name: "Export HTML report", exact: true }).click();
     await expect(
-      page.getByRole("status").filter({ hasText: "HTML review report exported." }),
-    ).toBeVisible();
-    const html = await readFile(reportFile, "utf8");
-    expect(html).toContain("data:image/png;base64,");
-    expect(html).toContain("Offline desktop fixture");
-    expect(html).toContain(seeded.findingTitle);
-    expect(html).toContain("unreviewed");
-    expect(html).toContain(`data-completion-id="finding:${seeded.findingId}" checked`);
+      panel.getByRole("button", { name: "Export HTML report", exact: true }),
+    ).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("packet-review-workbench.png") });
     await app.close();
 
@@ -200,13 +275,82 @@ test("document QA needs no count check and persisted findings support evidence, 
     page = await app.firstWindow();
     monitor();
     await expect(page.getByTestId("packet-review-panel")).toContainText(seeded.findingTitle);
-    await page.getByTestId(`packet-finding-${seeded.findingId}`).locator("summary").click();
-    await expect(
-      page.getByRole("checkbox", { name: `Completed: ${seeded.findingTitle}`, exact: true }),
-    ).toBeChecked();
+    await page.getByTestId(`packet-finding-${seeded.findingId}`).click();
+    await expect(page.getByTestId("selected-packet-finding").getByRole("checkbox")).toBeChecked();
+    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
     await expect(page.locator(".reviewer-message")).toContainText(
       "Run a quick QA pass on this drawing set.",
     );
+    await page.locator(".sheets-trigger").click();
+
+    for (const row of await page.getByTestId("sheet-list").locator("li").all()) {
+      await row.locator("details > summary").click();
+      await row.getByTestId(/^confirm-sheet-/).click();
+    }
+
+    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
+    await page.getByTestId("open-create-finding").click();
+    const form = page.getByTestId("create-finding-form");
+    await form.locator("input").first().fill("Count comparison selection");
+    await form.locator("input").nth(1).fill("Light fixtures");
+    await form.locator("select").first().selectOption({ index: 1 });
+    await form.locator("select").nth(1).selectOption({ index: 2 });
+    await form.locator('input[type="checkbox"]').check();
+    await page.getByTestId("create-finding-submit").click();
+    await expect(page.getByTestId("drawn-count-input")).toBeVisible();
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: seeded.findingTitle, exact: false })
+      .click();
+    await expect(page.getByTestId("selected-packet-finding")).toBeVisible();
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: "Count comparison selection", exact: false })
+      .click();
+    await expect(page.getByTestId("drawn-count-input")).toBeVisible();
+    await expect(page.getByTestId("selected-packet-finding")).toHaveCount(0);
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: "Missing project inputs", exact: false })
+      .click();
+    await expect(page.getByTestId("selected-packet-finding")).toContainText(
+      "No source drawing applies to this missing input.",
+    );
+    await expect(page.getByTestId("drawn-count-input")).toHaveCount(0);
+    await expect(page.locator(".viewer")).toHaveCount(0);
+    await expect(page.locator(".source-scroll .banner")).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("audit-missing-source-finding.png") });
+
+    // Reopen with a persisted remote owner and no configured cloud transport. No live calls occur.
+    await app.close();
+    await Effect.runPromise(
+      writeCloudState(join(`${directory}.cloud`, "state.json"), [
+        { ...seeded.cloud, revision: 5, phase: "running" },
+      ]),
+    );
+    app = await electron.launch(options);
+    page = await app.firstWindow();
+    monitor();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect(page.getByTestId("cloud-review-controls")).toContainText("Local edits are paused");
+    await expect(page.getByLabel("Message", { exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save as note", exact: true })).toBeDisabled();
+    await expect(page.getByTestId("import-pdf")).toBeDisabled();
+    await expect(page.getByTestId("open-create-finding")).toBeDisabled();
+    await expect(page.getByRole("button", { name: /^Scope:/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+    await page.screenshot({ path: test.info().outputPath("integration-cloud-owner.png") });
+    await page.getByTestId(`packet-finding-${seeded.findingId}`).click();
+    const mirroredFinding = page.getByTestId("selected-packet-finding");
+    await expect(mirroredFinding.getByRole("checkbox")).toBeDisabled();
+    await expect(mirroredFinding.getByRole("button", { name: /Focus detail/ })).toBeDisabled();
+    await expect(page.locator(".viewer img")).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath("integration-cloud-mirrored-finding.png"),
+    });
     expect(rendererErrors).toEqual([]);
   } finally {
     await app.close();
@@ -338,7 +482,7 @@ function seedCompletedReview(directory: string) {
             {
               sheetId: firstSheet.id,
               detail: "Supplied synthetic drawing packet",
-              region: image.region,
+              region: { x: 80, y: 80, width: 210, height: 180 },
             },
           ],
           observed: "The source fixture does not establish the jurisdiction or permit stage.",
@@ -361,22 +505,8 @@ function seedCompletedReview(directory: string) {
       finished: true,
     });
 
-    database
-      .prepare(
-        `INSERT INTO packet_reviews (id,project_id,conversation_id,command_id,fingerprint,source_version,owner_generation,journal_id,engine,payload) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        review.id,
-        review.projectId,
-        review.conversationId,
-        crypto.randomUUID(),
-        "offline-ui-fixture",
-        project.sourceVersion,
-        crypto.randomUUID(),
-        crypto.randomUUID(),
-        "offline-fixture-never-resumed",
-        JSON.stringify(review),
-      );
+    const secondSheet = sheets[1];
+    const firstFinding = review.findings[0];
 
     const request = {
       commandId: crypto.randomUUID(),
@@ -422,7 +552,92 @@ function seedCompletedReview(directory: string) {
         "Offline desktop proof: returned packet results are local. No cloud or model calls were made.",
     });
 
-    return { findingId, findingTitle, conversationId: message.conversationId, cloud };
+    if (!secondSheet || !firstFinding) throw new Error("Missing distinct source fixtures");
+    const secondFindingId = crypto.randomUUID();
+
+    const withSecondFinding = new PacketReview(
+      Struct.assign(review, {
+        findings: [
+          firstFinding,
+          {
+            ...firstFinding,
+            id: secondFindingId,
+            title: "Second source finding",
+            evidenceIds: [],
+            locations: [
+              {
+                sheetId: secondSheet.id,
+                detail: "Second sheet source",
+                region: { x: 320, y: 190, width: 90, height: 110 },
+              },
+            ],
+          },
+          {
+            ...firstFinding,
+            id: crypto.randomUUID(),
+            title: "Missing project inputs",
+            evidenceIds: [],
+            locations: [],
+            evidenceNote: "No source drawing applies to this missing input.",
+          },
+        ],
+      }),
+    );
+
+    const previousSummary = "Earlier saved answer remains available after another review.";
+
+    const previousReview = new PacketReview(
+      Struct.assign(review, {
+        id: crypto.randomUUID(),
+        requestId: crypto.randomUUID(),
+        startedAt: now - 10000,
+        changedAt: now - 8000,
+        summary: previousSummary,
+        findings: [],
+      }),
+    );
+
+    for (const persistedReview of [previousReview, withSecondFinding]) {
+      database
+        .prepare(
+          `INSERT INTO packet_reviews (id,project_id,conversation_id,command_id,fingerprint,source_version,owner_generation,journal_id,engine,payload) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          persistedReview.id,
+          persistedReview.projectId,
+          persistedReview.conversationId,
+          crypto.randomUUID(),
+          "offline-ui-fixture",
+          project.sourceVersion,
+          crypto.randomUUID(),
+          crypto.randomUUID(),
+          "offline-fixture-never-resumed",
+          JSON.stringify(persistedReview),
+        );
+
+      const answer = new ReviewMessage({
+        id: crypto.randomUUID(),
+        projectId: project.id,
+        conversationId: message.conversationId,
+        role: "application",
+        text: persistedReview.summary,
+        createdAt: new Date(persistedReview.changedAt).toISOString(),
+      });
+
+      database
+        .prepare("INSERT INTO review_records(project_id,id,kind,payload) VALUES (?,?,?,?)")
+        .run(project.id, answer.id, "message", JSON.stringify(answer));
+    }
+
+    return {
+      findingId,
+      secondFindingId,
+      findingTitle,
+      conversationId: message.conversationId,
+      cloud,
+      previousSummary,
+      currentSummary: review.summary,
+    };
   } finally {
     database.close();
   }

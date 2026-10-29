@@ -384,6 +384,20 @@ export class ReviewStore extends Context.Service<
                 entityId = entry.id;
                 message = "Reviewer instruction saved; conversation text is not accepted evidence.";
               }),
+            AssignSheetDiscipline: (command) =>
+              Effect.gen(function* () {
+                for (const id of command.sheetIds) {
+                  const sheet = findSheet(id);
+
+                  if (!sheet) return yield* failure("The sheet does not belong to this project.");
+                  yield* save(
+                    "sheet",
+                    new Sheet(Struct.assign(sheet, { discipline: command.discipline })),
+                  );
+                }
+
+                message = "Sheet disciplines saved. Count coverage and confirmation are unchanged.";
+              }),
             ConfirmSheet: (command) =>
               Effect.gen(function* () {
                 const sheet = findSheet(command.sheetId);

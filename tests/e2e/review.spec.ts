@@ -1,4 +1,5 @@
-import { _electron as electron, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { electron } from "./isolated-electron.ts";
 import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -43,7 +44,6 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     env: {
       ...environment,
       PROJECT_KIT_DATA_DIRECTORY: directory,
-      DISPLAY: environment.DISPLAY ?? ":0",
     },
   };
 
@@ -119,7 +119,11 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.getByRole("option", { name: "Push to cloud" })).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByTestId("import-pdf").click();
+    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
+
+    await page.getByTestId("sheet-list").locator("details > summary").first().click();
+    await page.getByTestId("sheet-list").locator("details > summary").nth(1).click();
 
     for (let index = 0; index < 2; index++)
       await page
@@ -188,6 +192,9 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     };
 
     const saveNote = async (text: string) => {
+      const inspector = page.getByTestId("finding-inspector");
+      const title = await inspector.getByRole("heading", { level: 2 }).textContent();
+      await page.getByRole("button", { name: "Close source panel", exact: true }).click();
       const note = page.getByRole("button", { name: "Save as note", exact: true });
 
       if ((await note.getAttribute("aria-pressed")) !== "true") await note.click();
@@ -196,6 +203,8 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
         text,
       );
+
+      if (title) await openFinding(title);
     };
 
     await createFinding("Room 101 type A");
@@ -204,15 +213,13 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       page.getByRole("region", { name: "Original source render" }).locator("img"),
     ).toBeVisible();
     await page.getByRole("button", { name: "Sheets", exact: true }).click();
-    const otherSheet = page.getByTestId("sheet-list").locator("details").nth(1);
-
-    if ((await otherSheet.getAttribute("open")) === null)
-      await otherSheet.locator("summary").click();
+    const otherSheet = page.getByTestId("sheet-list").locator("li").nth(1);
     await otherSheet.getByRole("button", { name: "View sheet" }).click();
     await expect(
       page.getByRole("region", { name: "Original source render" }).locator("img"),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Evidence", exact: true }).click();
+    await expect(page.locator(".source-provenance")).toContainText("page 2");
+    await openFinding("Room 101 type A");
     await expect(page.locator(".source-provenance")).toContainText("page 1");
 
     if (live) {
@@ -334,6 +341,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixtureB);
     await page.getByTestId("import-pdf").click();
+    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
     await page.getByRole("button", { name: "Revision", exact: true }).click();
     const maps = page.getByTestId(/^revision-map-/);
     await expect(maps).toHaveCount(2);
@@ -373,9 +381,6 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     );
 
     await saveNote("Rechecked Revision B; keep the original issue and correction history.");
-    await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
-      "Rechecked Revision B",
-    );
     await page.locator(".source-scroll").evaluate((element) => {
       element.scrollTop = 0;
     });
@@ -412,7 +417,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect
       .poll(
         async () =>
-          (await readdir(packageParent)).filter((name) => name.startsWith("Moke-review-")).length,
+          (await readdir(packageParent)).filter((name) => name.startsWith("MOKE-review-")).length,
       )
       .toBe(1);
     await expect(

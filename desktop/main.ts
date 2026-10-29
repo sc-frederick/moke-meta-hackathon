@@ -1,16 +1,17 @@
-import { app, BrowserWindow, dialog, Menu, net, protocol } from "electron";
-import { Effect, Layer, Logger, ManagedRuntime, Schema } from "effect";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
+import { Effect, Layer, Logger, ManagedRuntime, Option, Schema } from "effect";
 import { MainRpcServer } from "electron-effect-rpc/main";
 import { appendFileSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
-import { DocumentError, ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
+import { ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
 import { ReviewProxy, ExecutionProxy, PacketProxy, CloudReviewProxy } from "./review-proxy.ts";
 import { readInferenceConfigurations, storeInferenceConfiguration } from "./credentials.ts";
 import { readModalConfiguration } from "./modal-credentials.ts";
+import { createDropImports } from "./drop-imports.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -113,6 +114,51 @@ if (!app.requestSingleInstanceLock()) {
         modal === undefined ? withInference : { ...withInference, modal },
       );
 
+      const preferencesPath = join(dataDirectory, "import-preferences.json");
+      const Preferences = Schema.Struct({ directory: Schema.String });
+      let importDirectory: string | undefined;
+
+      try {
+        importDirectory = Schema.decodeUnknownSync(Schema.fromJsonString(Preferences))(
+          await readFile(preferencesPath, "utf8"),
+        ).directory;
+      } catch {
+        /* A missing or invalid chooser preference never blocks source import. */
+      }
+
+      const drops = createDropImports();
+      ipcMain.handle("moke:stage-pdf", async (event, value) => {
+        if (
+          !event.senderFrame ||
+          event.senderFrame !== event.sender.mainFrame ||
+          !trusted(event.senderFrame.url)
+        )
+          return null;
+        const decoded = Schema.decodeUnknownOption(Schema.String)(value);
+
+        if (Option.isNone(decoded)) return null;
+        const source = decoded.value;
+
+        if (!isAbsolute(source) || extname(source).toLowerCase() !== ".pdf") return null;
+
+        try {
+          if (!(await stat(source)).isFile()) return null;
+        } catch {
+          return null;
+        }
+
+        const token = drops.stage(source);
+
+        return token ? { token, name: basename(source) } : null;
+      });
+
+      const rememberDirectory = async (source: string) => {
+        importDirectory = dirname(source);
+        await writeFile(preferencesPath, JSON.stringify({ directory: importDirectory }), {
+          mode: 0o600,
+        }).catch(() => undefined);
+      };
+
       const shellHandlers = ReviewShellRpc.toLayer(
         Effect.gen(function* () {
           const { api } = yield* BackendApi;
@@ -122,8 +168,8 @@ if (!app.requestSingleInstanceLock()) {
               Effect.tryPromise({
                 try: () =>
                   dialog.showSaveDialog({
-                    title: "Save Moke review report",
-                    defaultPath: "Moke-review.html",
+                    title: "Save MOKE review report",
+                    defaultPath: "MOKE-review.html",
                     filters: [{ name: "HTML report", extensions: ["html"] }],
                   }),
                 catch: () =>
@@ -147,35 +193,65 @@ if (!app.requestSingleInstanceLock()) {
                 ),
               ),
             ChooseReviewPdf: (request) =>
-              Effect.tryPromise({
-                try: () =>
-                  dialog.showOpenDialog({
-                    properties: ["openFile"],
-                    filters: [{ name: "Drawing PDF", extensions: ["pdf"] }],
-                  }),
-                catch: () =>
-                  new ReviewStorageError({ message: "The drawing chooser could not open." }),
-              }).pipe(
-                Effect.flatMap((result) => {
-                  const source = result.filePaths[0];
+              Effect.gen(function* () {
+                const drop = request.dropToken
+                  ? yield* drops.claim(request, request.dropToken)
+                  : undefined;
 
-                  return result.canceled || source === undefined
-                    ? Effect.succeed(null)
-                    : api.ImportReviewPdf({ ...request, source, name: basename(source) }).pipe(
-                        Effect.mapError(
-                          (cause) =>
-                            new ReviewStorageError({
-                              message:
-                                cause instanceof DocumentError && cause.reason === "unavailable"
-                                  ? "The drawing reader is unavailable. Close and reopen Moke, then try importing again."
-                                  : Schema.is(ReviewError)(cause)
-                                    ? cause.message
-                                    : "The PDF could not be imported. Try again or choose another PDF.",
-                            }),
-                        ),
-                      );
-                }),
-              ),
+                if (drop?.receipt) return drop.receipt;
+
+                const source = yield* Effect.tryPromise({
+                  try: async () => {
+                    if (drop) return drop.source;
+
+                    const options: Electron.OpenDialogOptions = {
+                      title: "Import drawing PDF",
+                      properties: ["openFile"],
+                      filters: [{ name: "Drawing PDF", extensions: ["pdf"] }],
+                    };
+
+                    if (importDirectory) options.defaultPath = importDirectory;
+                    const selection = await dialog.showOpenDialog(options);
+
+                    return selection.canceled ? undefined : selection.filePaths[0];
+                  },
+                  catch: () =>
+                    new ReviewStorageError({ message: "The drawing chooser could not open." }),
+                });
+
+                if (!source) {
+                  if (request.dropToken)
+                    return yield* new ReviewStorageError({
+                      message: "This dropped file expired. Drop the PDF again.",
+                    });
+
+                  return null;
+                }
+
+                const receipt = yield* api
+                  .ImportReviewPdf({
+                    projectId: request.projectId,
+                    expectedVersion: request.expectedVersion,
+                    commandId: request.commandId,
+                    source,
+                    name: request.revisionLabel ?? basename(source),
+                  })
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new ReviewStorageError({
+                          message: Schema.is(ReviewError)(cause)
+                            ? cause.message
+                            : "The PDF could not be imported. Try again or choose another PDF.",
+                        }),
+                    ),
+                  );
+
+                drop?.complete(receipt);
+                yield* Effect.promise(() => rememberDirectory(source));
+
+                return receipt;
+              }),
             ChooseReviewExport: () =>
               Effect.tryPromise({
                 try: () =>
@@ -193,7 +269,7 @@ if (!app.requestSingleInstanceLock()) {
 
                   const destination = join(
                     parent,
-                    `Moke-review-${new Date().toISOString().replaceAll(":", "-")}`,
+                    `MOKE-review-${new Date().toISOString().replaceAll(":", "-")}`,
                   );
 
                   return api.ExportReviewPackage({ destination }).pipe(
@@ -212,7 +288,7 @@ if (!app.requestSingleInstanceLock()) {
               Effect.tryPromise({
                 try: async () => {
                   const result = await dialog.showOpenDialog({
-                    title: "Choose a complete Moke review package",
+                    title: "Choose a complete MOKE review package",
                     properties: ["openDirectory"],
                   });
 
@@ -361,7 +437,7 @@ if (!app.requestSingleInstanceLock()) {
                                   .ExportReviewPackage({
                                     destination: join(
                                       selection.filePaths[0],
-                                      `Moke-review-${new Date().toISOString().replaceAll(":", "-")}`,
+                                      `MOKE-review-${new Date().toISOString().replaceAll(":", "-")}`,
                                     ),
                                   })
                                   .pipe(Effect.asVoid),

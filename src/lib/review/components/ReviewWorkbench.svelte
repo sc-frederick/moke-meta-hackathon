@@ -8,7 +8,7 @@
     ReviewSnapshot,
     Sheet,
   } from "#lib/review/contracts.ts";
-  import { Option, Schema } from "effect";
+  import { Match, Option, Schema } from "effect";
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
   import CloudReviewControls from "./CloudReviewControls.svelte";
@@ -29,7 +29,10 @@
   } from "#lib/review/execution.ts";
   import FindingInspector from "./FindingInspector.svelte";
   import PacketReviewPanel from "./PacketReviewPanel.svelte";
+  import { ReviewDiscipline } from "#lib/review/disciplines.ts";
+  import { SheetId } from "#lib/review/contracts.ts";
   import type { PacketReview } from "#lib/review/packet.ts";
+  import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
   import ReviewSelect from "./ReviewSelect.svelte";
@@ -52,6 +55,15 @@
   let ready = $state(false);
   let busy = $state(false);
   let importing = $state(false);
+  let importDialog: HTMLDialogElement | undefined = $state();
+  let revisionLabel = $state("");
+  let droppedPdf = $state<{ token: string; name: string } | null>(null);
+  let importError = $state("");
+  let dropRequest = 0;
+  let scopeMode = $state<"whole_set" | "selected_sheets" | "discipline">("whole_set");
+  let scopeRevisionId = $state("");
+  let selectedSheetIds = $state<ReadonlyArray<Sheet["id"]>>([]);
+  let selectedPacketFindingId = $state<string | null>(null);
   let error = $state("");
   let snapshot = $state.raw<ReviewSnapshot | null>(null);
   let eventCursor = $state(0);
@@ -80,6 +92,13 @@
   let callLimit = $state<number | undefined>(undefined);
   let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
   let packetBusy = $state(false);
+
+  let steeringCommand: {
+    commandId: ReturnType<typeof newCommandId>;
+    reviewId: string;
+    text: string;
+  } | null = null;
+
   let packetConnectionLost = $state(false);
   let packetProjectId: Project["id"] | null = null;
   let packetSubscription: AbortController | null = null;
@@ -133,6 +152,8 @@
 
   let sourceImageUrl = $state("");
   let sourceArtifact = $state.raw<Artifact | null>(null);
+  let sourceRequestedDpi = 96;
+  let pendingDropImport = $state.raw<Parameters<ReviewClient["chooseReviewPdf"]>[0] | null>(null);
 
   let sourceOverlays = $state.raw<
     ReadonlyArray<{
@@ -170,8 +191,32 @@
       .toSorted((left, right) => left.startedAt - right.startedAt),
   );
 
+  const scopeRevision = $derived(
+    revisions.find((revision) => revision.id === scopeRevisionId) ?? revisions.at(-1),
+  );
+
+  const scopeSheets = $derived(sheets.filter((sheet) => sheet.revisionId === scopeRevision?.id));
+
+  const scopeCount = $derived(
+    Match.value(scopeMode).pipe(
+      Match.when(
+        "selected_sheets",
+        () => scopeSheets.filter((sheet) => selectedSheetIds.includes(sheet.id)).length,
+      ),
+      Match.when(
+        "discipline",
+        () => scopeSheets.filter((sheet) => sheet.discipline === discipline).length,
+      ),
+      Match.orElse(() => scopeSheets.length),
+    ),
+  );
+
   const activePacketReview = $derived(conversationReviews.at(-1) ?? null);
   const packetFindings = $derived(activePacketReview?.findings ?? []);
+
+  const selectedPacketFinding = $derived(
+    packetFindings.find((finding) => finding.id === selectedPacketFindingId) ?? null,
+  );
 
   const validCallLimit = $derived(
     callLimit === undefined || (Number.isInteger(callLimit) && callLimit > 0),
@@ -220,11 +265,24 @@
     ),
   );
 
-  const conversationMessages = $derived(
-    activeConversation === null
-      ? []
-      : messages.filter((message) => message.conversationId === activeConversation.id),
-  );
+  const conversationMessages = $derived.by(() => {
+    if (activeConversation === null) return [];
+
+    const currentMessages = messages.filter(
+      (message) => message.conversationId === activeConversation.id,
+    );
+
+    const displayedAnswer = activePacketReview?.summary
+      ? currentMessages.findLast(
+          (message) =>
+            message.role === "application" &&
+            message.text === activePacketReview.summary &&
+            Date.parse(message.createdAt) >= activePacketReview.startedAt,
+        )
+      : undefined;
+
+    return currentMessages.filter((message) => message.id !== displayedAnswer?.id);
+  });
 
   function receivePacketReview(review: PacketReview) {
     if (review.projectId !== selectedProjectId) return;
@@ -242,40 +300,46 @@
     packetProjectId = projectId;
     packetReviews = [];
     packetConnectionLost = false;
-    void client
-      .observePacketReviews(
-        projectId,
-        async (review) => {
-          if (controller.signal.aborted || projectId !== selectedProjectId) return;
-          receivePacketReview(review);
-          await refresh(projectId);
-        },
-        controller.signal,
-      )
-      .then(() => {
-        if (!controller.signal.aborted && projectId === selectedProjectId) {
-          packetSubscription = null;
-          packetConnectionLost = true;
-        }
-      });
-    const result = await client.listPacketReviews(projectId);
-
-    if (controller.signal.aborted || projectId !== selectedProjectId) return;
-
-    if (result.ok) result.value.forEach(receivePacketReview);
-    else error = result.error.message;
+    await followPacketReviews({
+      client,
+      projectId,
+      signal: controller.signal,
+      onReview: (review) => {
+        receivePacketReview(review);
+        // Snapshot refresh must not block the stream acknowledgement.
+        void refresh(projectId);
+      },
+      onConnectionLost: (lost) => {
+        packetConnectionLost = lost;
+      },
+      onError: (message) => console.warn("Local review progress:", message),
+    });
   }
 
   async function showPacketFinding(findingId: string) {
-    searchOpen = false;
-    closeFindings();
-    await tick();
-    const finding = document.querySelector(`[data-testid="packet-finding-${findingId}"]`);
+    const finding = packetFindings.find((item) => item.id === findingId);
 
-    if (finding instanceof HTMLDetailsElement) {
-      finding.open = true;
-      finding.scrollIntoView({ block: "nearest" });
-    }
+    if (!finding) return;
+    sourceRequest++;
+    sourceLoading = false;
+    selectingRegion = false;
+    applySelectedRegion = null;
+    selectedFindingId = null;
+    previewedSheet = null;
+
+    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+    sourceImageUrl = "";
+    sourceArtifact = null;
+    sourceOverlays = [];
+    error = "";
+    selectedPacketFindingId = findingId;
+    searchOpen = false;
+    panelOpen = true;
+    sourceTab = "evidence";
+    closeFindings();
+
+    if (finding.evidenceIds.length || finding.locations.length)
+      await openPacketEvidence(finding.evidenceIds[0] ?? null, finding.locations[0]);
   }
 
   async function controlPacketReview(
@@ -322,15 +386,6 @@
     else error = result.error.message;
   }
 
-  async function exportPacketReport(review: PacketReview) {
-    packetBusy = true;
-    const result = await client.choosePacketReport(review.projectId, review.id);
-    packetBusy = false;
-
-    if (!result.ok) error = result.error.message;
-    else if (result.value) notice = "HTML review report exported.";
-  }
-
   async function openPacketEvidence(
     artifactId: import("#lib/review/contracts.ts").Artifact["id"] | null,
     location?: {
@@ -341,9 +396,10 @@
   ) {
     if (project === null) return;
     const projectId = project.id;
+    const request = ++sourceRequest;
     await refresh(projectId);
 
-    if (projectId !== selectedProjectId) return;
+    if (request !== sourceRequest || projectId !== selectedProjectId) return;
     const artifact = snapshot?.artifacts.find((item) => item.id === artifactId);
 
     const sheet = snapshot?.sheets.find(
@@ -362,9 +418,12 @@
     closeFindings();
 
     if (artifact) {
-      const request = ++sourceRequest;
       sourceLoading = true;
       previewedSheet = sheet;
+
+      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+      sourceImageUrl = "";
+      sourceArtifact = null;
       sourceOverlays = [];
       const blob = await client.loadArtifactBlobUrl(artifact.projectId, artifact);
 
@@ -385,7 +444,20 @@
       if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
       sourceImageUrl = blob.value;
       sourceArtifact = artifact;
-    } else await loadSheetSource(sheet, 150, location?.region ?? undefined);
+      sourceOverlays =
+        location?.region && location.sheetId === sheet.id
+          ? [{ region: location.region, title: location.detail }]
+          : [];
+    } else {
+      await loadSheetSource(
+        sheet,
+        150,
+        undefined,
+        undefined,
+        location?.region ? [{ region: location.region, title: location.detail }] : [],
+        request,
+      );
+    }
   }
 
   async function refresh(projectId: typeof selectedProjectId = selectedProjectId) {
@@ -546,7 +618,38 @@
     if (project === null || activeConversation === null || cloudBlocked) return;
     const text = draft.trim();
 
-    if (!text) return;
+    if (!text || busy) return;
+
+    if (reviewMode === "review" && activePacketReview?.state === "running") {
+      busy = true;
+
+      if (
+        !steeringCommand ||
+        steeringCommand.reviewId !== activePacketReview.id ||
+        steeringCommand.text !== text
+      )
+        steeringCommand = { commandId: newCommandId(), reviewId: activePacketReview.id, text };
+
+      const result = await client.steerPacketReview({
+        commandId: steeringCommand.commandId,
+        projectId: project.id,
+        reviewId: activePacketReview.id,
+        conversationId: activeConversation.id,
+        text,
+      });
+
+      busy = false;
+
+      if (result.ok) {
+        steeringCommand = null;
+        receivePacketReview(result.value);
+        draft = "";
+        notice = "Follow-up queued for this review. MOKE will apply it at the next tool boundary.";
+        await refresh();
+      } else error = result.error.message;
+
+      return;
+    }
 
     const command = ReviewCommand.cases.PostMessage.make({
       commandId: newCommandId(),
@@ -560,7 +663,20 @@
       if (sheets.length === 0 || !selectedModelAvailable || !validCallLimit || executionBlocked)
         return;
       busy = true;
-      const selection = { model: selectedModel, discipline, maxCalls: callLimit ?? null };
+
+      if (!scopeRevision || !scopeCount || (scopeMode === "discipline" && discipline === "auto")) {
+        busy = false;
+
+        return;
+      }
+
+      const selection = {
+        model: selectedModel,
+        discipline,
+        maxCalls: callLimit ?? null,
+        selection: { mode: scopeMode, revisionId: scopeRevision.id, sheetIds: selectedSheetIds },
+      };
+
       const saved = await client.command(command);
 
       if (!saved.ok) {
@@ -616,21 +732,75 @@
     if (chatViewport) chatViewport.scrollTop = chatViewport.scrollHeight;
   }
 
-  async function importPdf() {
+  function importPdf() {
     if (project === null || cloudBlocked) return;
+    dropRequest++;
+    revisionLabel = revisions.length ? `Rev ${revisions.length}` : "";
+    droppedPdf = null;
+    pendingDropImport = null;
+    importError = "";
+    importDialog?.showModal();
+  }
+
+  async function receiveDrop(event: DragEvent) {
+    event.preventDefault();
+    const request = ++dropRequest;
+    droppedPdf = null;
+    pendingDropImport = null;
+    const files = Array.from(event.dataTransfer?.files ?? []);
+
+    if (files.length !== 1) {
+      importError = "Drop one PDF at a time.";
+
+      return;
+    }
+
+    const file = files[0];
+
+    if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+      importError = "Choose a PDF drawing file.";
+
+      return;
+    }
+
+    try {
+      const staged = await window.mokeFiles.stageDrop(file);
+
+      if (request !== dropRequest || !importDialog?.open) return;
+      droppedPdf = staged;
+      importError = droppedPdf
+        ? ""
+        : "This file has no usable local PDF path. Use Choose PDF instead.";
+    } catch {
+      if (request !== dropRequest || !importDialog?.open) return;
+      droppedPdf = null;
+      importError = "The dropped PDF could not be read. Use Choose PDF instead.";
+    }
+  }
+
+  async function performImport(useDrop = false) {
+    if (project === null || importing || cloudBlocked) return;
     busy = true;
     importing = true;
 
-    const result = await client.chooseReviewPdf({
+    const request: Parameters<ReviewClient["chooseReviewPdf"]>[0] = pendingDropImport ?? {
       projectId: project.id,
       expectedVersion: project.version,
       commandId: newCommandId(),
-    });
+    };
+
+    if (!pendingDropImport && revisionLabel.trim()) request.revisionLabel = revisionLabel.trim();
+
+    if (useDrop && droppedPdf) request.dropToken = droppedPdf.token;
+
+    if (request.dropToken) pendingDropImport = request;
+    const result = await client.chooseReviewPdf(request);
 
     if (!result.ok) {
+      await refresh(request.projectId);
       busy = false;
       importing = false;
-      error = result.error.message;
+      importError = result.error.message;
 
       return;
     }
@@ -643,6 +813,12 @@
     }
 
     await refresh(result.value.projectId);
+    pendingDropImport = null;
+    scopeRevisionId = revisions.at(-1)?.id ?? "";
+    selectedSheetIds = [];
+    revisionChoices = [];
+    selectedPacketFindingId = null;
+    importDialog?.close();
     sourceRequest++;
     sourceLoading = false;
 
@@ -652,9 +828,27 @@
     panelOpen = true;
     sourceTab = "sheets";
     previewedSheet = null;
-    notice = "PDF imported. Ask Moke for a whole-set QA pass or choose a discipline reviewer.";
+    notice = "PDF imported. Assign sheet disciplines if useful, then choose a review scope.";
     busy = false;
     importing = false;
+  }
+
+  async function assignSheetDiscipline(
+    ids: ReadonlyArray<Sheet["id"]>,
+    value: typeof ReviewDiscipline.Type | null,
+  ) {
+    if (!project || !ids.length) return;
+    await runCommand(
+      reviewCommand(
+        ReviewCommand.cases.AssignSheetDiscipline.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          sheetIds: Schema.decodeUnknownSync(Schema.NonEmptyArray(SheetId))(ids),
+          discipline: value,
+        }),
+      ),
+    );
   }
 
   async function confirmSheet(sheet: Sheet, label: string, coverage: Sheet["coverage"]) {
@@ -745,9 +939,11 @@
     dpi: number,
     region?: { x: number; y: number; width: number; height: number },
     finding?: Finding,
+    overlays?: typeof sourceOverlays,
+    request = ++sourceRequest,
   ) {
     if (project === null) return;
-    const request = ++sourceRequest;
+    const projectId = project.id;
 
     if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
     sourceImageUrl = "";
@@ -764,7 +960,7 @@
     };
 
     const rendered = await client.renderSource({
-      projectId: project.id,
+      projectId,
       sheetId: sheet.id,
       operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
       region: targetRegion,
@@ -780,7 +976,9 @@
     }
 
     const artifact = rendered.value;
-    const blob = await client.loadArtifactBlobUrl(project.id, artifact);
+
+    if (request !== sourceRequest || projectId !== selectedProjectId) return;
+    const blob = await client.loadArtifactBlobUrl(projectId, artifact);
 
     if (request !== sourceRequest) {
       if (blob.ok) URL.revokeObjectURL(blob.value);
@@ -799,13 +997,14 @@
     if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
     sourceImageUrl = blob.value;
     sourceArtifact = artifact;
+    sourceRequestedDpi = dpi;
     const drawn = facts.findLast((fact) => fact.findingId === finding?.id && fact.side === "drawn");
 
     const scheduled = facts.findLast(
       (fact) => fact.findingId === finding?.id && fact.side === "scheduled",
     );
 
-    sourceOverlays = [
+    sourceOverlays = overlays ?? [
       ...(drawn?.evidence.sheetId === sheet.id
         ? [{ region: drawn.evidence.region, title: "Drawn evidence" }]
         : []),
@@ -818,6 +1017,7 @@
   function openFinding(finding: Finding) {
     selectingRegion = false;
     applySelectedRegion = null;
+    selectedPacketFindingId = null;
     selectedFindingId = finding.id;
     selectReviewFinding(finding.id);
     panelOpen = true;
@@ -835,6 +1035,7 @@
     sourceLoading = false;
     panelOpen = false;
     selectedFindingId = null;
+    selectedPacketFindingId = null;
 
     if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
     sourceImageUrl = "";
@@ -888,6 +1089,7 @@
       executionStatus = null;
     }
 
+    if (id !== selectedConversationId) closeSource();
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
@@ -935,7 +1137,8 @@
   }
 
   function handleKey(event: KeyboardEvent) {
-    if (event.defaultPrevented || projectDialog?.open || settingsDialog?.open) return;
+    if (event.defaultPrevented || projectDialog?.open || settingsDialog?.open || importDialog?.open)
+      return;
 
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
@@ -993,7 +1196,7 @@
     if (selectedFinding)
       await loadSourceForFinding(
         selectedFinding,
-        sourceArtifact?.dpi ?? 96,
+        sourceRequestedDpi,
         sourceArtifact?.region ?? undefined,
         sourceSide,
       );
@@ -1190,7 +1393,7 @@
       <div class="brand-slot">
         <button class="icon-button" aria-label="Toggle conversation sidebar" onclick={toggleSidebar}
           ><ReviewIcon name="layout-sidebar" size={17} /></button
-        ><span class="brand-name">Moke</span>
+        ><span class="brand-name">MOKE</span>
       </div>
       <nav class="breadcrumbs" aria-label="Breadcrumb">
         {#if project}<span class="project-crumb" title={project.name}
@@ -1210,13 +1413,20 @@
           <button
             type="button"
             class="ghost"
-            disabled={busy}
+            disabled={busy || cloudBlocked}
             data-testid="import-pdf"
             aria-busy={importing}
             onclick={importPdf}
             ><ReviewIcon name="upload" size={15} /><span
               >{importing ? "Importing PDF…" : "Import PDF"}</span
             ></button
+          >
+          <button
+            class="text-button secondary-count"
+            data-testid="open-create-finding"
+            disabled={busy || cloudBlocked}
+            onclick={() => openSetup("sheets", true)}
+            ><ReviewIcon name="plus" size={14} />New count check</button
           >
           <button
             class="ghost sheets-trigger"
@@ -1282,6 +1492,72 @@
       </form>
     </dialog>
     <dialog
+      class="workspace-dialog import-dialog"
+      bind:this={importDialog}
+      aria-labelledby="import-dialog-title"
+      onclose={() => {
+        dropRequest++;
+        droppedPdf = null;
+        pendingDropImport = null;
+      }}
+      oncancel={(event) => {
+        if (importing) event.preventDefault();
+      }}
+    >
+      <header>
+        <h2 id="import-dialog-title">{revisions.length ? "Import revision" : "Import drawings"}</h2>
+        <button
+          class="icon-button"
+          disabled={importing}
+          aria-label="Close PDF import"
+          onclick={() => importDialog?.close()}><ReviewIcon name="x" size={17} /></button
+        >
+      </header>
+      {#if revisions.length}<label class="import-label"
+          >Revision label<input
+            bind:value={revisionLabel}
+            disabled={importing || pendingDropImport !== null}
+            maxlength="160"
+            required
+          /></label
+        >
+        <p>
+          Earlier sources and reviews stay in the project. Sheet correspondence is confirmed
+          separately.
+        </p>{/if}
+      <!-- svelte-ignore a11y_no_static_element_interactions (The drop zone also provides a native chooser button.) -->
+      <div
+        class="pdf-drop-zone"
+        ondragover={(event) => event.preventDefault()}
+        ondrop={(event) => {
+          if (!importing) void receiveDrop(event);
+        }}
+      >
+        <ReviewIcon name="upload" size={28} /><strong
+          >{droppedPdf?.name ?? "Drop a PDF here"}</strong
+        ><span>or choose a file from your computer</span><button
+          class="ghost"
+          disabled={importing ||
+            pendingDropImport !== null ||
+            (revisions.length > 0 && !revisionLabel.trim())}
+          onclick={() => performImport()}>Choose PDF…</button
+        >
+      </div>
+      {#if importError}<p role="alert" class="dialog-error">{importError}</p>{/if}
+      {#if pendingDropImport && !importing}<p>
+          Retry uses the same import request. Drop the PDF again or cancel to start a new request.
+        </p>{/if}
+      <footer>
+        <button class="ghost" disabled={importing} onclick={() => importDialog?.close()}
+          >Cancel</button
+        >{#if droppedPdf}<button
+            class="primary"
+            disabled={importing || (revisions.length > 0 && !revisionLabel.trim())}
+            onclick={() => performImport(true)}>{importing ? "Importing…" : "Import PDF"}</button
+          >{/if}
+      </footer>
+    </dialog>
+    <dialog
       class="workspace-dialog settings-dialog"
       bind:this={settingsDialog}
       aria-labelledby="settings-dialog-title"
@@ -1298,7 +1574,7 @@
       <section class="settings-section">
         <h3>Review scope</h3>
         <p class="muted">
-          Ask for a whole-set QA pass, a discipline review, or follow-up scrutiny. Moke follows the
+          Ask for a whole-set QA pass, a discipline review, or follow-up scrutiny. MOKE follows the
           project instructions and records the sources, coverage, findings, and missing inputs.
         </p>
         <details>
@@ -1358,7 +1634,7 @@
         <details>
           <summary>Technical details</summary>
           <p class="muted">
-            Moke uses the selected model's configured capabilities and durable review history.
+            MOKE uses the selected model's configured capabilities and durable review history.
             Context management preserves source records and completed work. Image-token usage and
             cost may be unavailable.
           </p>
@@ -1464,7 +1740,7 @@
           </div>
         </aside>
       {/if}
-      <section class="chat" aria-label="Conversation">
+      <section class="chat" class:canvas-covered={panelOpen} aria-label="Conversation">
         {#if error}<div class="banner" role="alert">
             <span>{error}</span><button
               class="icon-button"
@@ -1473,10 +1749,14 @@
             >
           </div>{/if}
         {#if packetConnectionLost}<div class="notice" role="status">
-            <span>Live review progress disconnected. Recorded work is preserved.</span><button
+            <span>Local progress is reconnecting. Saved findings remain available.</span><button
               class="text-button"
               onclick={() => {
-                if (selectedProjectId) void trackPacketReviews(selectedProjectId);
+                if (selectedProjectId) {
+                  packetSubscription?.abort();
+                  packetSubscription = null;
+                  void trackPacketReviews(selectedProjectId);
+                }
               }}>Reconnect</button
             >
           </div>{/if}
@@ -1493,13 +1773,13 @@
             {:else if project === null}<div class="chat-empty">
                 {@render mark(28)}
                 <h1>Start a drawing review</h1>
-                <p>Create a project, import its drawings, and ask Moke to review them.</p>
+                <p>Create a project, import its drawings, and ask MOKE to review them.</p>
                 <button class="ghost" onclick={openProjectDialog}>Create a project</button>
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
                 {@render mark(28)}
-                <h1>What should Moke review?</h1>
+                <h1>What should MOKE review?</h1>
                 {#if sheets.length === 0}<p>
                     Import a drawing PDF to begin. Your source sheets and review history stay with
                     this project.
@@ -1508,9 +1788,9 @@
                     ><ReviewIcon name="upload" size={15} />Import drawings</button
                   >
                 {:else}<p>
-                    Ask for a whole-set QA pass or select a discipline reviewer. Moke reads the
+                    Ask for a whole-set QA pass or select a discipline reviewer. MOKE reads the
                     supplied sheets, checks sources and coordination, and prepares findings with
-                    evidence and an HTML report.
+                    clear source evidence.
                   </p>
                   <p class="muted">For example: “Run a quick QA pass on this drawing set.”</p>{/if}
               </div>
@@ -1531,7 +1811,7 @@
                 <div class="byline">
                   {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
                       class="moke-mark">{@render mark(16)}</span
-                    >{/if}<strong>{message.role === "reviewer" ? "You" : "Moke"}</strong
+                    >{/if}<strong>{message.role === "reviewer" ? "You" : "MOKE"}</strong
                   >{#if message.origin}<span class="message-provenance"
                       >Inspection · {message.origin.discipline?.replaceAll("_", " ") ??
                         "general"}</span
@@ -1555,25 +1835,18 @@
                   busy={packetBusy || busy || cloudBlocked}
                   onControl={(action, maxCalls) =>
                     controlPacketReview(activePacketReview, action, maxCalls)}
-                  onComplete={(findingId, completed) =>
-                    completePacketFinding(activePacketReview, findingId, completed)}
-                  onExport={() => exportPacketReport(activePacketReview)}
-                  onEvidence={openPacketEvidence}
+                  onFinding={showPacketFinding}
                 />{/key}
               {#if conversationReviews.length > 1}<details class="previous-reviews">
                   <summary>Previous reviews in this conversation</summary>{#each conversationReviews
                     .slice(0, -1)
                     .toReversed() as review (review.id)}<div>
                       <span
-                        >{review.scope._tag === "WholeSet"
-                          ? "Whole set"
-                          : review.scope.discipline.replaceAll("_", " ")} · {new Date(
-                          review.startedAt,
-                        ).toLocaleString()} · {review.state}</span
-                      ><button
-                        class="text-button"
-                        disabled={packetBusy || busy}
-                        onclick={() => exportPacketReport(review)}>Export report</button
+                        >{review.scope._tag === "Discipline"
+                          ? review.scope.discipline.replaceAll("_", " ")
+                          : review.scope._tag === "SelectedSheets"
+                            ? "Selected sheets"
+                            : "Whole set"} · {new Date(review.startedAt).toLocaleString()} · {review.state}</span
                       >
                     </div>{/each}
                 </details>{/if}
@@ -1605,6 +1878,25 @@
           <div class="composer-region">
             {#if project}
               <div class="scope-bar">
+                <ReviewSelect
+                  label="Scope"
+                  value={scopeMode}
+                  options={[
+                    { value: "whole_set", label: "Whole set" },
+                    { value: "selected_sheets", label: "Selected sheets" },
+                    { value: "discipline", label: "Selected discipline" },
+                  ]}
+                  disabled={busy || executionBlocked || cloudBlocked}
+                  onChange={(value) => {
+                    scopeMode = Schema.decodeUnknownSync(
+                      Schema.Literals(["whole_set", "selected_sheets", "discipline"]),
+                    )(value);
+                    if (value === "selected_sheets") openSetup("sheets");
+                  }}
+                />
+                <span class="muted review-scope"
+                  >{scopeRevision?.name ?? "No revision"} · {scopeCount} sheets</span
+                >
                 {#if findings.length > 0}<div class="scope-select">
                     <ReviewSelect
                       label="Check"
@@ -1616,15 +1908,7 @@
                       disabled={busy || executionBlocked || cloudBlocked}
                       onChange={selectReviewFinding}
                     />
-                  </div>{:else}<span class="muted review-scope"
-                    >Whole set or selected discipline</span
-                  >{/if}
-                <button
-                  class="text-button"
-                  data-testid="open-create-finding"
-                  onclick={() => openSetup("sheets", true)}
-                  ><ReviewIcon name="plus" size={14} />New count check</button
-                >
+                  </div>{/if}
               </div>
             {/if}
             <form class="composer" onsubmit={postMessage}>
@@ -1635,8 +1919,21 @@
                 rows="2"
                 maxlength="32000"
                 placeholder={reviewMode === "review"
-                  ? "Ask for a whole-set QA pass, a discipline review, or follow-up…"
+                  ? activePacketReview?.state === "running"
+                    ? "Steer this review…"
+                    : "Ask MOKE to review these drawings…"
                   : "Add a project note…"}
+                onkeydown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.isComposing &&
+                    event.keyCode !== 229
+                  ) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
                 disabled={project === null || activeConversation === null || cloudBlocked}
               ></textarea>
               <div class="composer-tools">
@@ -1664,19 +1961,24 @@
                   />
                   <ReviewSelect
                     label="Reviewer"
-                    value={discipline}
-                    options={[
-                      {
-                        value: "auto",
-                        label: "Auto",
-                        description: "Whole set unless your request selects a discipline",
-                      },
-                      ...reviewDisciplines.map((scope) => ({
-                        value: scope.id,
-                        label: scope.label,
-                      })),
-                    ]}
-                    disabled={busy || executionBlocked || cloudBlocked}
+                    value={scopeMode === "discipline" ? discipline : "all"}
+                    options={scopeMode === "discipline"
+                      ? [
+                          {
+                            value: "auto",
+                            label: "Choose discipline…",
+                            description: "Reviews sheets assigned to this discipline",
+                          },
+                          ...reviewDisciplines.map((scope) => ({
+                            value: scope.id,
+                            label: scope.label,
+                          })),
+                        ]
+                      : [{ value: "all", label: "All disciplines" }]}
+                    disabled={busy ||
+                      executionBlocked ||
+                      cloudBlocked ||
+                      scopeMode !== "discipline"}
                     onChange={(value) => {
                       discipline = Schema.decodeUnknownSync(ReviewDisciplineSelection)(value);
                     }}
@@ -1687,7 +1989,7 @@
                   class="note-toggle"
                   aria-label="Save as note"
                   aria-pressed={reviewMode === "note"}
-                  disabled={busy || executionBlocked || cloudBlocked}
+                  disabled={busy || cloudBlocked}
                   onclick={() => {
                     reviewMode = reviewMode === "note" ? "review" : "note";
                   }}>Note</button
@@ -1700,15 +2002,19 @@
                     cloudBlocked ||
                     !project ||
                     (reviewMode === "review" &&
+                      activePacketReview?.state !== "running" &&
                       (sheets.length === 0 ||
                         !selectedModelAvailable ||
                         !validCallLimit ||
-                        executionBlocked))}
+                        executionBlocked ||
+                        !scopeCount))}
                   aria-label="Send message"
                   title={reviewMode === "review"
-                    ? location === "cloud"
-                      ? "Push review to cloud"
-                      : "Send and start document review"
+                    ? activePacketReview?.state === "running"
+                      ? "Send follow-up to this review"
+                      : location === "cloud"
+                        ? "Push review to cloud"
+                        : "Send and start document review"
                     : "Save note"}><ReviewIcon name="arrow-up" size={17} /></button
                 >
               </div>
@@ -1720,12 +2026,19 @@
                 every project in this workspace, including PDFs and review history (up to 256 MiB /
                 5,000 files). Results sync automatically. Local edits pause until sync completes or
                 you stop the review.{:else if reviewMode === "note"}Notes are saved without starting
-                a review.{:else if sheets.length === 0}Import the drawing set to start a review.{:else if !setup?.configured}Provider
-                not configured. <button class="text-button" onclick={() => openSetup("settings")}
-                  >Open review settings</button
+                a review.{:else if activePacketReview?.state === "running"}Follow-ups join this
+                review after its current tool round. Enter sends · Shift+Enter adds a line.{:else if sheets.length === 0}Import
+                the drawing set to start a review.{:else if scopeMode === "discipline" && discipline === "auto"}Choose
+                a discipline reviewer, then review its assigned sheets.{:else if !scopeCount}No
+                sheets match this scope.
+                <button class="text-button" onclick={() => openSetup("sheets")}
+                  >Choose sheets or assign disciplines</button
+                >.{:else if !setup?.configured}Provider not configured. <button
+                  class="text-button"
+                  onclick={() => openSetup("settings")}>Open review settings</button
                 >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
                 review settings.{:else if !validCallLimit}Enter a positive whole-number call budget
-                or leave it blank.{:else if executionBlocked}Resolve the current review before
+                or leave it blank.{:else if executionBlocked}Resume or cancel this review before
                 sending another request.{:else}Review the findings, source status, and coverage
                 before using the results.{/if}
             </div>
@@ -1740,7 +2053,7 @@
                 ? (selectedFinding?.title ?? "Evidence")
                 : (project?.name ?? "Project")}</strong
             ><button class="icon-button" aria-label="Close source panel" onclick={closeSource}
-              ><ReviewIcon name="x" size={17} /></button
+              >Back to conversation<ReviewIcon name="x" size={17} /></button
             >
           </header>
           <div class="source-tabs">
@@ -1763,20 +2076,95 @@
             >
           </div>
           <div class="source-scroll">
+            {#if error}<p role="alert" class="banner">{error}</p>{/if}
+            {#if sourceTab === "evidence" && selectedPacketFinding}<article
+                class="selected-finding"
+                data-testid="selected-packet-finding"
+              >
+                <h2>{selectedPacketFinding.title}</h2>
+                <p class="muted">
+                  {selectedPacketFinding.severity} · {selectedPacketFinding.status} · {selectedPacketFinding.discipline.replaceAll(
+                    "_",
+                    " ",
+                  )}
+                </p>
+                <p>{selectedPacketFinding.observed}</p>
+                <p><strong>Correction</strong> {selectedPacketFinding.correction}</p>
+                <div class="finding-evidence-actions">
+                  {#each selectedPacketFinding.locations as location, index (index)}<button
+                      class="ghost"
+                      disabled={busy || sourceLoading || cloudBlocked}
+                      onclick={async () => {
+                        const sheet = sheets.find((item) => item.id === location.sheetId);
+                        if (sheet) {
+                          await loadSheetSource(
+                            sheet,
+                            300,
+                            location.region ?? undefined,
+                            undefined,
+                            location.region
+                              ? [{ region: location.region, title: location.detail }]
+                              : [],
+                          );
+                        }
+                      }}
+                      >{location.detail}{location.region
+                        ? " · Focus detail"
+                        : " · View sheet"}</button
+                    >{/each}
+                </div>
+                {#if selectedPacketFinding.evidenceNote}<p class="muted">
+                    {selectedPacketFinding.evidenceNote}
+                  </p>{/if}
+                {#each selectedPacketFinding.citationIds as id (id)}{@const citation =
+                    activePacketReview?.citations.find(
+                      (item) => item.id === id,
+                    )}{#if citation}<details>
+                      <summary>{citation.document} {citation.section} · {citation.status}</summary>
+                      <p>{citation.quote}</p>
+                      <p>{citation.application}</p>
+                      <p>{citation.note}</p>
+                    </details>{/if}{/each}<label
+                  ><input
+                    type="checkbox"
+                    checked={selectedPacketFinding.completed}
+                    disabled={packetBusy || busy || cloudBlocked}
+                    onchange={(event) => {
+                      if (activePacketReview && selectedPacketFinding)
+                        void completePacketFinding(
+                          activePacketReview,
+                          selectedPacketFinding.id,
+                          event.currentTarget.checked,
+                        );
+                    }}
+                  />Completed · tracks your correction work</label
+                >
+              </article>{/if}
             {#if sourceTab === "sheets"}
-              {#if sourceLoading}<p class="muted" role="status">
-                  Rendering source…
-                </p>{:else if sourceImageUrl && previewedSheet}<SourceViewer
-                  imageUrl={sourceImageUrl}
-                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
-                  label="Original source render"
-                />{/if}
+              <label class="revision-picker"
+                >Revision<select
+                  aria-label="Revision"
+                  value={scopeRevision?.id ?? ""}
+                  onchange={(event) => {
+                    scopeRevisionId = event.currentTarget.value;
+                    selectedSheetIds = [];
+                  }}
+                  >{#each revisions as revision (revision.id)}<option value={revision.id}
+                      >{revision.name}</option
+                    >{/each}</select
+                ></label
+              >
               <SheetSetup
-                {sheets}
-                busy={busy || sourceLoading}
+                sheets={scopeSheets}
+                bind:selectedIds={selectedSheetIds}
+                onAssign={assignSheetDiscipline}
+                busy={busy || sourceLoading || cloudBlocked}
                 bind:createOpen={createFindingOpen}
                 onConfirm={confirmSheet}
                 onPreview={(sheet) => {
+                  sourceTab = "evidence";
+                  selectedPacketFindingId = null;
+                  selectedFindingId = null;
                   void loadSheetSource(sheet, 96);
                 }}
                 onCreate={createFinding}
@@ -1823,7 +2211,7 @@
                   {sheets}
                   {facts}
                   {checks}
-                  {busy}
+                  busy={busy || cloudBlocked}
                   onAccept={acceptCount}
                   onEvaluate={evaluateFinding}
                   onStatus={setFindingStatus}
@@ -1844,6 +2232,7 @@
                 </p>{:else if sourceImageUrl}<SourceViewer
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
+                  overlays={sourceOverlays}
                   label="Original source render"
                 />{/if}
               <div class="source-provenance">
@@ -1853,6 +2242,9 @@
                 >
               </div>
             {:else if sourceTab === "revision"}
+              <button class="ghost" disabled={busy || cloudBlocked} onclick={importPdf}
+                >Import revision</button
+              >
               {#if revisions.length >= 2}
                 {@const latest = revisions.at(-1)}
                 {@const previous = revisions.at(-2)}
@@ -1937,7 +2329,10 @@
                   >
                 {/if}
               {:else}
-                <p>Import a revision PDF to map sheet correspondence.</p>
+                <p>
+                  Import the next revision, then map sheet correspondence. Earlier sources and
+                  review history are preserved.
+                </p>
               {/if}
             {/if}
           </div>
@@ -1977,7 +2372,7 @@
               /></button
             >{/each}
           {#if packetFindings.length === 0 && findings.length === 0}<p class="menu-empty">
-              No findings yet. Ask Moke to review the supplied drawing set.
+              No findings yet. Ask MOKE to review the supplied drawing set.
             </p>{/if}
         </div>{/if}
     </section>
@@ -2963,6 +3358,133 @@
     }
     .chat-empty {
       margin-top: 8vh;
+    }
+  }
+  .desktop.source-open .app-body {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  }
+  .desktop.sidebar-closed.source-open .app-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chat.canvas-covered {
+    display: none;
+  }
+  .source-panel {
+    min-width: 0;
+    width: auto;
+  }
+  .source-scroll {
+    display: flex;
+    flex-direction: column;
+  }
+  .source-scroll :global(.viewer) {
+    flex: 1 0 min(62vh, 720px);
+    height: min(62vh, 720px);
+    min-height: 360px;
+  }
+  .conversation-content {
+    max-width: 1120px;
+    width: 100%;
+  }
+  .composer-region {
+    width: 100%;
+    max-width: 1180px;
+    align-self: center;
+  }
+  .application-message p {
+    max-width: 85ch;
+  }
+  .source-header .icon-button {
+    width: auto;
+    gap: 8px;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  .selected-finding {
+    max-width: 1000px;
+    padding: 0 0 20px;
+    line-height: 1.65;
+    font-size: 14px;
+  }
+  .selected-finding h2 {
+    font-size: 20px;
+    margin: 0 0 8px;
+  }
+  .selected-finding p {
+    margin: 8px 0;
+  }
+  .revision-picker {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .secondary-count {
+    color: var(--nd-ink-muted);
+  }
+  .revision-picker select {
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--nd-ink);
+    background: var(--nd-shell);
+  }
+  .scope-bar {
+    flex-wrap: wrap;
+  }
+  .import-dialog {
+    width: min(580px, calc(100vw - 32px));
+  }
+  .import-label,
+  .settings-dialog label {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .import-label input,
+  .settings-dialog input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 6px;
+    background: var(--nd-shell);
+    color: var(--nd-ink);
+    padding: 10px 12px;
+    font: inherit;
+  }
+  .pdf-drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 40px 20px;
+    margin-top: 20px;
+    border: 1px dashed var(--nd-hairline-strong);
+    border-radius: 10px;
+  }
+  .pdf-drop-zone span {
+    color: var(--nd-ink-muted);
+    font-size: 13px;
+  }
+  .desktop :global(input:focus),
+  .desktop :global(textarea:focus) {
+    outline: none;
+  }
+  .desktop :global(input:focus-visible),
+  .desktop :global(textarea:focus-visible) {
+    box-shadow: inset 0 -2px var(--nd-focus);
+  }
+  @media (max-width: 1180px) and (min-width: 701px) {
+    .desktop.source-open .app-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .desktop.source-open .app-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .source-scroll :global(.viewer) {
+      min-height: 300px;
     }
   }
 </style>

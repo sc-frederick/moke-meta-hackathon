@@ -142,7 +142,7 @@ test("import stores the original hash and inventories pages", async () => {
   }
 });
 
-test("malformed PDFs and oversize regions are rejected", async () => {
+test("malformed PDFs and mismatched source metadata are rejected", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-reject-"));
   const badSource = join(fixtureDirectory, "malformed.pdf");
   const goodSource = join(fixtureDirectory, "original.pdf");
@@ -207,7 +207,7 @@ test("malformed PDFs and oversize regions are rejected", async () => {
     expect(Exit.isFailure(limited)).toBe(true);
 
     if (Exit.isFailure(limited)) {
-      expect(String(limited.cause)).toContain("pixel");
+      expect(String(limited.cause)).toContain("metadata");
     }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
@@ -256,5 +256,65 @@ test("import interruption cancels in-flight PDF work", async () => {
   } finally {
     delete process.env.MOKE_PDF_WORKER_DELAY_MS;
     await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("drawing-sized sheets and focused boxes fit the hard pixel ceiling with accurate actual-DPI transforms", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-large-drawing-"));
+
+  try {
+    for (const rotation of [0, 90] as const) {
+      const original = join(directory, `36x48-${rotation}.pdf`);
+      await writeFile(original, buildMinimalPdf(rotation, 2592, 3456, 2));
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const documents = yield* Documents;
+            const imported = yield* documents.importPdf(original);
+            const page = imported.pages[0];
+
+            if (!page) return yield* Effect.die("Missing real PDF page");
+
+            const sheet = new Sheet({
+              id: sheetId(crypto.randomUUID()),
+              projectId: projectId(crypto.randomUUID()),
+              revisionId: revisionId(crypto.randomUUID()),
+              ...page,
+              confirmed: false,
+              coverage: "unreviewed",
+            });
+
+            const full = yield* documents.render(imported.sha256, sheet, sheet.box, 150);
+            expect(
+              Math.ceil(((2592 * 150) / 72) * 2) * Math.ceil(((3456 * 150) / 72) * 2),
+            ).toBeGreaterThan(16000000);
+            expect(full.width * full.height).toBeLessThanOrEqual(16000000);
+            expect(full.dpi).toBeLessThan(150);
+            const detailRegion = new Region({ x: 20, y: 20, width: 220, height: 180 });
+            const detail = yield* documents.render(imported.sha256, sheet, detailRegion, 300);
+            expect(detail.dpi).toBe(300);
+            expect(detail.width * detail.height).toBeLessThan(16000000);
+
+            for (const render of [full, detail]) {
+              const point = { x: 64, y: 64 };
+              const pixel = transformPoint(render.pdfToPixels, point.x, point.y);
+              const back = transformPoint(render.pixelsToPdf, pixel.x, pixel.y);
+              expect(back.x).toBeCloseTo(point.x, 8);
+              expect(back.y).toBeCloseTo(point.y, 8);
+              const bytes = yield* documents.read(render.sha256, "image/png", 0, 256 * 1024);
+
+              const image = yield* Effect.promise(() =>
+                loadImage(Buffer.from(bytes.base64, "base64")),
+              );
+
+              expect(image.width).toBe(render.width);
+              expect(image.height).toBe(render.height);
+            }
+          }),
+        ).pipe(Effect.provide(documentsLayer(directory))),
+      );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

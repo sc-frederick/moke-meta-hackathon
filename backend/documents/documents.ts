@@ -111,7 +111,7 @@ export class Documents extends Context.Service<
                   });
                 }
 
-                yield* validateRenderRequest(sheet, region, dpi);
+                const fitted = yield* validateRenderRequest(sheet, region, dpi);
 
                 const rendered = yield* workerRender(worker, {
                   pdfPath,
@@ -119,7 +119,7 @@ export class Documents extends Context.Service<
                   region,
                   rotation: sheet.rotation,
                   userUnit: sheet.userUnit,
-                  dpi,
+                  dpi: fitted.dpi,
                 });
 
                 const pngBytes = Buffer.from(rendered.pngBase64, "base64");
@@ -131,7 +131,7 @@ export class Documents extends Context.Service<
                   width: rendered.width,
                   height: rendered.height,
                   region,
-                  dpi,
+                  dpi: fitted.dpi,
                   pdfToPixels: rendered.pdfToPixels,
                   pixelsToPdf: rendered.pixelsToPdf,
                 });

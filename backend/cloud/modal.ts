@@ -15,7 +15,6 @@ import { CloudReviewError } from "#lib/review/cloud.ts";
 import {
   CloudEngineIdentity,
   CloudProvider,
-  CloudWorkerProgress,
   WarmSandbox,
   WarmSandboxMessage,
   cloudEngineIdentity,
@@ -23,6 +22,7 @@ import {
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
 import { parseCloudManifest } from "./transfer.ts";
+import { parseCloudWorkerProgress } from "./progress.ts";
 
 const ModalFileChange = Schema.Struct({
   eventType: Schema.Literals(["Access", "Create", "Modify", "Remove", "Unknown"]),
@@ -530,18 +530,7 @@ export const modalSandboxLayer = (
                     : unavailable(),
               });
 
-              const progress = yield* Schema.decodeUnknownEffect(
-                Schema.fromJsonString(CloudWorkerProgress),
-              )(text).pipe(
-                Effect.mapError(
-                  () =>
-                    new CloudReviewError({
-                      reason: "incompatible",
-                      message:
-                        "The cloud service returned unreadable review progress. Refresh to reconnect.",
-                    }),
-                ),
-              );
+              const progress = yield* parseCloudWorkerProgress(record, text);
 
               const checkpoint =
                 progress.phase === "ready"

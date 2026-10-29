@@ -52,6 +52,7 @@ test("project-first review runs actual Moke system instructions and tools, persi
 
         const discipline = Match.value(inventory.scope).pipe(
           Match.tagsExhaustive({
+            SelectedSheets: () => "general",
             WholeSet: () => "general",
             Discipline: (scope) => scope.discipline,
           }),

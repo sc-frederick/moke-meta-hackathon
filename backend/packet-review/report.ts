@@ -67,6 +67,7 @@ export function renderPacketReport(
 
   const scope = Match.value(review.scope).pipe(
     Match.tagsExhaustive({
+      SelectedSheets: () => "Selected sheets review",
       WholeSet: () => "Whole drawing set",
       Discipline: (selected) => `${discipline(selected.discipline)} review`,
     }),
@@ -171,9 +172,9 @@ export function renderPacketReport(
   );
 
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; object-src 'none'; form-action 'none'"><title>${escape(review.projectName)} — Moke drawing review</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; object-src 'none'; form-action 'none'"><title>${escape(review.projectName)} — MOKE drawing review</title>
 <style>${styles}</style></head><body><main data-storage-key="${escape(storageKey)}">
-<header><p class="eyebrow">Moke · Drawing review</p><h1>${escape(review.projectName)}</h1><p class="scope">${escape(scope)}</p><div class="review-state">${escape(reviewState)}</div><dl class="metadata"><div><dt>Review</dt><dd>${escape(review.id)} · revision ${review.version}</dd></div><div><dt>Requested</dt><dd>${escape(new Date(review.startedAt).toISOString())}</dd></div><div><dt>Last recorded</dt><dd>${escape(new Date(review.changedAt).toISOString())}</dd></div><div><dt>Execution</dt><dd>${escape(review.state)} · ${review.admittedCalls} calls${review.maxCalls === null ? "" : ` / ${review.maxCalls} requested limit`}</dd></div></dl></header>
+<header><p class="eyebrow">MOKE · Drawing review</p><h1>${escape(review.projectName)}</h1><p class="scope">${escape(scope)}</p><div class="review-state">${escape(reviewState)}</div><dl class="metadata"><div><dt>Review</dt><dd>${escape(review.id)} · revision ${review.version}</dd></div><div><dt>Requested</dt><dd>${escape(new Date(review.startedAt).toISOString())}</dd></div><div><dt>Last recorded</dt><dd>${escape(new Date(review.changedAt).toISOString())}</dd></div><div><dt>Execution</dt><dd>${escape(review.state)} · ${review.admittedCalls} calls${review.maxCalls === null ? "" : ` / ${review.maxCalls} requested limit`}</dd></div></dl></header>
 <section aria-labelledby="summary"><h2 id="summary">Review summary</h2>${paragraph(review.summary || "No review summary has been recorded.")}${review.error ? `<p class="callout">${escape(review.error)}</p>` : ""}<p>This report records the requested scope and evidence below. User completion tracking is separate from finding status, engineering acceptance and reviewer-verified prior-comment closure.</p><h3>Request</h3>${paragraph(review.request)}<h3>Missing inputs</h3>${list(review.missingInputs, "No missing inputs were recorded.")}${gaps.length ? `<h3>Coverage requiring follow-up</h3>${list(gaps, "")}` : ""}<p>${review.citations.length === 0 ? "No governing citations were recorded; regulatory conclusions remain unverified." : `${unresolvedCitations} of ${review.citations.length} citations remain unverified or incorrect.`}</p></section>
 <section aria-labelledby="configuration"><h2 id="configuration">Project configuration and governing sources</h2>${
     Object.keys(review.projectConfiguration).length

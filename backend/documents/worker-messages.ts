@@ -18,8 +18,9 @@ export const WorkerRenderRequest = Schema.TaggedStruct("Render", {
   region: Region,
   rotation: Schema.Literals([0, 90, 180, 270]),
   userUnit: Schema.Finite.check(Schema.isGreaterThan(0)),
-  dpi: Schema.Int.check(
-    Schema.isBetween({ minimum: DocumentsLimits.minDpi, maximum: DocumentsLimits.maxDpi }),
+  dpi: Schema.Finite.check(
+    Schema.isGreaterThan(0),
+    Schema.isLessThanOrEqualTo(DocumentsLimits.maxDpi),
   ),
 });
 

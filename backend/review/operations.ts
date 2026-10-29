@@ -17,6 +17,7 @@ import { ExecutionError } from "#lib/review/execution.ts";
 import type { Documents } from "../documents/documents.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
 import { ExecutionEvidence, ExecutionImage, type ExecutionPort } from "./execution-port.ts";
+import { validateRenderRequest } from "../documents/render-bounds.ts";
 import { invertTransform } from "#lib/review/geometry.ts";
 import {
   AgentInput,
@@ -51,6 +52,13 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
     if (config.documents === undefined) return yield* unavailable();
     const state = yield* snapshot(request.projectId, 0);
 
+    const sheet = state.sheets.find((item) => item.id === request.sheetId);
+    const original = state.revisions.find((revision) => revision.id === sheet?.revisionId);
+
+    if (!sheet || !original)
+      return yield* new ReviewInputError({ message: "The source sheet is outside this project." });
+    const fitted = yield* validateRenderRequest(sheet, request.region, request.dpi);
+
     const previous = state.artifacts.find(
       (artifact) => artifact.operationId === request.operationId,
     );
@@ -58,7 +66,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
     if (previous !== undefined) {
       if (
         previous.sheetId !== request.sheetId ||
-        previous.dpi !== request.dpi ||
+        Math.abs(previous.dpi - fitted.dpi) > 1e-9 ||
         JSON.stringify(previous.region) !== JSON.stringify(request.region)
       )
         return yield* new ReviewInputError({
@@ -67,12 +75,6 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
 
       return previous;
     }
-
-    const sheet = state.sheets.find((item) => item.id === request.sheetId);
-    const original = state.revisions.find((revision) => revision.id === sheet?.revisionId);
-
-    if (sheet === undefined || original === undefined)
-      return yield* new ReviewInputError({ message: "The source sheet is outside this project." });
 
     const result = yield* config.documents.render(
       original.sha256,

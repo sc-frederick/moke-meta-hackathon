@@ -17,6 +17,7 @@ const Id = Schema.String.check(Schema.isUUID());
 export const PacketScope = Schema.Union([
   Schema.TaggedStruct("WholeSet", {}),
   Schema.TaggedStruct("Discipline", { discipline: ReviewDiscipline }),
+  Schema.TaggedStruct("SelectedSheets", {}),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 
 /** Explicit packet-wide requests take precedence over an incidental discipline hint in Auto mode. */
@@ -144,6 +145,7 @@ export const PacketSheet = Schema.Struct({
   box: Region,
   sha256: Schema.String,
   documentName: Schema.String,
+  discipline: Schema.optionalKey(Schema.NullOr(ReviewDiscipline)),
 });
 
 /** Durable packet progress and report data sent to the trusted workbench. */
@@ -170,6 +172,15 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   inspectedThisReviewSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   evidenceIds: Schema.Array(ArtifactId),
+  steering: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        commandId: CommandId,
+        text: Required,
+        status: Schema.Literals(["pending", "queued", "applied", "unanswered"]),
+      }),
+    ),
+  ),
   conversationContext: Schema.optionalKey(
     Schema.Array(Schema.Struct({ role: Schema.Literals(["reviewer", "application"]), text: Text })),
   ),
@@ -194,11 +205,32 @@ export const StartPacketReview = Schema.Struct({
   messageId: Id,
   model: ReviewModelId,
   discipline: ReviewDisciplineSelection,
+  selection: Schema.optionalKey(
+    Schema.Struct({
+      mode: Schema.Literals(["whole_set", "selected_sheets", "discipline"]),
+      revisionId: Id,
+      sheetIds: Schema.Array(SheetId),
+    }),
+  ),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+});
+
+/** An idempotent instruction for the same conversation and its active durable review. */
+export const SteerPacketReview = Schema.Struct({
+  commandId: CommandId,
+  projectId: ProjectId,
+  reviewId: Id,
+  conversationId: ConversationId,
+  text: Required,
 });
 
 /** Packet request, durable progress, explicit controls and user-owned completion. */
 export class PacketReviewRpc extends RpcGroup.make(
+  Rpc.make("SteerPacketReview", {
+    payload: SteerPacketReview,
+    success: PacketReview,
+    error: ExecutionError,
+  }),
   Rpc.make("StartPacketReview", {
     payload: StartPacketReview,
     success: PacketReview,

@@ -54,6 +54,7 @@ function requiredRows(
 ) {
   const disciplines = Match.value(scope).pipe(
     Match.tagsExhaustive({
+      SelectedSheets: () => reviewDisciplines.map((discipline) => discipline.id),
       WholeSet: () => reviewDisciplines.map((discipline) => discipline.id),
       Discipline: ({ discipline }) => [discipline],
     }),

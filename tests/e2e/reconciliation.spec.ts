@@ -1,4 +1,5 @@
-import { _electron as electron, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { electron } from "./isolated-electron.ts";
 import { Effect, Schema } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

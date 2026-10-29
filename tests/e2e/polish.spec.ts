@@ -1,4 +1,5 @@
-import { _electron as electron, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { electron } from "./isolated-electron.ts";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -79,8 +80,10 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
       await page.getByRole("option", { name: /Muse Wonder/ }).click();
       await expect(model).toContainText("Muse Wonder");
     } else await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /^Scope:/ }).click();
+    await page.getByRole("option", { name: "Selected discipline", exact: true }).click();
     const reviewer = page.getByRole("button", { name: /^Reviewer:/ });
-    await expect(reviewer).toContainText("Auto");
+    await expect(reviewer).toContainText("Choose discipline…");
     await reviewer.click();
     const menu = page.getByRole("listbox", { name: "Reviewer", exact: true });
     const menuBounds = await menu.boundingBox();
@@ -96,12 +99,13 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await reviewer.press("ArrowDown");
     await page.keyboard.press("Home");
     await page.keyboard.press("Enter");
-    await expect(reviewer).toContainText("Auto");
+    await expect(reviewer).toContainText("Choose discipline…");
 
     await app.evaluate(({ dialog }, source) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixture);
     await page.getByTestId("import-pdf").click();
+    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
     await page.locator(".sheets-trigger").click();
     await expect(page.getByTestId("source-panel")).not.toBeVisible();
@@ -115,6 +119,9 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await page.keyboard.press("Escape");
     await expect(settings).not.toBeVisible();
     await expect(page.getByTestId("source-panel")).toBeVisible();
+
+    await page.getByTestId("sheet-list").locator("details > summary").first().click();
+    await page.getByTestId("sheet-list").locator("details > summary").nth(1).click();
 
     for (let index = 0; index < 2; index++)
       await page

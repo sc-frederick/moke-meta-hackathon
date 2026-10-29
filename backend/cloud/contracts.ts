@@ -17,7 +17,7 @@ import { packageEngineFormat } from "#lib/review/packages.ts";
 
 /** Version handshake covers the worker protocol, engine, and review instructions. */
 export const cloudEngineIdentity = {
-  protocol: 2,
+  protocol: 3,
   engine: packageEngineFormat,
   prompt: reviewPromptVersion,
   instructions: reviewInstructionRevision,
@@ -57,6 +57,8 @@ export const CloudWorkerProgress = Schema.Struct({
 /** Persistent local intent is saved before every ambiguous external dispatch. */
 export const CloudReviewRecord = Schema.Struct({
   id: CloudReviewId,
+  // Unmarked receipts predate protocol-aware admission and may name a running v2 worker.
+  workerProtocol: Schema.optionalKey(Schema.Literal(cloudEngineIdentity.protocol)),
   revision: Schema.Int.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   syncFailure: Schema.NullOr(CloudReviewError).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),

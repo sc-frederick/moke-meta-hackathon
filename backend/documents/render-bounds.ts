@@ -3,7 +3,7 @@ import { containsRegion } from "#lib/review/geometry.ts";
 import { DocumentError, Region, Sheet } from "#lib/review/contracts.ts";
 import { DocumentsLimits } from "./config.ts";
 
-/** Reject crops that exceed pixel budgets or fall outside the sheet page box. */
+/** Fit valid source regions into the pixel budget without changing their PDF coordinates. */
 export const validateRenderRequest = Effect.fnUntraced(function* (
   sheet: Sheet,
   region: Region,
@@ -23,7 +23,12 @@ export const validateRenderRequest = Effect.fnUntraced(function* (
     });
   }
 
-  const scale = (dpi / 72) * sheet.userUnit;
+  // Leave rounding headroom; the worker independently enforces the hard pixel ceiling.
+  const maxScale = Math.sqrt(
+    (DocumentsLimits.maxOutputPixels - 16000) / (region.width * region.height),
+  );
+
+  const scale = Math.min((dpi / 72) * sheet.userUnit, maxScale);
   const width = Math.ceil(region.width * scale);
   const height = Math.ceil(region.height * scale);
 
@@ -41,5 +46,5 @@ export const validateRenderRequest = Effect.fnUntraced(function* (
     });
   }
 
-  return { width, height, scale } as const;
+  return { width, height, scale, dpi: (scale * 72) / sheet.userUnit } as const;
 });

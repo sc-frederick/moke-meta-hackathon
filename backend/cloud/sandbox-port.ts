@@ -1,7 +1,8 @@
 import type { Effect, Stream } from "effect";
 import type { InferenceConfiguration } from "#lib/backend-rpc.ts";
 import type { CloudReviewError } from "#lib/review/cloud.ts";
-import type { CloudReviewRecord, CloudWorkerProgress } from "./contracts.ts";
+import type { CloudReviewRecord } from "./contracts.ts";
+import type { CloudRecoveredWorkerProgress } from "./progress.ts";
 
 /** Sandbox mechanics stay behind the cloud application's replay and ownership policy. */
 export interface CloudSandboxPort {
@@ -30,7 +31,7 @@ export interface CloudSandboxPort {
 
 /** Ready progress is acknowledged only with a completed external result snapshot. */
 export interface CloudObservedProgress {
-  readonly progress: typeof CloudWorkerProgress.Type;
+  readonly progress: CloudRecoveredWorkerProgress;
   readonly resultSnapshotId: string | null;
   /** The original execution sandbox is confirmed stopped, even if its last progress was active. */
   readonly sourceStopped: boolean;

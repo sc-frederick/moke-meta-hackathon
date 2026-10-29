@@ -23,7 +23,7 @@ export class RenderedPdf extends Schema.Class<RenderedPdf>("RenderedPdf")({
   width: Schema.Int.check(Schema.isGreaterThan(0)),
   height: Schema.Int.check(Schema.isGreaterThan(0)),
   region: Region,
-  dpi: Schema.Int.check(Schema.isBetween({ minimum: 24, maximum: 300 })),
+  dpi: Schema.Finite.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(300)),
   pdfToPixels: Affine,
   pixelsToPdf: Affine,
 }) {}
