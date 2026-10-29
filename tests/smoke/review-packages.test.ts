@@ -285,7 +285,9 @@ const seedPacketReviews = async (
   seeded: Awaited<ReturnType<typeof seedReview>>,
   owner: string,
 ) => {
-  const database = new DatabaseSync(join(dataDirectory, "app.sqlite"));
+  const database = new Database(join(dataDirectory, "app.sqlite"));
+  // Match the application's Bun writer and keep this WAL fixture readable on macOS.
+  database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1);
 
   const ids: Array<{ id: string; journalId: string; state: "running" | "paused" | "completed" }> =
     [];
@@ -1079,6 +1081,8 @@ test("complete packages retain packet journals, evidence and both kinds of uncer
     await migrate(restored);
     const seeded = await seedReview(source, "packet-source", owner);
     const packets = await seedPacketReviews(source, seeded, owner);
+    expect(existsSync(join(source, "app.sqlite-wal"))).toBe(true);
+    expect(existsSync(join(source, "app.sqlite-shm"))).toBe(true);
     await run(exportReviewPackage(configFor(source, Semaphore.makeUnsafe(1)), destination));
 
     const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageManifest))(
