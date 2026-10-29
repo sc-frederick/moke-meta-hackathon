@@ -6,6 +6,7 @@ import {
   CloudReviewPhase,
   CloudReviewRequest,
   CloudPacketProgress,
+  CloudTransferProgress,
 } from "#lib/review/cloud.ts";
 import { ExecutionStatus } from "#lib/review/execution.ts";
 import {
@@ -68,6 +69,8 @@ export const CloudReviewRecord = Schema.Struct({
   phase: CloudReviewPhase,
   createdAt: Schema.Finite,
   expiresAt: Schema.Finite,
+  transferBytes: Schema.optionalKey(Schema.Int),
+  transfer: Schema.optionalKey(CloudTransferProgress),
   sandboxId: Schema.NullOr(Schema.String),
   inputSnapshotId: Schema.NullOr(Schema.String),
   resultSnapshotId: Schema.NullOr(Schema.String),
@@ -97,6 +100,7 @@ export const WarmSandbox = Schema.Struct({
   imageName: Schema.String,
   identity: CloudEngineIdentity,
   expiresAt: Schema.Finite,
+  resourceProfile: Schema.optionalKey(Schema.Literal("4cpu-8gib")),
 });
 
 /** JSON avoids the SDK queue's integer truncation of millisecond timestamps. */

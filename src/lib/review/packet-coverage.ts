@@ -132,3 +132,10 @@ export function packetCoverageProgress(
     complete: rows.length > 0 && gaps.length === 0,
   };
 }
+
+/** Saved project-configuration keys are camelCase field names; show them as plain labels. */
+export function configurationLabel(name: string): string {
+  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}

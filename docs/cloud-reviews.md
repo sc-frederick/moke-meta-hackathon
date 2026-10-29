@@ -179,7 +179,8 @@ the feature as validated against Modal's service.
 
 ## Lifetimes, recovery, and cost controls
 
-Defaults are one CPU, a one-CPU hard limit, 2 GiB memory, no GPU, a 15-minute review
+Review workers request four physical CPU cores and 8 GiB memory, with matching hard limits,
+no GPU, a 15-minute review
 limit, and no warm pool. The operator can choose 1–60 minutes. The sandbox gets
 an additional two minutes for transfer/checkpoint cleanup. Selected count reviews
 retain their call/token admission budget. Drawing-set reviews honor the optional call budget and the shared time limit. Inference remains on the
@@ -302,6 +303,20 @@ Ready results still require the external snapshot, bounded complete-package
 validation, source-version checks, confirmed remote stop and journaled restore
 before local ownership returns. An incompatible sync pause saved by an earlier
 build still requires **Retry sync** after upgrading; it is not cleared implicitly.
+
+Before transferring, the desktop resolves the selected published image and required provider
+secrets, including their MOKE_API_KEY keys. A credential-free, network-blocked probe
+validates the worker identity before ownership is recorded; successful compatibility
+is cached by immutable image ID for the runtime. The probe has a one-minute lifetime
+and is released after validation. Cloud setup reports readiness failures explicitly.
+
+Complete cloud packages support up to 1 GiB and 5,000 files. Transfer still copies
+the entire workspace: a project-only package would need a merge protocol before
+it could safely replace the local database. The selected project, model, scope,
+package bytes and live sheet/finding/coverage totals identify the active job.
+Terminal receipts stay in their originating conversation and can be dismissed.
+See [Audit 3 cloud research](research/audit-3-cloud.md) for resource pricing,
+capacity decisions and regression evidence.
 
 Cloud requests retain the selected scope through transfer
 and automatic return. Local steering and editing remain fenced while the cloud

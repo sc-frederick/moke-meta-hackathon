@@ -4,6 +4,7 @@ import { ArtifactId, CommandId, ConversationId, ProjectId, Region, SheetId } fro
 import {
   routeReviewDiscipline,
   ExecutionError,
+  ProviderFailure,
   ReviewDiscipline,
   ReviewDisciplineSelection,
 } from "./execution.ts";
@@ -119,6 +120,15 @@ export const PacketFinding = Schema.Struct({
   calculationIds: Schema.Array(Id),
   priorCommentId: Schema.NullOr(Id),
   completed: Schema.Boolean,
+  /** Missing-content claims retain the complete source search and contradiction check. */
+  absenceCheck: Schema.optionalKey(
+    Schema.Struct({
+      searchedSheetIds: Schema.Array(SheetId),
+      searchDescription: Required,
+      contradictingEvidence: Text,
+      permitStageBasis: Required,
+    }),
+  ),
 });
 
 /** Prior comments require source-based closure independently of a user's completion checkbox. */
@@ -148,6 +158,82 @@ export const PacketSheet = Schema.Struct({
   discipline: Schema.optionalKey(Schema.NullOr(ReviewDiscipline)),
 });
 
+/** Host-admitted tool names; model arguments and provider errors never enter activity telemetry. */
+export const PacketActivityTool = Schema.Literals([
+  "inventory_packet",
+  "render_sheet",
+  "search_sources",
+  "read_source",
+  "calculate",
+  "record_project",
+  "record_coverage",
+  "record_coverage_batch",
+  "record_citation",
+  "record_finding",
+  "record_prior_comment",
+  "ask_reviewer",
+  "finish_review",
+  "finish_sheet",
+  "segment_objects",
+]);
+
+/** Bounded host stages describe actual tool work independently of model reasoning. */
+export const PacketActivityStage = Schema.Literals([
+  "inventory",
+  "rendering",
+  "research",
+  "calculation",
+  "recording",
+  "segmentation",
+]);
+
+/** Human-readable labels are controlled by the application rather than model output. */
+export const packetActivityStageLabels = {
+  inventory: "Reading drawing inventory",
+  rendering: "Rendering drawing",
+  research: "Checking sources",
+  calculation: "Calculating",
+  recording: "Recording review",
+  segmentation: "Segmenting drawing objects",
+} as const satisfies Record<typeof PacketActivityStage.Type, string>;
+
+/** One host-owned tool activity, retaining completion so subsequent inference is not labelled active. */
+export const PacketActivity = Schema.Struct({
+  id: Id,
+  tool: PacketActivityTool,
+  stage: PacketActivityStage,
+  sheetId: Schema.optionalKey(SheetId),
+  sheetLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  status: Schema.Literals(["active", "finished"]),
+  startedAt: Schema.Finite,
+  finishedAt: Schema.NullOr(Schema.Finite),
+});
+
+/** What one sheet reviewer hands the coordinator for cross-sheet comparison. */
+export const PacketSheetNotes = Schema.Struct({
+  summary: Required,
+  keyFacts: Schema.Array(Required).check(Schema.isMaxLength(100)),
+  crossReferences: Schema.Array(Required).check(Schema.isMaxLength(100)),
+  suspectedGaps: Schema.Array(Required).check(Schema.isMaxLength(100)),
+});
+
+/** One sheet reviewer in a parallel review; notes carry its facts to the cross-sheet coordinator. */
+export const PacketSheetReview = Schema.Struct({
+  sheetId: SheetId,
+  /** Pi conversation number inside this review's journal; null until the reviewer starts. */
+  conversationId: Schema.NullOr(Schema.Int),
+  state: Schema.Literals(["queued", "running", "completed", "failed"]),
+  notes: Schema.optionalKey(PacketSheetNotes),
+  providerFailure: Schema.optionalKey(ProviderFailure),
+});
+
+/** Large reviews split into coordinator setup, concurrent sheet reviewers and cross-sheet coordination. */
+export const PacketParallelReview = Schema.Struct({
+  stage: Schema.Literals(["setup", "sheets", "coordination"]),
+  concurrency: Schema.Int.check(Schema.isGreaterThan(0)),
+  sheets: Schema.Array(PacketSheetReview),
+});
+
 /** Durable packet progress and report data sent to the trusted workbench. */
 export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   id: Id,
@@ -163,6 +249,11 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   version: Schema.Int,
   startedAt: Schema.Number,
   changedAt: Schema.Number,
+  /** Active work excludes paused, failed and cancelled waiting time. */
+  activeDurationMs: Schema.optionalKey(Schema.Number),
+  activeSince: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  providerFailure: Schema.optionalKey(Schema.NullOr(ProviderFailure)),
+  activity: Schema.optionalKey(Schema.NullOr(PacketActivity)),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   admittedCalls: Schema.Int,
   promptVersion: Schema.String,
@@ -171,6 +262,7 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   inspectedSheetIds: Schema.Array(SheetId),
   baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   inspectedThisReviewSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
+  detailInspectedSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   evidenceIds: Schema.Array(ArtifactId),
   steering: Schema.optionalKey(
     Schema.Array(
@@ -195,6 +287,7 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   missingInputs: Schema.Array(Schema.String),
   error: Schema.NullOr(Schema.String),
   finished: Schema.Boolean,
+  parallel: Schema.optionalKey(PacketParallelReview),
 }) {}
 
 /** Operational limits are optional; model context and output capabilities come from its catalog. */

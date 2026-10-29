@@ -63,12 +63,12 @@ function response(provider: "meta" | "baseten", outputTokens = 6000) {
   });
 }
 
-function fixture(provider: "meta" | "baseten" = "meta", packetReview = true) {
+function fixture(provider: "meta" | "baseten" = "meta", packetReview = true, refusals = 0) {
   const requests: Array<{ url: string; authorization: string | null; body: string }> = [];
   const receipts: string[] = [];
   const phases: RequestPhase[] = [];
   const endings: boolean[] = [];
-  const maxOutputTokens = provider === "meta" ? 131072 : 1048576;
+  const maxOutputTokens = provider === "meta" ? 256000 : 1048576;
 
   const admitted = createAdmittedModels(
     {
@@ -82,6 +82,12 @@ function fixture(provider: "meta" | "baseten" = "meta", packetReview = true) {
           authorization: new Headers(init?.headers).get("authorization"),
           body: Schema.decodeUnknownSync(Schema.String)(init?.body),
         });
+
+        if (requests.length <= refusals)
+          return Response.json(
+            { error: { message: "Rate limit reached" } },
+            { status: 429, headers: { "retry-after": "1" } },
+          );
 
         return response(provider);
       },
@@ -126,6 +132,7 @@ const MetaRequest = Schema.fromJsonString(
     model: Schema.String,
     max_output_tokens: Schema.Int,
     reasoning: Schema.Struct({ effort: Schema.String }),
+    tools: Schema.optionalKey(Schema.Array(Schema.Struct({ type: Schema.String }))),
   }),
 );
 
@@ -173,14 +180,17 @@ test("packet requests retain more than 64k text and all eight images and accept 
   expect(captured.body.split("data:image/png;base64,").length - 1).toBe(8);
   expect(captured.body.includes("Earlier image omitted")).toBe(false);
   const wire = Schema.decodeUnknownSync(MetaRequest)(captured.body);
-  expect(wire.max_output_tokens).toBe(131072);
-  expect(wire.reasoning.effort).toBe("high");
+  expect(wire.max_output_tokens).toBe(256000);
+  expect(wire.reasoning.effort).toBe("xhigh");
+  expect(wire.tools?.some((tool) => tool.type === "web_search")).toBe(true);
 
   const catalog = metaProvider()
     .getModels()
     .find((model) => model.id === "muse-spark-1.3");
 
-  expect(session.admitted.capabilities.maxTokens).toBe(catalog?.maxTokens ?? 0);
+  // Meta serves Muse Spark 1.3 with a 256k output ceiling above the catalog record.
+  expect(catalog?.maxTokens).toBe(131072);
+  expect(session.admitted.capabilities.maxTokens).toBe(256000);
   expect(session.receipts).toHaveLength(1);
   expect(session.endings).toEqual([false]);
 });
@@ -194,52 +204,53 @@ test("the generic SDK completion entrypoint uses the same native output and reas
 
   expect(answer.stopReason).toBe("stop");
   const wire = Schema.decodeUnknownSync(MetaRequest)(session.requests[0]?.body);
-  expect(wire.max_output_tokens).toBe(131072);
-  expect(wire.reasoning.effort).toBe("high");
+  expect(wire.max_output_tokens).toBe(256000);
+  expect(wire.reasoning.effort).toBe("xhigh");
+  expect(wire.tools?.some((tool) => tool.type === "web_search")).toBe(true);
   expect(answer.usage.output).toBeGreaterThan(4096);
   expect(session.receipts).toHaveLength(1);
 });
 
-test("packet Spark Open uses only its Baseten credential and exact hackathon model route", async () => {
-  const session = fixture("baseten");
+test.each(["simple", "generic"] as const)(
+  "packet Spark Open preserves provider output defaults through %s",
+  async (entrypoint) => {
+    const session = fixture("baseten");
 
-  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
-    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
-  );
+    const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      entrypoint === "simple"
+        ? session.admitted.models.completeSimple(session.model, shortContext, { telemetry })
+        : session.admitted.models.complete(session.model, shortContext, { telemetry }),
+    );
 
-  expect(answer.stopReason).toBe("stop");
-  expect(answer.usage.output).toBe(6000);
-  expect(session.requests).toHaveLength(1);
-  const captured = session.requests[0];
+    expect(answer.stopReason).toBe("stop");
+    expect(answer.usage.output).toBe(6000);
+    expect(session.requests).toHaveLength(1);
+    const captured = session.requests[0];
 
-  if (!captured) throw new Error("No Baseten request reached transport");
+    if (!captured) throw new Error("No Baseten request reached transport");
 
-  const wire = Schema.decodeUnknownSync(
-    Schema.fromJsonString(
-      Schema.Struct({
-        model: Schema.String,
-        reasoning_effort: Schema.String,
-        max_tokens: Schema.optional(Schema.Int),
-        max_completion_tokens: Schema.optional(Schema.Int),
-      }),
-    ),
-  )(captured.body);
+    const wire = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          model: Schema.String,
+          reasoning_effort: Schema.String,
+          max_tokens: Schema.optional(Schema.Int),
+          max_completion_tokens: Schema.optional(Schema.Int),
+        }),
+      ),
+    )(captured.body);
 
-  expect(captured.url).toBe("https://inference.baseten.co/v1/chat/completions");
-  expect(captured.authorization).toBe("Bearer packet-baseten-fixture-key");
-  expect(wire.model).toBe("meta-models/muse-spark-open-1026");
-  expect(wire.reasoning_effort).toBe("high");
-  expect(session.admitted.capabilities.contextWindow).toBe(1048576);
-  // This records the SDK's context-fit default, not a claimed published Baseten output maximum.
-  const sdkDefault = wire.max_tokens ?? wire.max_completion_tokens;
+    expect(captured.url).toBe("https://inference.baseten.co/v1/chat/completions");
+    expect(captured.authorization).toBe("Bearer packet-baseten-fixture-key");
+    expect(wire.model).toBe("meta-models/muse-spark-open-1026");
+    expect(wire.reasoning_effort).toBe("high");
+    expect(session.admitted.capabilities.contextWindow).toBe(1048576);
+    expect(wire.max_tokens).toBeUndefined();
+    expect(wire.max_completion_tokens).toBeUndefined();
 
-  if (sdkDefault !== undefined) {
-    expect(sdkDefault).toBeGreaterThan(8192);
-    expect(sdkDefault).toBeLessThanOrEqual(session.admitted.capabilities.contextWindow);
-  }
-
-  expect(session.receipts).toHaveLength(1);
-});
+    expect(session.receipts).toHaveLength(1);
+  },
+);
 
 test("only packet review admits the actual compaction summarize phase while invalid phases stay blocked", async () => {
   const phase = {
@@ -272,4 +283,65 @@ test("only packet review admits the actual compaction summarize phase while inva
 
   expect(wrong.stopReason).toBe("error");
   expect(packet.requests).toHaveLength(1);
+});
+
+test("Spark Open retains the latest eight image bytes and all source metadata without changing the durable transcript", async () => {
+  const session = fixture("baseten");
+
+  const images = Array.from({ length: 12 }, (_, index) => {
+    const canvas = createCanvas(32, 32);
+    const drawing = canvas.getContext("2d");
+    drawing.fillStyle = `rgb(${index * 20}, 50, 100)`;
+    drawing.fillRect(0, 0, 32, 32);
+
+    return {
+      type: "image" as const,
+      mimeType: "image/png",
+      data: canvas.toBuffer("image/png").toString("base64"),
+    };
+  });
+
+  const context = {
+    messages: images.map((part, index) => ({
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: `Exact source artifact-${index}; PDF page ${index + 1}.` },
+        part,
+      ],
+      timestamp: index,
+    })),
+  };
+
+  const original = JSON.stringify(context);
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, context, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("stop");
+  const body = session.requests[0]?.body ?? "";
+  expect(body.split("data:image/png;base64,").length - 1).toBe(8);
+
+  for (const image of images.slice(-8)) expect(body).toContain(image.data);
+
+  for (const image of images.slice(0, 4)) expect(body).not.toContain(image.data);
+
+  for (let index = 0; index < images.length; index++) expect(body).toContain(`artifact-${index}`);
+  expect(body).toContain("Earlier image omitted");
+  expect(JSON.stringify(context)).toBe(original);
+});
+
+test("a rate-limit refusal is resent after the provider delay within one admitted attempt", async () => {
+  const session = fixture("meta", true, 1);
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("stop");
+  expect(session.requests).toHaveLength(2);
+  expect(session.requests[1]?.body).toBe(session.requests[0]?.body);
+  expect(session.phases).toHaveLength(1);
+  expect(session.receipts).toHaveLength(1);
+  expect(session.endings).toEqual([false]);
 });

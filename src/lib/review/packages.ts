@@ -158,6 +158,11 @@ export type PackageInterrupt = typeof PackageInterrupt.Type;
 
 /** Only the trusted shell chooses full-package filesystem locations. */
 export class ReviewPackageFilesRpc extends RpcGroup.make(
+  Rpc.make("ValidateReviewPackage", {
+    payload: { source: Schema.NonEmptyString },
+    success: Schema.Void,
+    error: PackageError,
+  }),
   Rpc.make("ExportReviewPackage", {
     payload: { destination: Schema.NonEmptyString },
     success: PackageExportResult,

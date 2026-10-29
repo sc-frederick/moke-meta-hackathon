@@ -140,6 +140,11 @@ The backend automatically returns completed results and resumes reconciliation
 after reopen. Live status streams replay the current receipt; persistent receipt
 revisions prevent stale replies from rolling the interface back. The synced
 notification follows package validation and completion of application maintenance.
+Read-only snapshots use the same SQL exclusion as replacement, so network
+uploads and downloads do not block project navigation. The recovery-journal
+guard runs under that exclusion before a review connection opens. Download
+retries reuse only files whose size and SHA-256 match the selected result
+manifest; interrupted Modal copy scratch files are cleared before package validation.
 
 New cloud receipts record the admitted worker protocol. Older unmarked receipts
 remain intact: only already-dispatched `dispatching`/`running` jobs can observe
@@ -160,3 +165,10 @@ proposals retain separate append-only history; later confirmation inserts a new
 confirmed association. They never authorize reuse of baseline facts. Evaluation
 records only current operands and their dependencies; excluded revision inputs
 remain in earlier fact/check history and get an explicit unresolved explanation.
+
+Migration 0010 adds append-only removed and unresolved revision decisions without
+inventing a replacement sheet. Retained matches continue using the immutable
+one-to-one links. A removed or unresolved operand keeps its original source in
+history, loses current confirmation, and cannot authorize reuse of accepted facts.
+The workbench shows saved decisions after reopen. Identical PDF hashes propose
+page matches, but a reviewer must still confirm them before evidence is reused.

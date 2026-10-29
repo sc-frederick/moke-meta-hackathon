@@ -121,6 +121,12 @@ test("a successful SAM response drains while paused and explicit resume does not
     await session.run(Effect.promise(() => samAdmitted.promise).pipe(Effect.timeout("10 seconds")));
     const admitted = await session.run(session.packets.get(session.projectId, started.id));
     expect(admitted.admittedCalls).toBe(3);
+    expect(admitted.activity).toMatchObject({
+      tool: "segment_objects",
+      stage: "segmentation",
+      status: "active",
+      sheetId,
+    });
     expect(await attempts(session, started.id)).toMatchObject([
       { kind: "model", status: "completed", sent: 1 },
       { kind: "model", status: "completed", sent: 1 },
@@ -138,6 +144,7 @@ test("a successful SAM response drains while paused and explicit resume does not
     );
 
     expect(paused.state).toBe("paused");
+    expect(paused.activity).toBeNull();
     expect(modelSends).toBe(2);
     expect(samSends).toBe(1);
     releaseSam.resolve();
@@ -161,9 +168,11 @@ test("a successful SAM response drains while paused and explicit resume does not
     );
     const completed = await until(session, started.id, "completed");
     expect(completed.finished).toBe(true);
+    expect(completed.activity).toBeNull();
     expect(completed.summary).toContain("preserving the completed SAM inspection");
     expect(completed.error).toBeNull();
-    expect(completed.admittedCalls).toBe(5);
+    // One finish attempt is returned by the coverage gate; the scripted sends stay at four.
+    expect(completed.admittedCalls).toBe(6);
     expect(completed.evidenceIds).toHaveLength(1);
     expect(modelSends).toBe(4);
     expect(samSends).toBe(1);
@@ -317,7 +326,7 @@ test.each(["uncertain", "completed"] as const)(
             maxCalls: 3,
           }),
         );
-        const completed = await until(session, started.id, "completed");
+        const completed = await until(session, started.id, "failed");
         expect(completed.summary).toContain("explicitly resumed");
         expect(completed.admittedCalls).toBe(2);
         expect(sends).toBe(2);

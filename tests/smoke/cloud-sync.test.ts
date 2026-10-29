@@ -23,6 +23,7 @@ async function fixture(dropSignals = false) {
   let holdReturn = false;
 
   const port: CloudSandboxPort = {
+    preflight: () => Effect.void,
     changes: () => (dropSignals ? Stream.never : Stream.fromPubSub(signals)),
     allocate: () => Effect.succeed("sandbox-sync"),
     upload: () => Effect.succeed("source-snapshot"),

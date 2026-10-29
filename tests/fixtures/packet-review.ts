@@ -21,7 +21,7 @@ import { migrateDatabase } from "../../backend/database-files.ts";
 import { Documents } from "../../backend/documents/documents.ts";
 import { createReviewOperations } from "../../backend/review/operations.ts";
 import { ReviewStore } from "../../backend/review/store.ts";
-import { PacketReviews } from "../../backend/packet-review/service.ts";
+import { PacketReviews, defaultParallel } from "../../backend/packet-review/service.ts";
 import { exportReviewPackage } from "../../backend/review/packages.ts";
 import { PackageError, PackageLimits } from "#lib/review/packages.ts";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
@@ -58,12 +58,63 @@ class FixtureApi extends Context.Service<
 >()("test/PacketReviewFixture") {}
 
 /** Open the real packet service, SQLite store, and PDF worker under one owned runtime. */
+/** Text the host returns when a reviewer calls finish_review before coverage is recorded. */
+export const coverageGateText = "Coverage is incomplete, so this review is not finished yet.";
+
+/**
+ * Scripted reviewers in most tests finish early. Answer the bounded coverage gate by repeating the
+ * script's own finish_review call so those tests keep their behavior; the gate has its own tests.
+ */
+const GateRequest = Schema.fromJsonString(
+  Schema.Struct({
+    input: Schema.optionalKey(
+      Schema.Array(
+        Schema.Struct({
+          type: Schema.optionalKey(Schema.String),
+          name: Schema.optionalKey(Schema.String),
+          arguments: Schema.optionalKey(Schema.fromJsonString(Schema.Json)),
+          output: Schema.optionalKey(Schema.Json),
+        }),
+      ),
+    ),
+  }),
+);
+
+export function acceptCoverageGate(transport: ProviderTransport): ProviderTransport {
+  return async (input, init) => {
+    const decoded = Schema.decodeUnknownOption(GateRequest)(init?.body);
+    const items = Option.isSome(decoded) ? (decoded.value.input ?? []) : [];
+    const last = items.at(-1);
+
+    const finish = items.findLast(
+      (item) => item.type === "function_call" && item.name === "finish_review",
+    );
+
+    if (
+      last?.type === "function_call_output" &&
+      JSON.stringify(last.output ?? "").includes(coverageGateText) &&
+      finish?.arguments !== undefined
+    )
+      return response([{ name: "finish_review", arguments: finish.arguments }]);
+
+    return await transport(input, init);
+  };
+}
+
 export async function open(
   directory: string,
-  transport: ProviderTransport,
+  rawTransport: ProviderTransport,
   setup = true,
   afterRun?: <A>(value: A) => Promise<void>,
+  gate: "accept" | "observe" = "accept",
+  // Scripted reviews here are single conversations; parallel review tests opt in.
+  parallel: NonNullable<Parameters<typeof PacketReviews.layer>[0]["parallel"]> = {
+    ...defaultParallel,
+    minSheets: Number.POSITIVE_INFINITY,
+  },
 ) {
+  const transport = gate === "accept" ? acceptCoverageGate(rawTransport) : rawTransport;
+
   let enter: <A, E>(operation: Effect.Effect<A, E>, options?: Effect.RunOptions) => Promise<A> =
     Effect.runPromise;
 
@@ -121,6 +172,7 @@ export async function open(
               owner,
               queries,
               review,
+              parallel,
               runPromise: async (operation, options) => {
                 const value = await enter(operation, options);
                 await afterRun?.(value);
@@ -267,7 +319,9 @@ export type Session = Awaited<ReturnType<typeof open>>;
 
 /** Await a public review state with a bounded timeout and immediate terminal-failure diagnostics. */
 export async function until(session: Session, reviewId: string, state: PacketReview["state"]) {
-  const deadline = performance.now() + 15000;
+  // Windows CI once stalled a 1-second review past 15 s. Stay under the usual 30-second test limit
+  // so a real hang still reports this helper's state and error rather than a bare timeout.
+  const deadline = performance.now() + 25000;
 
   while (performance.now() < deadline) {
     const current = await session.run(session.packets.get(session.projectId, reviewId));

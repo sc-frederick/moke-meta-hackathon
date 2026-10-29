@@ -1,0 +1,78 @@
+{
+  "checkedAt": "2026-10-29T15:31:58.500Z",
+  "imageName": "moke-review-engine:audit3-fixes-20261029",
+  "imageId": "im-01M644B1KBNWT5KTS160NMF596",
+  "identity": {
+    "protocol": 3,
+    "engine": "review-pi-1.4.0-v1",
+    "prompt": "moke-selected-coordination-v2",
+    "instructions": "8a0e2648738018631eaa6d24ee0b6ebaa239afb1",
+    "packetPrompt": "moke-packet-review-v2"
+  },
+  "resources": {
+    "cpu": 4,
+    "cpuLimit": 4,
+    "memoryMiB": 8192,
+    "memoryLimitMiB": 8192
+  },
+  "providerChecks": [
+    {
+      "provider": "meta",
+      "requiredKey": "MOKE_API_KEY",
+      "available": true
+    },
+    {
+      "provider": "baseten",
+      "requiredKey": "MOKE_API_KEY",
+      "available": true
+    }
+  ],
+  "preflightElapsedMs": 2098,
+  "cachedPreflightElapsedMs": 396,
+  "activePreflightSandboxes": [],
+  "migrations": [
+    {
+      "name": "0001_notes.sql",
+      "sha256": "8a93c50f8a57fd9225a5877e795a72ee152e9e01001291d9073dede385f8a635"
+    },
+    {
+      "name": "0002_reviews.sql",
+      "sha256": "7fb660362355eb918d6a8c3ebb9c60486fd9e474d65895c8bbd28d39c31a3cee"
+    },
+    {
+      "name": "0003_review_execution.sql",
+      "sha256": "2b7da3d906bcc74145b497d88c033c0ef3ac362fa67175b31965988e95ddb3de"
+    },
+    {
+      "name": "0004_sam_observations.sql",
+      "sha256": "b978415b7695ba5344bbd91f4b626b24b4d5cdcbbd2378d859023909defa3dd6"
+    },
+    {
+      "name": "0005_execution_commands.sql",
+      "sha256": "8c784304701a1b4af4e556e085b7e2067beeae24a79e84a5cd96f21bf145fb31"
+    },
+    {
+      "name": "0006_immutable_sheet_correspondence.sql",
+      "sha256": "040b9b44d7cfb10d9075bbfdf7accabf7eee9f74c7c265a1d1f5bdca555a13af"
+    },
+    {
+      "name": "0007_review_prompt_context.sql",
+      "sha256": "77ef4649b91c3507280a83e000f4833f1ff887c440880062fc9540d2f572f0e8"
+    },
+    {
+      "name": "0008_execution_timing.sql",
+      "sha256": "b3df500c8f4ca9d8ade9b44b716f206ee8eab6e562c67ec8478f8fc094d7215b"
+    },
+    {
+      "name": "0009_packet_reviews.sql",
+      "sha256": "ac8f46ff7b9f6d87bd973901fb56ccf990a2173966df71e9cac676ae7db135c1"
+    },
+    {
+      "name": "0010_revision_dispositions.sql",
+      "sha256": "d23b5362d62fbcfb894b64a2212797a008ef482e8891476232294692e98962a3"
+    }
+  ],
+  "productionConfigurationUntouched": true,
+  "bundleSha256": "0803c2ed24883143e6f8b32b1c470718f91114de35357512dd90b045362e3b0a",
+  "warmPool": null
+}

@@ -18,6 +18,40 @@ Local execution describes the engine and project state. Meta/Baseten model calls
 
 Cloudflare PiHarness is an alternative considered during research, not the selected cloud path. Modal is the selected provider for this handoff. A local review does not require a running Modal Sandbox or a permanent cloud copy of the project.
 
+## Parallel packet reviews
+
+A packet review with four or more sheets runs as a coordinator plus one reviewer conversation per
+sheet, all in the same Pi Durable journal and the same engine process, locally or in the cloud
+sandbox. One conversation per sheet gives each sheet its own image budget and a short transcript.
+On 2026-10-29 a 29-sheet review run as one conversation recorded 220 of 1,276 required checks in
+33 minutes, while 3-sheet reviews finished every check.
+
+The review moves through three stages, recorded in `PacketReview.parallel`:
+
+1. **Setup.** The coordinator inventories the packet, opens the cover and code sheets, and records
+   the project configuration and governing sources.
+2. **Sheets.** One conversation per sheet with unsettled checks. They run `concurrency` at a time:
+   32 on Meta (3,000 requests and 4M tokens a minute per team) and 4 on Baseten. A sheet reviewer can
+   open and record coverage only for its own sheet. It records findings visible on that sheet. It
+   cannot record missing-content findings, because it cannot search the other sheets. It ends with
+   `finish_sheet` notes: summary, key facts, cross-references and suspected gaps. A reviewer that
+   stops without notes is asked once to save them.
+3. **Coordination.** The coordinator receives every sheet's notes, compares facts across sheets,
+   checks suspected gaps against the whole inventory, and calls `finish_review`.
+
+Each submission has a stable request ID, and each sheet's conversation number is saved in the
+review. A restart rejoins the work of the current stage. An explicit resume continues unfinished
+sheets in their own conversations. When a review pauses, sheets without notes stay queued.
+
+An unresolved provider attempt blocks further requests only in the conversation that sent it. A
+sheet reviewer whose request ends uncertain is marked failed. The other sheets and the coordinator
+continue. The review then ends uncertain and says how many sheet reviewers stopped. After a process
+restart, an unresolved attempt whose conversation is unknown still blocks every conversation. Cancel
+aborts every conversation.
+
+`PacketReviews.layer` takes `parallel: { minSheets, concurrency }`. Test fixtures default to a single
+conversation; the parallel tests opt in.
+
 ## Future continuation of an existing run
 
 Transfer application state at a safe boundary rather than migrating live process memory:

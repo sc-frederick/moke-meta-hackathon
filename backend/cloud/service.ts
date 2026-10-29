@@ -8,6 +8,7 @@ import {
   CloudReviewStatus,
   cloudReviewLocksWorkspace,
   type CloudReviewRequest,
+  type CloudWorkspaceEstimate,
 } from "#lib/review/cloud.ts";
 import { reviewModels } from "#lib/review/models.ts";
 import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
@@ -34,7 +35,11 @@ export interface CloudReviewConfiguration {
   readonly inspect: (
     request: typeof CloudReviewRequest.Type,
   ) => Effect.Effect<WorkspaceVersions, CloudReviewError>;
-  readonly prepare: (destination: string) => Effect.Effect<void, CloudReviewError>;
+  readonly prepare: (
+    destination: string,
+  ) => Effect.Effect<void | { readonly bytes: number }, CloudReviewError>;
+  /** Read referenced files without quiescing local review work or writing a package. */
+  readonly estimate?: Effect.Effect<typeof CloudWorkspaceEstimate.Type, CloudReviewError>;
   readonly restore: (source: string) => Effect.Effect<void, CloudReviewError>;
   readonly restorePending: () => boolean;
 }
@@ -60,8 +65,31 @@ const publicStatus = (record: CloudReviewRecord) => {
     syncFailure: record.syncFailure,
   };
 
+  const contextual =
+    "kind" in record.request
+      ? {
+          ...status,
+          conversationId: record.request.conversationId,
+          model: record.request.model,
+          scopeLabel:
+            record.request.selection?.mode === "selected_sheets"
+              ? "Selected sheets"
+              : record.request.discipline === "auto"
+                ? "Whole set"
+                : record.request.discipline,
+        }
+      : status;
+
+  const transfer =
+    record.transferBytes === undefined
+      ? contextual
+      : { ...contextual, transferBytes: record.transferBytes };
+
+  const progress =
+    record.transfer === undefined ? transfer : { ...transfer, transfer: record.transfer };
+
   return new CloudReviewStatus(
-    record.packet === undefined ? status : { ...status, packet: record.packet },
+    record.packet === undefined ? progress : { ...progress, packet: record.packet },
   );
 };
 
@@ -213,14 +241,39 @@ export class CloudReviews extends Context.Service<
         });
 
         return CloudReviews.of({
-          setup: Effect.succeed(
-            new CloudReviewSetup({
-              configured: config.modal !== undefined && config.provider !== undefined,
+          setup: Effect.gen(function* () {
+            const configured = config.modal !== undefined && config.provider !== undefined;
+
+            const checked = configured
+              ? yield* sandbox
+                  .preflight(
+                    config.providers ?? (config.provider === undefined ? [] : [config.provider]),
+                  )
+                  .pipe(
+                    Effect.as(null),
+                    Effect.catch((error) => Effect.succeed(error.message)),
+                  )
+              : "Set up the cloud and model connections before pushing a review.";
+
+            const estimate =
+              config.estimate === undefined
+                ? {}
+                : yield* config.estimate.pipe(
+                    Effect.map((workspaceEstimate) => ({ workspaceEstimate })),
+                    Effect.catch((error) =>
+                      Effect.succeed({ workspaceEstimateError: error.message }),
+                    ),
+                  );
+
+            return new CloudReviewSetup({
+              configured: configured && checked === null,
+              message: checked,
               timeoutMinutes: config.modal?.timeoutMinutes ?? 15,
               warmPool: config.modal?.poolQueue !== undefined && config.modal.poolQueue !== null,
               transferScope: "whole-application",
-            }),
-          ),
+              ...estimate,
+            });
+          }),
           status: Effect.sync(() => {
             const job = jobs.at(-1);
 
@@ -284,11 +337,12 @@ export class CloudReviews extends Context.Service<
                   reason: "limit",
                   message: "The cloud review receipt limit has been reached.",
                 });
+              yield* sandbox.preflight(config.providers ?? [provider]);
               const versions = yield* config.inspect(request);
               const id = randomUUID();
               const input = join(config.directory, id, "input");
               yield* createCloudDirectory(join(config.directory, id));
-              yield* config.prepare(input);
+              const prepared = yield* config.prepare(input);
               const now = yield* Clock.currentTimeMillis;
 
               let record: CloudReviewRecord = {
@@ -312,11 +366,27 @@ export class CloudReviews extends Context.Service<
                 message: "Preparing your cloud review. Local editing is paused.",
               };
 
+              if (prepared !== undefined) record = { ...record, transferBytes: prepared.bytes };
+
               yield* save(record);
               const sandboxId = yield* sandbox.allocate(record);
               record = { ...record, sandboxId };
               yield* save(record);
-              const inputSnapshotId = yield* sandbox.upload(record, input);
+
+              const inputSnapshotId = yield* sandbox.upload(record, input, (transfer) =>
+                Effect.gen(function* () {
+                  record = {
+                    ...record,
+                    transfer,
+                    message:
+                      transfer.completedFiles === transfer.totalFiles
+                        ? "Workspace files uploaded. Preparing cloud execution."
+                        : "Uploading workspace files to the cloud.",
+                  };
+                  yield* save(record);
+                }),
+              );
+
               record = {
                 ...record,
                 inputSnapshotId,
@@ -362,7 +432,19 @@ export class CloudReviews extends Context.Service<
                     message:
                       "Local evidence changed after this transfer. Cloud results cannot replace the current workspace.",
                   });
-                yield* sandbox.download(record, output);
+                yield* sandbox.download(record, output, (transfer) =>
+                  Effect.gen(function* () {
+                    record = {
+                      ...record,
+                      transfer,
+                      message:
+                        transfer.completedFiles === transfer.totalFiles
+                          ? "Result files downloaded and verified. Preparing workspace import."
+                          : "Downloading cloud result files.",
+                    };
+                    yield* save(record);
+                  }),
+                );
                 // A lost connection is never proof that the other owner has stopped.
                 yield* sandbox.stop(record);
                 record = {
@@ -426,6 +508,13 @@ export class CloudReviews extends Context.Service<
 export const unavailableCloudSandbox = Layer.succeed(
   CloudSandbox,
   CloudSandbox.of({
+    preflight: () =>
+      Effect.fail(
+        new CloudReviewError({
+          reason: "configuration",
+          message: "The cloud connection needs setup.",
+        }),
+      ),
     changes: () =>
       Stream.fail(
         new CloudReviewError({

@@ -347,7 +347,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(maps).toHaveCount(2);
 
     for (let index = 0; index < 2; index++) {
-      await maps.nth(index).selectOption({ index: index + 1 });
+      await maps.nth(index).selectOption({ index: index + 2 });
       await page
         .getByTestId(/^revision-content-/)
         .nth(index)

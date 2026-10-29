@@ -27,6 +27,9 @@ export const ReviewProxy = ReviewRpc.toLayer(
       ReviewCommand: ({ command }) =>
         api.ReviewCommand({ command }).pipe(mapError("The review command could not be applied.")),
 
+      SuggestSheetLabels: (payload) =>
+        api.SuggestSheetLabels(payload).pipe(mapError("Sheet names could not be read.")),
+
       RenderSource: (payload) =>
         api.RenderSource(payload).pipe(mapError("The source region could not be rendered.")),
 

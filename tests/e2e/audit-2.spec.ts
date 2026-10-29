@@ -60,7 +60,9 @@ test("accepting a count on a fitted 36x48 source refreshes with the requested in
     await expect(page.locator(".viewer img")).toBeVisible();
     await expect(page.locator(".viewer img")).not.toHaveAttribute("src", previousImage ?? "");
     await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Drawn evidence");
-    expect(await page.evaluate(() => window.auditRpc.renderDpis)).toEqual([96, 96]);
+    expect(
+      await page.evaluate(() => window.auditRpc.renderDpis.filter((dpi) => dpi !== 24)),
+    ).toEqual([96, 96]);
     await page.getByTestId("detail-drawn").click();
     await expect(page.locator(".viewer img")).toBeVisible();
     await page.getByTestId("drawn-count-input").fill("3");
@@ -69,7 +71,7 @@ test("accepting a count on a fitted 36x48 source refreshes with the requested in
       .fill("Three rectangles after correcting the accepted count.");
     await page.getByTestId("accept-drawn-count").click();
     await expect
-      .poll(() => page.evaluate(() => window.auditRpc.renderDpis))
+      .poll(() => page.evaluate(() => window.auditRpc.renderDpis.filter((dpi) => dpi !== 24)))
       .toEqual([96, 96, 300, 300]);
     await expect(page.locator(".viewer img")).toBeVisible();
     await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Drawn evidence");
@@ -301,7 +303,7 @@ test("audit workbench imports native and dropped revisions, assigns compact shee
     );
     expect(diagnostics).toEqual([]);
   } finally {
-    await app.close();
+    await test.step("close the workbench and its RPC runtime", () => app.close());
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -8,6 +8,7 @@ import { Schema } from "effect";
 import { Finding, ReviewMessage } from "#lib/review/contracts.ts";
 import { ExecutionReviewContext } from "#lib/review/execution.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
+import { installRpcBoundary } from "./rpc-boundary.ts";
 
 test("project dialogs, selectors, settings, visual evidence selection, and chat work together", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-polish-"));
@@ -47,6 +48,8 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
 
   try {
     const page = await app.firstWindow();
+    await installRpcBoundary(page);
+    await page.reload();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -138,15 +141,26 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
     await page.getByTestId("create-finding-submit").click();
     await expect(page.getByTestId("finding-inspector")).toBeVisible();
     await expect(page.getByTestId("drawn-region-x")).not.toBeVisible();
+    const image = page.getByRole("region", { name: "Original source render" }).locator("img");
 
     const pickArea = async (side: "drawn" | "scheduled", left = 0.2, right = 0.4) => {
-      await page
+      const selectArea = page
         .getByRole("region", { name: `${side} operand`, exact: true })
-        .getByRole("button", { name: "Select area on drawing", exact: true })
-        .click();
+        .getByRole("button", { name: "Select area on drawing", exact: true });
+
+      await expect(selectArea).toBeEnabled({ timeout: 15000 });
+      await expect(image).toBeVisible({ timeout: 15000 });
+      await page.evaluate(() => {
+        window.auditRpc.holdRender = true;
+      });
+      await selectArea.click();
+      await expect
+        .poll(() => page.evaluate(() => window.auditRpc.held), { timeout: 15000 })
+        .toBe(true);
+      await expect(page.getByText("Rendering source…", { exact: true })).toBeVisible();
+      await page.evaluate(() => window.auditRpc.release());
+      await expect(image).toBeVisible({ timeout: 15000 });
       await expect(page.getByText("Drag a box around the area to count.")).toBeVisible();
-      const image = page.getByRole("region", { name: "Original source render" }).locator("img");
-      await expect(image).toBeVisible();
       const imageBounds = await image.boundingBox();
 
       if (!imageBounds) throw new Error("Source image has no bounds");

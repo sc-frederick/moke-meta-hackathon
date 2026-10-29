@@ -1,6 +1,7 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { Clock, Duration, Effect, Exit, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
+import { SqlError } from "effect/sql/SqlError";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
@@ -199,6 +200,7 @@ type RunRef = {
 
 type DomainSnapshot = {
   readonly reviewBearing: boolean;
+  readonly projects: number;
   readonly artifacts: ReadonlyArray<ArtifactRef>;
   readonly runs: ReadonlyArray<RunRef>;
 };
@@ -584,7 +586,18 @@ const withSql = <A, E>(
         }),
       ),
     ),
-  ).pipe(Effect.mapError((cause) => asPackageError(cause, message)));
+  ).pipe(
+    Effect.tapError((cause) =>
+      Schema.is(SqlError)(cause)
+        ? Effect.logWarning("review_package_sql_failed", {
+            reason: cause.reason._tag,
+            operation: cause.reason.operation,
+            stage: message,
+          })
+        : Effect.void,
+    ),
+    Effect.mapError((cause) => asPackageError(cause, message)),
+  );
 
 const tableNames = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
@@ -939,6 +952,7 @@ const readDomain = (filename: string) =>
 
       const snapshot: DomainSnapshot = {
         reviewBearing: projects + records + commands + events + runRows > 0,
+        projects,
         artifacts: [...artifacts.values()],
         runs,
       };
@@ -2198,6 +2212,80 @@ const restorePrepared = (
     });
   });
 
+/**
+ * Measure referenced workspace files without stopping reviews, backing up SQLite, or writing exports.
+ * SQLite logical pages include committed WAL changes. Manifest bytes and later changes are excluded,
+ * so only final package preparation can enforce the exact cloud transfer cap.
+ */
+export const estimateReviewPackage = Effect.fn("estimateReviewPackage")(
+  function* (
+    config: Pick<PackagesConfig, "dataDirectory" | "queries"> & {
+      /** Check replacement safety while holding the SQL permit, before opening any database. */
+      readonly assertReadable?: Effect.Effect<void, PackageError>;
+    },
+  ) {
+    if (config.assertReadable !== undefined) yield* config.assertReadable;
+
+    const dataDirectory = yield* dataRealPath(config.dataDirectory);
+    const snapshot = yield* readDomain(join(dataDirectory, "app.sqlite"));
+
+    const regularFileBytes = (path: string) =>
+      Effect.acquireUseRelease(
+        Effect.tryPromise({
+          try: () => openRegularFile(path),
+          catch: (cause) =>
+            asPackageError(cause, "A referenced workspace file could not be measured."),
+        }),
+        (handle) =>
+          Effect.tryPromise({
+            try: async () => (await handle.stat()).size,
+            catch: (cause) =>
+              asPackageError(cause, "A referenced workspace file could not be measured."),
+          }),
+        (handle) => Effect.promise(() => handle.close()),
+      );
+
+    // A second connection to a live database failed its first query on macOS CI while the app
+    // held the database open. Sizes on disk need no connection: the database plus its WAL bounds
+    // what an export copies, which is close enough for an estimate.
+    const sqliteBytes = (path: string) =>
+      Effect.gen(function* () {
+        const database = yield* regularFileBytes(path);
+        const wal = `${path}-wal`;
+
+        const walBytes = existsSync(wal)
+          ? yield* regularFileBytes(wal).pipe(
+              // The last connection can remove its WAL between the check and the read.
+              Effect.catchIf(
+                () => !existsSync(wal),
+                () => Effect.succeed(0),
+              ),
+            )
+          : 0;
+
+        return database + walBytes;
+      });
+
+    let bytes = yield* sqliteBytes(join(dataDirectory, "app.sqlite"));
+
+    for (const artifact of snapshot.artifacts)
+      bytes += yield* regularFileBytes(
+        join(dataDirectory, artifactName(artifact.sha256, artifact.mediaType)),
+      );
+
+    for (const run of snapshot.runs)
+      bytes += yield* sqliteBytes(join(dataDirectory, liveJournalName(run.journalId)));
+
+    return {
+      bytes,
+      files: snapshot.artifacts.length + snapshot.runs.length + 2,
+      projects: snapshot.projects,
+      measuredAt: yield* Clock.currentTimeMillis,
+    };
+  },
+  (effect, config) => effect.pipe(Semaphore.withPermit(config.queries)),
+);
+
 /** Export the whole application directory: database, referenced artifacts, and closed Pi journals. */
 export const exportReviewPackage = Effect.fn("exportReviewPackage")(function* (
   config: PackagesConfig,
@@ -2213,6 +2301,16 @@ export const exportReviewPackage = Effect.fn("exportReviewPackage")(function* (
     Semaphore.withPermit(config.queries),
     Effect.uninterruptible,
   );
+});
+
+/** Validate a selected package without quiescing or replacing the live workspace. */
+export const validateReviewPackage = Effect.fn("validateReviewPackage")(function* (
+  config: PackagesConfig,
+  source: string,
+) {
+  const limits = yield* parseLimits(config.limits);
+  yield* assertEngine;
+  yield* validatePackage(source, limits, config.migrationDirectory);
 });
 
 /**
