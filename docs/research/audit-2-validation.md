@@ -351,9 +351,33 @@ separate work.
 
 Sol round 4 approved the recovery delta with S4 resolved and no new scoped
 findings. Its independent non-GUI validation passed 29 tests with 386 assertions.
-The complete review used four rounds with GPT-6.1 Sol on xhigh and priority
+The recovery review concluded after four rounds with GPT-6.1 Sol on xhigh and priority
 service; usage was not exposed. All accepted Grok, Sol and parent findings are
 resolved. The final behavior diff against the integrated cloud base spans 56
 files with 4,565 insertions and 740 deletions before this approval note. Growth
 from the initial 43-file audit includes regression evidence, desktop isolation,
 cloud scope integration and recovery of existing cloud work.
+
+## Packaged CI launcher repair
+
+PR #11's first Linux, macOS and Windows jobs passed checks, builds and all development
+desktop tests, then failed the standalone reconciliation report in the packaged
+suite. The isolated launch adapter replaced that report's custom Electron
+entrypoint with the packaged MOKE executable. The report assertions therefore
+looked for worksheet controls in the main application.
+
+The adapter now substitutes the packaged executable only for the repository's
+`.` entrypoint. Existing explicit executable selections remain intact, while
+standalone report scripts use Electron. Isolation checks, private profiles and
+desktop-service restrictions are unchanged.
+
+The failure reproduced with a local Linux package under private Xvfb in
+`.local/audit-2/ci-11-packaged-red.log`; the same report test passed after repair
+in `ci-11-packaged-focused.log`. Full `bun run verify` then passed 321 smoke
+tests, 2,152 assertions and seven isolated Electron tests in `ci-11-verify.log`.
+All seven packaged tests also passed in `ci-11-packaged.log`. Both complete
+desktop runs confirmed private `:99` and user desktop `:0` unreachable.
+
+Sol round 5 approved the launcher repair, checked every caller, and confirmed
+the isolation controls were unchanged. C1 is resolved with no new findings.
+This final review was static only; usage was not exposed.

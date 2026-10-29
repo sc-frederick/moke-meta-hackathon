@@ -23,15 +23,17 @@ export const electron = {
 
     const launchOptions = { ...options };
 
-    if (process.env.PROJECT_KIT_EXECUTABLE)
-      launchOptions.executablePath = process.env.PROJECT_KIT_EXECUTABLE;
+    // Replace the repository entrypoint only; standalone report scripts need Electron.
+    const packagedExecutable = options.args?.includes(".")
+      ? process.env.PROJECT_KIT_EXECUTABLE
+      : undefined;
+
+    if (packagedExecutable) launchOptions.executablePath = packagedExecutable;
 
     return _electron.launch({
       ...launchOptions,
       args: [
-        ...(options.args ?? []).filter(
-          (argument) => !process.env.PROJECT_KIT_EXECUTABLE || argument !== ".",
-        ),
+        ...(options.args ?? []).filter((argument) => !packagedExecutable || argument !== "."),
         `--user-data-dir=${profile}`,
         ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
         "--no-sandbox",
