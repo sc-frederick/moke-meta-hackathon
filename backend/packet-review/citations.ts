@@ -26,22 +26,64 @@ const sectionText = (text: string) =>
     .replace(/\(\s+/gu, "(")
     .replace(/\s+\)/gu, ")");
 
-function containsSection(text: string, section: string) {
-  const expected = sectionText(section).replace(/^(?:(?:section|sec\.?)\s+|§\s*)/u, "");
+const sectionIdentifier = (text: string) =>
+  sectionText(text)
+    .replace(/^(?:(?:section|sec\.?|article)\s*|§\s*)/u, "")
+    .replace(/^table\s*/u, "table ");
 
-  if (!/\d/u.test(expected)) return false;
+function containsEdition(text: string, edition: string) {
+  const expected = sectionText(edition);
+
+  if (!expected) return false;
   const retrieved = sectionText(text);
-  let start = retrieved.indexOf(expected);
+  let position = retrieved.indexOf(expected);
 
-  while (start >= 0) {
-    const before = retrieved[start - 1] ?? "";
-    const after = retrieved[start + expected.length] ?? "";
+  while (position >= 0) {
+    const before = retrieved[position - 1] ?? "";
+    const after = retrieved[position + expected.length] ?? "";
 
-    if (!/[\p{L}\p{N}_.-]/u.test(before) && !/[\p{L}\p{N}_.(-]/u.test(after)) return true;
-    start = retrieved.indexOf(expected, start + expected.length);
+    if (!/[\p{L}\p{N}_./-]/u.test(before) && !/[\p{L}\p{N}_./-]/u.test(after)) return true;
+    position = retrieved.indexOf(expected, position + expected.length);
   }
 
   return false;
+}
+
+function sectionEvidence(text: string, section: string) {
+  const lines = text.normalize("NFKC").replace(/\r\n?/g, "\n").split("\n");
+  const headings: Array<{ line: number; id: string | null }> = [];
+
+  for (const [line, contents] of lines.entries()) {
+    const value = sectionText(contents).replace(/^#{1,6}\s+/u, "");
+    const explicit = /^(?:section\b|sec\.?\s|article\b|table\b|§)/u.test(value);
+
+    const matched = value.match(
+      /^(?:(section|sec\.?|article|table|§)\s*)?([a-z]?\d+(?:[.-]\d+)*(?:\([a-z0-9]+\))*)\.?(?:\s+|$)/u,
+    );
+
+    const id = matched?.[2];
+
+    if (
+      id &&
+      (explicit || ((/[.-]/u.test(id) || /\d{3}/u.test(id)) && !/^(?:19|20)\d{2}$/u.test(id)))
+    )
+      headings.push({ line, id: matched?.[1] === "table" ? `table ${id}` : id });
+    else if (explicit || /^\d+[/.(-]/u.test(value)) headings.push({ line, id: null });
+  }
+
+  const expected = sectionIdentifier(section);
+  const matches = headings.filter((heading) => heading.id === expected);
+
+  if (matches.length !== 1) return undefined;
+  const heading = matches[0];
+
+  if (!heading) return undefined;
+  const next = headings.find((candidate) => candidate.line > heading.line);
+
+  return {
+    identity: lines.slice(0, headings[0]?.line ?? 0).join("\n"),
+    text: lines.slice(heading.line, next?.line ?? lines.length).join("\n"),
+  };
 }
 
 function substantiveQuote(quote: string) {
@@ -100,12 +142,14 @@ export function citationHasSourceSupport(
     !substantiveQuote(citation.quote)
   )
     return false;
-  const identity = `${source.title}\n${source.text}`;
+  const section = sectionEvidence(source.text, citation.section);
+
+  if (!section) return false;
+  const identity = `${source.title}\n${section.identity}`;
 
   return (
     containsPhrase(identity, citation.document) &&
-    containsPhrase(identity, citation.edition) &&
-    containsSection(identity, citation.section) &&
-    containsPhrase(source.text, citation.quote)
+    containsEdition(identity, citation.edition) &&
+    containsPhrase(section.text, citation.quote)
   );
 }

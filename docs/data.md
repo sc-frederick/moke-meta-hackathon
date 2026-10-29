@@ -70,6 +70,11 @@ requires every discipline and pass, including reasons for Not applicable entries
 Shutdown and startup classify a review as uncertain while any admitted attempt
 has no completed receipt; reopening never retries that request automatically.
 
+Each unresolved prior comment also retains its required revision sheet targets.
+New source revisions advance that target; follow-ups without new sources preserve
+it. The model cannot rewrite this host-owned metadata to close a comment against
+an older baseline. Closure requires current inspection evidence from the target.
+
 The partial database export creates a consistent backup, including committed WAL data,
 then finalizes it in DELETE journal mode so it can be opened as a standalone,
 read-only file on every OS. Automatic backups use the same format.

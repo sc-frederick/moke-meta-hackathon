@@ -18,6 +18,7 @@ import {
   Schema,
   Semaphore,
   Stream,
+  Struct,
 } from "effect";
 import { SqlClient } from "effect/sql";
 import { createHash, randomUUID } from "node:crypto";
@@ -92,6 +93,7 @@ const Attempt = Schema.Struct({
 const Text = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(32000));
 const Id = Schema.String.check(Schema.isUUID());
 const ToolResult = Schema.Struct({ value: Schema.Json });
+const PriorCommentInput = PacketPriorComment.mapFields(Struct.omit(["revisionTargetSheetIds"]));
 
 type Runtime = { harness: Harness; root: Conversation; done: Promise<void> };
 
@@ -710,7 +712,7 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_citation",
-              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires matching retrieved official document, edition, section and a substantive quoted clause. Unsupported claims are saved as unverified.",
+              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires matching retrieved official document and edition, plus a substantive clause inside the claimed section or table. Missing or ambiguous section structure stays unverified.",
               PacketCitation,
               async (task, input) => {
                 const current = await run(get(row.project_id, row.id));
@@ -722,7 +724,7 @@ export class PacketReviews extends Context.Service<
                         ...input,
                         status: "unverified" as const,
                         note: (
-                          "Retrieved official text does not support the claimed document, edition, section and substantive quote. " +
+                          "Retrieved official text does not support the claimed document, edition and substantive quote within that section. " +
                           input.note
                         ).slice(0, 32000),
                       }
@@ -809,10 +811,22 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_prior_comment",
-              "Track an agency comment, response and changed source. Resolved requires inspected revision evidence; user completion does not close it.",
-              PacketPriorComment,
+              "Track an agency comment, response and changed source. Resolved requires current inspection of its persisted revision target. Target sheet IDs are assigned by the host and cannot be changed by this tool. User completion does not close it.",
+              PriorCommentInput,
               async (task, input) => {
                 const snapshot = await run(asExecution(config.review.snapshot(row.project_id, 0)));
+                const current = await run(get(row.project_id, row.id));
+                const previous = current.priorComments.find((comment) => comment.id === input.id);
+
+                const changed = current.sheets.filter(
+                  (sheet) => !(current.baselineSheetIds ?? []).includes(sheet.id),
+                );
+
+                const targets = previous
+                  ? (previous.revisionTargetSheetIds ?? [])
+                  : (changed.length ? changed : current.sheets).map((sheet) => sheet.id);
+
+                const comment = { ...input, revisionTargetSheetIds: targets };
 
                 return await recordTool(
                   row,
@@ -820,25 +834,20 @@ export class PacketReviews extends Context.Service<
                   "prior_comment",
                   (review) => {
                     if (
-                      input.evidenceIds.some((id) => !review.evidenceIds.includes(id)) ||
-                      (input.status === "Resolved" &&
-                        (!input.changedSources.trim() ||
-                          !input.evidenceIds.some((id) => {
+                      comment.evidenceIds.some((id) => !review.evidenceIds.includes(id)) ||
+                      (comment.status === "Resolved" &&
+                        (!comment.changedSources.trim() ||
+                          !comment.evidenceIds.some((id) => {
                             const artifact = snapshot.artifacts.find((item) => item.id === id);
-
-                            const changed = review.sheets.filter(
-                              (sheet) => !(review.baselineSheetIds ?? []).includes(sheet.id),
-                            );
-
-                            const relevant = changed.length ? changed : review.sheets;
 
                             return (
                               artifact?.sheetId != null &&
                               (review.inspectedThisReviewSheetIds ?? []).includes(
                                 artifact.sheetId,
                               ) &&
-                              relevant.some(
+                              review.sheets.some(
                                 (sheet) =>
+                                  targets.includes(sheet.id) &&
                                   sheet.id === artifact.sheetId &&
                                   sheet.revisionId === artifact.revisionId,
                               )
@@ -852,10 +861,10 @@ export class PacketReviews extends Context.Service<
 
                     return new PacketReview({
                       ...review,
-                      priorComments: upsert(review.priorComments, input),
+                      priorComments: upsert(review.priorComments, comment),
                     });
                   },
-                  input,
+                  comment,
                 );
               },
             ),
@@ -1540,6 +1549,10 @@ export class PacketReviews extends Context.Service<
             earlier?.sheets.some((previous) => samePacketSheetSource(previous, sheet)),
           );
 
+          const revisionTargets = sheets
+            .filter((sheet) => !unchanged.some((previous) => previous.id === sheet.id))
+            .map((sheet) => sheet.id);
+
           const review = new PacketReview({
             id: randomUUID(),
             projectId: project.id,
@@ -1579,7 +1592,12 @@ export class PacketReviews extends Context.Service<
             citations: earlier?.citations ?? [],
             calculations: earlier?.calculations ?? [],
             findings: earlier?.findings ?? [],
-            priorComments: earlier?.priorComments ?? [],
+            priorComments: (earlier?.priorComments ?? []).map((comment) =>
+              (comment.status === "Open" || comment.status === "Partly resolved") &&
+              revisionTargets.length > 0
+                ? { ...comment, revisionTargetSheetIds: revisionTargets }
+                : comment,
+            ),
             summary: "",
             missingInputs: [],
             error: null,

@@ -131,6 +131,8 @@ export const PacketPriorComment = Schema.Struct({
   changedSources: Text,
   status: Schema.Literals(["Open", "Partly resolved", "Resolved", "Superseded"]),
   evidenceIds: Schema.Array(ArtifactId),
+  /** Host-owned revision target; unchanged follow-ups cannot replace it with baseline evidence. */
+  revisionTargetSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
 });
 
 /** Frozen source inventory identifies the exact PDF revision reviewed. */
