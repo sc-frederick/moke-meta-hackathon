@@ -229,6 +229,18 @@ it. Queue messages use JSON to preserve millisecond expiry times through the SDK
 
 ## Validation
 
+Protocol 3 is deployed from `d7ba4f874` as `moke-review-engine:d7ba4f874`.
+That immutable tag, `moke-review-engine:latest` and this checkout's private
+operator selection resolve to `im-01M630XTWWQWB3FM0K4NY8NR0D`.
+The published image passed strict identity, migration-hash and native PDF
+readiness checks. The bounded protocol-3 live run verified ownership fencing,
+backend close/reopen, RPC progress and automatic verified-package return.
+Its single sent Meta request remains uncertain, with no successful response
+receipt, counts or final answer. It was not retried. The strict live validator
+exited nonzero; successful inference remains unverified. See
+[the deployment record](research/protocol-3-deployment.md) for identities,
+receipts, cleanup and the retained rollback image.
+
 `cloud-reviews.test.ts` exercises persisted ownership, duplicate commands,
 ambiguous dispatch, stop failures, wrong job identity, required checkpoints,
 stale source versions, interrupted imports, corrupted ownership records, and
@@ -240,7 +252,7 @@ accepting evidence. Existing execution tests cover provider and SAM admission.
 Live validation is available with `bun scripts/validate-cloud.ts --live --calls 12`
 after configuring the two private connection files. It uses only the authored
 two-sheet schematic and preserves receipts under `.local/cloud-validation/`.
-The first bounded live run returned proposed drawn **2** and scheduled **3**
+The historical protocol-2 bounded live run returned proposed drawn **2** and scheduled **3**
 through a durable result snapshot after a complete backend close/reopen. It
 reached its eight-call budget before the final model answer; the UI identifies
 this as partial results. No facts were accepted, source hashes were unchanged,
@@ -277,9 +289,10 @@ are fenced while the cloud owns the workspace.
 
 The protocol-3 handshake requires support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
-Rebuild and publish the worker image from this version before using it; protocol-2
-workers would discard the new selection fields and now fail the handshake before
-admitting new model work. This deployment requirement is separate from recovery
+The operator deployment above now supplies that matching worker. Rebuild and
+publish again when worker code, prompts or migrations change. Protocol-2 workers
+would discard the new selection fields and fail the handshake before admitting
+new model work. This deployment requirement is separate from recovery
 of reviews already dispatched to protocol-2 workers. New ownership receipts save
 `workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
 protocol-2 progress with the same engine, count/packet prompt and instruction
@@ -297,7 +310,9 @@ owns the workspace; remote steering is unavailable.
 Offline validation runs the actual packet service and recorded Baseten transport,
 exports a real capped package, automatically restores it in the local application,
 and reopens without dispatching again. Desktop proof replays a terminal receipt,
-hydrates packet findings and enables editing. The modernized checkout passes
-300 smoke tests and four Electron flows. These tests add no paid model requests.
-Earlier live selected-count and automatic-return evidence is recorded above; it
-does not establish a new live drawing-set review on this protocol.
+hydrates packet findings and enables editing. The merged source's latest
+validation passed 321 smoke tests with 2,152 assertions, seven isolated Electron
+flows and seven packaged flows. Linux, macOS and Windows hosted checks also
+passed, including packaged execution. These offline tests add no paid model
+requests. The protocol-3 live transfer evidence above does not establish a
+successful live drawing-set review on this protocol.
