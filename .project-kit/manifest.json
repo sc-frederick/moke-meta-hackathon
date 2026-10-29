@@ -30,7 +30,7 @@
     "surface": "design/concepts/DESIGN.md"
   },
   "reviewRuntime": {
-    "status": "implemented-local",
+    "status": "implemented-local-and-cloud-review",
     "documentation": "docs/review-runtime.md",
     "comparisonDocumentation": "docs/research/agent-harness-comparison.md",
     "harness": "@earendil-works/pi-durable",
@@ -39,8 +39,34 @@
     "cloudExecution": {
       "provider": "modal",
       "service": "Sandboxes",
-      "activation": "explicit-checkpoint-handoff",
-      "status": "deferred-optional"
+      "activation": "explicit-push-to-cloud-new-run",
+      "status": "implemented-with-live-transport-validation",
+      "validationScope": {
+        "selectedCountReview": "live-completed",
+        "automaticReturn": "live-transport-and-recovery-with-uncertain-model-outcome",
+        "drawingSetReview": "recorded-provider-and-real-package-roundtrip"
+      },
+      "validationDocumentation": "docs/research/cloud-validation.md",
+      "documentation": "docs/cloud-reviews.md",
+      "sdk": "modal@0.11.1",
+      "language": "TypeScript on Bun",
+      "scope": "whole-application",
+      "localOwnershipFence": "persistent-sidecar-record",
+      "resultReturn": "automatic-backend-reconciliation",
+      "progressTransport": "modal-file-watch-and-effect-rpc-stream",
+      "reconciliationIntervalSeconds": 10,
+      "checkpointRetentionDays": 7,
+      "defaultTimeoutMinutes": 15,
+      "warmPoolDefault": false,
+      "sourcesCheckedOn": "2026-10-28",
+      "sources": [
+        "https://modal.com/docs/guide/sdk-javascript-go",
+        "https://modal.com/docs/sdk/js/latest/Sandbox",
+        "https://modal.com/docs/sdk/js/latest/Image",
+        "https://modal.com/docs/examples/sandbox_secret_injection",
+        "https://modal.com/docs/examples/sandbox_pool",
+        "https://modal.com/docs/examples/harbor_evals"
+      ]
     },
     "modelServing": "Meta Model API or eligible partner inference",
     "sourcesCheckedOn": "2026-10-27",

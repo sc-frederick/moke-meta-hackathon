@@ -1,8 +1,8 @@
 # Review runtime and cloud handoff
 
-Decision recorded October 27, 2026: use **Pi Durable for agent execution**, behind an Effect application service. Reviews execute locally by default. The planned **Continue in cloud** action would transfer a review to a **Modal Sandbox** running the same versioned engine. Effect continues to own application contracts, project operations, PDF and SAM tools, accepted facts, calculations and dependency invalidation.
+Decision recorded October 27, 2026: use **Pi Durable for agent execution**, behind an Effect application service. Reviews execute locally by default. **Push to cloud**, implemented October 28, starts a new review in a Modal Sandbox running the matching Bun engine. Effect owns application contracts, project operations, PDF and SAM tools, accepted facts, calculations and dependency invalidation.
 
-The local engine, persistent journal, provider integration, and packaged desktop are implemented. The [beta workflow](research/beta-implementation.md) describes the connected prompts and UI; [core validation](research/core-validation.md) records earlier runtime proof. Modal handoff remains deferred and optional. The cloud sections below describe its proposed contract. The [SDK comparison](research/agent-harness-comparison.md) records the alternatives and independent critique.
+The local engine, persistent journal, provider integration, and packaged desktop are implemented. The [beta workflow](research/beta-implementation.md) describes the connected prompts and UI; [core validation](research/core-validation.md) records earlier runtime proof. [Cloud reviews](cloud-reviews.md) documents the implemented whole-workspace transfer, single-owner fence, snapshots, setup, tests, and outstanding live-account validation. It starts fresh runs and preserves the prohibition on replaying copied journals. The sections below describe the broader future contract for continuing an existing run; that continuation is not implemented. The [SDK comparison](research/agent-harness-comparison.md) records the alternatives and independent critique.
 
 ## Local and cloud responsibilities
 
@@ -18,7 +18,7 @@ Local execution describes the engine and project state. Meta/Baseten model calls
 
 Cloudflare PiHarness is an alternative considered during research, not the selected cloud path. Modal is the selected provider for this handoff. A local review does not require a running Modal Sandbox or a permanent cloud copy of the project.
 
-## Checkpoint handoff
+## Future continuation of an existing run
 
 Transfer application state at a safe boundary rather than migrating live process memory:
 

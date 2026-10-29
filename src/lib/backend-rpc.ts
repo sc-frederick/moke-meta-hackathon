@@ -4,6 +4,7 @@ import { ReviewFilesRpc, ReviewRpc } from "./review/contracts.ts";
 import { PacketReviewRpc } from "./review/packet.ts";
 import { ExecutionRpc } from "./review/execution.ts";
 import { ReviewPackageFilesRpc } from "./review/packages.ts";
+import { CloudReviewRpc } from "./review/cloud.ts";
 
 /** A safe failure at the database file, migration, or recovery boundary. */
 export class DatabaseFileError extends Schema.TaggedError<DatabaseFileError>()(
@@ -37,6 +38,17 @@ export const InferenceConfiguration = Schema.Struct({
   model: Schema.NonEmptyString,
 });
 
+/** Modal credentials cross only the trusted startup pipe, never renderer RPC or packages. */
+export const ModalConfiguration = Schema.Struct({
+  tokenId: Schema.RedactedFromValue(Schema.NonEmptyString),
+  tokenSecret: Schema.RedactedFromValue(Schema.NonEmptyString),
+  appName: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,64}$/)),
+  environment: Schema.NonEmptyString,
+  imageName: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_.:-]{1,128}$/)),
+  timeoutMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 })),
+  poolQueue: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,64}$/))),
+});
+
 /** Private startup configuration sent once over the child's stdin, never command-line arguments. */
 export class BackendConfig extends Schema.Class<BackendConfig>("BackendConfig")({
   dataDirectory: Path,
@@ -45,6 +57,7 @@ export class BackendConfig extends Schema.Class<BackendConfig>("BackendConfig")(
   processing: Schema.optionalKey(ProcessingConfiguration),
   inference: Schema.optionalKey(InferenceConfiguration),
   inferenceAlternatives: Schema.optionalKey(Schema.Array(InferenceConfiguration)),
+  modal: Schema.optionalKey(ModalConfiguration),
 }) {}
 
 /** Versioned, validated readiness message emitted after migrations and API startup. */
@@ -84,4 +97,5 @@ export class BackendRpc extends DatabaseRpc.merge(ReviewRpc)
   .merge(ReviewFilesRpc)
   .merge(ExecutionRpc)
   .merge(PacketReviewRpc)
+  .merge(CloudReviewRpc)
   .merge(ReviewPackageFilesRpc) {}

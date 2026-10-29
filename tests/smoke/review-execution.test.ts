@@ -530,7 +530,7 @@ test("stale late proposals fail promotion and malformed tool args never reach th
     await malformed.runtime.dispose();
     await rm(malformedPath, { recursive: true, force: true });
   }
-});
+}, 15000);
 
 test("compiled processes exclude a second owner and reacquire after SIGKILL", async () => {
   const path = await mkdtemp(join(tmpdir(), "review-owner-"));

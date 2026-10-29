@@ -11,6 +11,14 @@
   import { Option, Schema } from "effect";
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
+  import CloudReviewControls from "./CloudReviewControls.svelte";
+  import {
+    cloudReviewLocksWorkspace,
+    latestCloudReviewStatus,
+    type CloudReviewStatus,
+    type CloudReviewSetup,
+  } from "#lib/review/cloud.ts";
+  import { createCloudReturnHydration } from "#lib/review/cloud-delivery.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
   import SheetSetup from "./SheetSetup.svelte";
   import {
@@ -59,6 +67,16 @@
   let selectedModel = $state<typeof ReviewModelId.Type>("muse-spark-1.3");
   let setup = $state.raw<ExecutionSetup | null>(null);
   let executionStatus = $state.raw<ExecutionStatus | null>(null);
+  let location = $state<"local" | "cloud">("local");
+  let cloudStatus = $state.raw<CloudReviewStatus | null>(null);
+  let cloudSetup = $state.raw<CloudReviewSetup | null>(null);
+  let cloudLoaded = $state(false);
+
+  const cloudLocked = $derived(
+    cloudStatus !== null && cloudReviewLocksWorkspace(cloudStatus.phase),
+  );
+
+  const cloudBlocked = $derived(!cloudLoaded || cloudLocked);
   let callLimit = $state<number | undefined>(undefined);
   let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
   let packetBusy = $state(false);
@@ -265,6 +283,7 @@
     action: "pause" | "resume" | "cancel",
     maxCalls?: number | null,
   ) {
+    if (cloudBlocked) return;
     packetBusy = true;
 
     const result = await client.controlPacketReview(
@@ -286,6 +305,7 @@
     findingId: string,
     completed: boolean,
   ) {
+    if (cloudBlocked) return;
     packetBusy = true;
 
     const result = await client.completePacketFinding(
@@ -372,12 +392,12 @@
     const request = ++refreshRequest;
     const result = await client.snapshot(projectId, eventCursor);
 
-    if (request !== refreshRequest) return;
+    if (request !== refreshRequest) return false;
 
     if (!result.ok) {
       error = result.error.message;
 
-      return;
+      return false;
     }
 
     const sameProject = snapshot?.project?.id === result.value.project?.id;
@@ -421,9 +441,12 @@
     }
 
     if (selectedProjectId !== null) void trackPacketReviews(selectedProjectId);
+
+    return true;
   }
 
   async function runCommand(command: Parameters<ReviewClient["command"]>[0]) {
+    if (cloudBlocked) return false;
     busy = true;
     const result = await client.command(command);
 
@@ -465,6 +488,7 @@
   }
 
   async function openProjectDialog() {
+    if (cloudBlocked) return;
     closeFindings();
     mobileNavigationOpen = false;
     projectDialog?.showModal();
@@ -519,7 +543,7 @@
   async function postMessage(event: SubmitEvent) {
     event.preventDefault();
 
-    if (project === null || activeConversation === null) return;
+    if (project === null || activeConversation === null || cloudBlocked) return;
     const text = draft.trim();
 
     if (!text) return;
@@ -549,19 +573,37 @@
       draft = "";
       await refresh(saved.value.projectId);
 
-      const result = await client.startPacketReview({
+      const request = {
         commandId: newCommandId(),
         projectId: command.projectId,
         conversationId: command.conversationId,
         messageId: saved.value.entityId,
         ...selection,
-      });
+      };
 
-      if (result.ok) {
-        receivePacketReview(result.value);
-        error = "";
-        notice = "Review started.";
-      } else error = `Your message was saved. ${result.error.message}`;
+      if (location === "cloud") {
+        const result = await client.startCloudPacketReview({
+          ...request,
+          kind: "packet",
+          transferScope: "whole-application",
+        });
+
+        if (result.ok) {
+          cloudStatus = latestCloudReviewStatus(cloudStatus, result.value);
+          executionStatus = null;
+          error = "";
+          notice = "Review pushed to cloud. Progress and results sync automatically.";
+        } else error = `Your message was saved. ${result.error.message}`;
+      } else {
+        const result = await client.startPacketReview(request);
+
+        if (result.ok) {
+          receivePacketReview(result.value);
+          error = "";
+          notice = "Review started.";
+        } else error = `Your message was saved. ${result.error.message}`;
+      }
+
       await refresh(saved.value.projectId);
       busy = false;
     } else if (await runCommand(command)) {
@@ -575,7 +617,7 @@
   }
 
   async function importPdf() {
-    if (project === null) return;
+    if (project === null || cloudBlocked) return;
     busy = true;
     importing = true;
 
@@ -1040,6 +1082,42 @@
     );
   }
 
+  const onCloudReturned = createCloudReturnHydration({
+    selection: () => ({
+      projectId: selectedProjectId,
+      findingId: reviewFindingId,
+      receipt: cloudStatus,
+    }),
+    refreshSnapshot: async () => {
+      eventCursor = 0;
+
+      if (!(await refresh())) return false;
+      const projectId = selectedProjectId;
+
+      if (projectId === null) return true;
+      const result = await client.listPacketReviews(projectId);
+
+      if (projectId !== selectedProjectId) return false;
+
+      if (!result.ok) {
+        error = result.error.message;
+
+        return false;
+      }
+
+      packetReviews = result.value;
+
+      return true;
+    },
+    loadExecution: (projectId, runId) => client.executionStatus(projectId, runId),
+    applyExecution: (status) => {
+      executionStatus = status;
+    },
+    reportError: (message) => {
+      error = message;
+    },
+  });
+
   onMount(() => {
     const controller = new AbortController();
     void client.snapshot(null, 0, controller.signal).then(async (result) => {
@@ -1241,6 +1319,18 @@
         </details>
       </section>
       <section class="settings-section">
+        <h3>Cloud reviews</h3>
+        <p>{cloudSetup?.configured ? "Connected" : "Cloud connection needs setup"}</p>
+        <p class="muted">
+          Choose Push to cloud in the composer. Progress and results sync automatically, including
+          after you reopen Moke. Local edits pause during the review.
+        </p>
+        <p class="muted">
+          Review time limit: {cloudSetup?.timeoutMinutes ?? 15} minutes. Model usage is billed separately
+          from cloud compute.
+        </p>
+      </section>
+      <section class="settings-section">
         <h3>Model connections</h3>
         <p>
           Meta <span class="connection-state"
@@ -1362,7 +1452,7 @@
                   else if (result.value) notice = "Complete review package exported.";
                 }}>Export complete package</button
               ><button
-                disabled={busy}
+                disabled={busy || cloudBlocked}
                 onclick={async () => {
                   busy = true;
                   const result = await client.chooseReviewRestore();
@@ -1462,7 +1552,7 @@
             {#if activePacketReview}
               {#key activePacketReview.id}<PacketReviewPanel
                   review={activePacketReview}
-                  busy={packetBusy || busy}
+                  busy={packetBusy || busy || cloudBlocked}
                   onControl={(action, maxCalls) =>
                     controlPacketReview(activePacketReview, action, maxCalls)}
                   onComplete={(findingId, completed) =>
@@ -1488,7 +1578,7 @@
                     </div>{/each}
                 </details>{/if}
             {/if}
-            {#if reviewFinding}
+            {#if reviewFinding && !cloudBlocked}
               {#key reviewFinding.id + (activeConversation?.id ?? "")}<ExecutionControls
                   {client}
                   finding={reviewFinding}
@@ -1497,11 +1587,20 @@
                     (message) => message.origin?.runId === executionStatus?.runId,
                   )}
                   bind:status={executionStatus}
-                  onProgress={() => refresh()}
+                  onProgress={async () => {
+                    await refresh();
+                  }}
                 />{/key}
             {/if}
           </div>
         </div>
+        <CloudReviewControls
+          {client}
+          bind:status={cloudStatus}
+          bind:setup={cloudSetup}
+          bind:loaded={cloudLoaded}
+          onReturned={onCloudReturned}
+        />
         {#if project}
           <div class="composer-region">
             {#if project}
@@ -1514,7 +1613,7 @@
                         { value: "", label: "Optional count comparison" },
                         ...findings.map((finding) => ({ value: finding.id, label: finding.title })),
                       ]}
-                      disabled={busy || executionBlocked}
+                      disabled={busy || executionBlocked || cloudBlocked}
                       onChange={selectReviewFinding}
                     />
                   </div>{:else}<span class="muted review-scope"
@@ -1538,14 +1637,27 @@
                 placeholder={reviewMode === "review"
                   ? "Ask for a whole-set QA pass, a discipline review, or follow-up…"
                   : "Add a project note…"}
-                disabled={project === null || activeConversation === null}></textarea>
+                disabled={project === null || activeConversation === null || cloudBlocked}
+              ></textarea>
               <div class="composer-tools">
                 <div class="composer-options">
+                  <ReviewSelect
+                    label="Execution location"
+                    value={location}
+                    options={[
+                      { value: "local", label: "On this computer" },
+                      { value: "cloud", label: "Push to cloud", disabled: !cloudSetup?.configured },
+                    ]}
+                    disabled={busy || executionBlocked || cloudBlocked}
+                    onChange={(value) => {
+                      location = value === "cloud" ? "cloud" : "local";
+                    }}
+                  />
                   <ReviewSelect
                     label="Model"
                     value={selectedModel}
                     options={modelOptions}
-                    disabled={busy || executionBlocked}
+                    disabled={busy || executionBlocked || cloudBlocked}
                     onChange={(value) => {
                       selectedModel = Schema.decodeUnknownSync(ReviewModelId)(value);
                     }}
@@ -1564,7 +1676,7 @@
                         label: scope.label,
                       })),
                     ]}
-                    disabled={busy || executionBlocked}
+                    disabled={busy || executionBlocked || cloudBlocked}
                     onChange={(value) => {
                       discipline = Schema.decodeUnknownSync(ReviewDisciplineSelection)(value);
                     }}
@@ -1575,7 +1687,7 @@
                   class="note-toggle"
                   aria-label="Save as note"
                   aria-pressed={reviewMode === "note"}
-                  disabled={busy || executionBlocked}
+                  disabled={busy || executionBlocked || cloudBlocked}
                   onclick={() => {
                     reviewMode = reviewMode === "note" ? "review" : "note";
                   }}>Note</button
@@ -1585,6 +1697,7 @@
                   class="send"
                   disabled={!draft.trim() ||
                     busy ||
+                    cloudBlocked ||
                     !project ||
                     (reviewMode === "review" &&
                       (sheets.length === 0 ||
@@ -1592,15 +1705,23 @@
                         !validCallLimit ||
                         executionBlocked))}
                   aria-label="Send message"
-                  title={reviewMode === "review" ? "Send and start document review" : "Save note"}
-                  ><ReviewIcon name="arrow-up" size={17} /></button
+                  title={reviewMode === "review"
+                    ? location === "cloud"
+                      ? "Push review to cloud"
+                      : "Send and start document review"
+                    : "Save note"}><ReviewIcon name="arrow-up" size={17} /></button
                 >
               </div>
             </form>
             <div class="composer-help">
-              {#if reviewMode === "note"}Notes are saved without starting a review.{:else if sheets.length === 0}Import
-                the drawing set to start a review.{:else if !setup?.configured}Provider not
-                configured. <button class="text-button" onclick={() => openSetup("settings")}
+              {#if cloudBlocked}{cloudLoaded
+                  ? "Cloud review in progress. Results sync automatically; local edits are paused."
+                  : "Connecting to your cloud review…"}{:else if reviewMode === "review" && location === "cloud"}Pushes
+                every project in this workspace, including PDFs and review history (up to 256 MiB /
+                5,000 files). Results sync automatically. Local edits pause until sync completes or
+                you stop the review.{:else if reviewMode === "note"}Notes are saved without starting
+                a review.{:else if sheets.length === 0}Import the drawing set to start a review.{:else if !setup?.configured}Provider
+                not configured. <button class="text-button" onclick={() => openSetup("settings")}
                   >Open review settings</button
                 >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
                 review settings.{:else if !validCallLimit}Enter a positive whole-number call budget

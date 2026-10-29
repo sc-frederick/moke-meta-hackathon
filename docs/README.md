@@ -6,6 +6,7 @@ Start with [Moke's README](../README.md) for the product, workflow, and screensh
 
 - [Development and testing](development.md): commands, smoke/Electron suites, and screenshot refresh.
 - [Inference setup](inference.md): provider keys, canonical routes, and manual API checks.
+- [Cloud reviews](cloud-reviews.md): Push to cloud, operator setup, sandbox lifetimes, and recovery limits.
 - [Model reference](models.md): the Meta catalog and the Baseten hackathon endpoint.
 - [Desktop builds and releases](deployment.md): packaging, CI, credentials, and runtime boundaries.
 - [Data and recovery](data.md): SQLite migrations, consistent backups, complete packages, and restore behavior.
@@ -17,7 +18,7 @@ Start with [Moke's README](../README.md) for the product, workflow, and screensh
 - [Beta workflow](research/beta-implementation.md): conversations, sheet setup, reviewer acceptance, and product boundaries.
 - [Beta validation](research/beta-validation.md): recorded desktop and packaged checks, screenshots, fixes, and limits.
 - [Core validation](research/core-validation.md): recorded Meta/SAM receipts, recovery checks, and limits.
-- [Review runtime](review-runtime.md): local ownership, Pi Durable, hosted inference, and planned checkpoint handoff.
+- [Review runtime](review-runtime.md): local ownership, Pi Durable, hosted inference, and cloud review scope.
 - [Pi execution](research/pi-runtime.md): journals, request admission, controls, and crash recovery.
 - [Review packages](research/review-packages.md): complete export/restore and interrupted replacement recovery.
 - [SAM integration](research/sam-integration.md): image geometry, intent ledger, source fences, and proposals.

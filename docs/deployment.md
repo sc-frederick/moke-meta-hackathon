@@ -96,6 +96,11 @@ have no publisher signature.
 
 ## Provider credentials in a packaged launch
 
+Optional cloud reviews use a separately published Bun worker image and a private
+operator session configuration. See [cloud setup](cloud-reviews.md). Ordinary
+desktop builds neither publish the image nor start cloud compute. There is no
+embedded Modal or model credential in a distributed binary.
+
 Use File > Import provider credential to encrypt a configuration with Electron
 safeStorage. Linux `basic_text` storage is refused. Without secure OS storage,
 set `MOKE_SESSION_CREDENTIAL_FILE` to an explicitly selected private JSON file

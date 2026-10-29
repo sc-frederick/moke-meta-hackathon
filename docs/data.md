@@ -96,6 +96,13 @@ The manifest verifies hashes, migration prefixes, engine format, paths and limit
 Credentials, logs, `.env`, and the ownership lock are excluded. Database-only
 restore refuses review-bearing data in either the current or incoming database.
 
+After maintenance closes journal writers, export lets SQLite checkpoint each Pi
+journal and leave WAL mode before read-only inspection. This avoids the closed-WAL
+read failure tracked in [Bun #45171](https://github.com/oven-sh/bun/issues/45171)
+on macOS. SQLite owns sidecar cleanup; export rechecks the resulting file size and
+identity before backup. A later local resume opens WAL mode again through the
+normal journal adapter.
+
 Restore validates the entire package before replacement, retains a complete
 pre-restore snapshot, and journals replacement phases. Startup rolls an
 interrupted replacement back before opening databases. Restored runs have a
@@ -122,6 +129,17 @@ Print output retains the current completion state. User completion is separate
 from finding status, engineering acceptance and reviewer-verified comment closure.
 
 ## Sync
+
+Cloud reviews use the same complete-package validation and replacement journal.
+The separate `<dataDirectory>.cloud/state.json` ownership record is flushed
+before dispatch and fences local writes across desktop reopen. It is excluded
+from portable packages so import cannot erase its own fence. A confirmed remote
+stop precedes result replacement or cancellation. See [cloud review recovery](cloud-reviews.md)
+for seven-day checkpoints, whole-workspace scope, and uncertain-call handling.
+The backend automatically returns completed results and resumes reconciliation
+after reopen. Live status streams replay the current receipt; persistent receipt
+revisions prevent stale replies from rolling the interface back. The synced
+notification follows package validation and completion of application maintenance.
 
 Cloud connectivity is optional. Decide the source of truth, offline writes,
 conflict rules, idempotency keys, deletions, and compatibility with older desktop

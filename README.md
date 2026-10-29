@@ -66,8 +66,10 @@ long conversations use Pi compaction. Complete packages export and restore the
 database, original PDFs, rendered evidence and execution journals together.
 
 Projects run locally, but inference uses hosted Meta or Baseten APIs and sends
-selected drawing evidence to the provider. Modal checkpoint handoff remains
-planned. See [the runtime decision](docs/review-runtime.md) and
+selected drawing evidence to the provider. **Push to cloud** transfers the complete
+workspace for a new bounded review, streams progress, and automatically syncs results with local
+ownership checks. See [cloud setup and limits](docs/cloud-reviews.md),
+[the runtime decision](docs/review-runtime.md), and
 [data and recovery](docs/data.md).
 
 ## Development

@@ -22,6 +22,8 @@ import { Documents } from "../../backend/documents/documents.ts";
 import { createReviewOperations } from "../../backend/review/operations.ts";
 import { ReviewStore } from "../../backend/review/store.ts";
 import { PacketReviews } from "../../backend/packet-review/service.ts";
+import { exportReviewPackage } from "../../backend/review/packages.ts";
+import { PackageError, PackageLimits } from "#lib/review/packages.ts";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import type { ProviderTransport } from "../../backend/inference/provider.ts";
 import {
@@ -48,6 +50,10 @@ class FixtureApi extends Context.Service<
     readonly review: ReturnType<typeof createReviewOperations>;
     readonly packets: PacketReviews["Service"];
     readonly database: ReturnType<typeof executionPersistence>["query"];
+    readonly exportPackage: (
+      destination: string,
+      limits?: typeof PackageLimits.Type,
+    ) => ReturnType<typeof exportReviewPackage>;
   }
 >()("test/PacketReviewFixture") {}
 
@@ -134,6 +140,23 @@ export async function open(directory: string, transport: ProviderTransport, setu
         review,
         packets,
         database: executionPersistence(filename, queries).query,
+        exportPackage: (destination, limits) =>
+          exportReviewPackage(
+            {
+              dataDirectory: directory,
+              migrationDirectory: resolve("migrations"),
+              queries,
+              quiesce: packets.quiesce.pipe(
+                Effect.mapError(
+                  (cause) => new PackageError({ reason: "conflict", message: cause.message }),
+                ),
+              ),
+              ...(limits === undefined
+                ? { ownerGeneration: owner.generation }
+                : { ownerGeneration: owner.generation, limits }),
+            },
+            destination,
+          ),
       });
     }),
   );
@@ -206,6 +229,7 @@ export async function open(directory: string, transport: ProviderTransport, setu
     directory,
     projectId,
     packets: api.packets,
+    exportPackage: api.exportPackage,
     runtime,
     snapshot,
     request,

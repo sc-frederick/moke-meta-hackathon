@@ -8,8 +8,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
 import { DocumentError, ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
-import { ReviewProxy, ExecutionProxy, PacketProxy } from "./review-proxy.ts";
+import { ReviewProxy, ExecutionProxy, PacketProxy, CloudReviewProxy } from "./review-proxy.ts";
 import { readInferenceConfigurations, storeInferenceConfiguration } from "./credentials.ts";
+import { readModalConfiguration } from "./modal-credentials.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -79,6 +80,8 @@ if (!app.requestSingleInstanceLock()) {
         app.isPackaged,
       );
 
+      const modal = await Effect.runPromise(readModalConfiguration(app.isPackaged));
+
       const launchOptions: BackendLaunch = {
         command: app.isPackaged
           ? [join(process.resourcesPath, "backend", executable)]
@@ -101,10 +104,13 @@ if (!app.requestSingleInstanceLock()) {
         },
       };
 
-      const backend = BackendApi.layer(
+      const withInference =
         inference === undefined
           ? launchOptions
-          : { ...launchOptions, inference, inferenceAlternatives },
+          : { ...launchOptions, inference, inferenceAlternatives };
+
+      const backend = BackendApi.layer(
+        modal === undefined ? withInference : { ...withInference, modal },
       );
 
       const shellHandlers = ReviewShellRpc.toLayer(
@@ -258,7 +264,9 @@ if (!app.requestSingleInstanceLock()) {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
       }).pipe(
-        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, PacketProxy, shellHandlers)),
+        Layer.provide(
+          Layer.mergeAll(ReviewProxy, ExecutionProxy, PacketProxy, CloudReviewProxy, shellHandlers),
+        ),
         Layer.provideMerge(backend),
         Layer.provide(logging),
       );
