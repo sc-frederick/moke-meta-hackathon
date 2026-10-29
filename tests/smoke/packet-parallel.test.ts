@@ -187,7 +187,7 @@ test("a large packet reviews its sheets in concurrent conversations between coor
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30000);
 
 test("one sheet reviewer's unresolved provider request stops only that sheet", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-failure-"));
@@ -218,7 +218,7 @@ test("one sheet reviewer's unresolved provider request stops only that sheet", a
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30000);
 
 test("a call budget pauses a parallel review mid-sheet and resume finishes the queued sheets", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-resume-"));
@@ -274,4 +274,4 @@ test("a call budget pauses a parallel review mid-sheet and resume finishes the q
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 30000);

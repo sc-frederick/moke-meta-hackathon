@@ -11,6 +11,8 @@ import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 test("count creation focuses its form, source pages navigate, and removed revision decisions survive reopen", async () => {
   test.setTimeout(120000);
+  // Revision previews render on demand; a cold PDF worker on macOS CI took longer than 5 s.
+  const previewWait = { timeout: 15000 };
   const directory = await mkdtemp(join(tmpdir(), "moke-audit-3-sheets-"));
   const baseline = join(directory, "five-pages.pdf");
   const revision = join(directory, "four-pages.pdf");
@@ -98,7 +100,7 @@ test("count creation focuses its form, source pages navigate, and removed revisi
         .first()
         .getByTestId(/^revision-old-preview-/)
         .locator("img"),
-    ).toBeVisible();
+    ).toBeVisible(previewWait);
 
     for (let index = 0; index < 4; index++) {
       await maps.nth(index).selectOption({ index: index + 2 });
@@ -162,7 +164,7 @@ test("count creation focuses its form, source pages navigate, and removed revisi
         .first()
         .getByTestId(/^revision-new-preview-/)
         .locator("img"),
-    ).toBeVisible();
+    ).toBeVisible(previewWait);
     await expect(rows.nth(4)).toContainText("No replacement page");
     await page.screenshot({ path: test.info().outputPath("audit-3-removed-revision.png") });
     await page.reload();
@@ -177,13 +179,13 @@ test("count creation focuses its form, source pages navigate, and removed revisi
         .first()
         .getByTestId(/^revision-old-preview-/)
         .locator("img"),
-    ).toBeVisible();
+    ).toBeVisible(previewWait);
     await expect(
       rows
         .first()
         .getByTestId(/^revision-new-preview-/)
         .locator("img"),
-    ).toBeVisible();
+    ).toBeVisible(previewWait);
     await expect(rows.nth(4)).toContainText("No replacement page");
   } finally {
     await app.close();
