@@ -57,6 +57,8 @@ export const CloudWorkerProgress = Schema.Struct({
 /** Persistent local intent is saved before every ambiguous external dispatch. */
 export const CloudReviewRecord = Schema.Struct({
   id: CloudReviewId,
+  // Unmarked receipts predate protocol-aware admission and may name a running v2 worker.
+  workerProtocol: Schema.optionalKey(Schema.Literal(cloudEngineIdentity.protocol)),
   revision: Schema.Int.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   syncFailure: Schema.NullOr(CloudReviewError).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),

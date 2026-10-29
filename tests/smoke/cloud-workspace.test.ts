@@ -23,6 +23,8 @@ import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare
 
 import { open as openPacketFixture, chatResponse } from "../fixtures/packet-review.ts";
 import { runCloudReview } from "../../backend/cloud/worker-review.ts";
+import { parseCloudWorkerProgress } from "../../backend/cloud/progress.ts";
+import { readCloudState, writeCloudFile } from "../../backend/cloud/files.ts";
 
 const id = () => Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
 
@@ -43,17 +45,41 @@ function openApplication(config: BackendConfig, sandbox?: Layer.Layer<CloudSandb
   return runtime;
 }
 
-test.each([false, true])(
-  "the application fences writes across reopen and handles real returned packages (corrupt: %s)",
-  async (corrupt) => {
+async function saveLegacyCloudReceipt(data: string, phase: "dispatching" | "running") {
+  const path = `${data}.cloud/state.json`;
+  const jobs = await Effect.runPromise(readCloudState(path));
+
+  await Effect.runPromise(
+    writeCloudFile(
+      path,
+      JSON.stringify(
+        { version: 1, jobs: jobs.map((record) => ({ ...record, phase })) },
+        (key, value) => (key === "workerProtocol" ? undefined : value),
+      ),
+    ),
+  );
+}
+
+test.each([
+  { corrupt: false, legacyPhase: null },
+  { corrupt: true, legacyPhase: null },
+  { corrupt: false, legacyPhase: "dispatching" },
+  { corrupt: false, legacyPhase: "running" },
+  { corrupt: true, legacyPhase: "running" },
+] as const)(
+  "the application fences writes across reopen and handles real returned packages (%j)",
+  async ({ corrupt, legacyPhase }) => {
     const root = await mkdtemp(join(tmpdir(), "moke-cloud-workspace-"));
     const data = join(root, "local");
     const remoteData = join(root, "remote");
     const uploaded = join(root, "uploaded");
     const returned = join(root, "returned");
+    const checkpoint = join(root, "result-snapshot");
     let dispatched = 0;
     let stopped = false;
     let remotelyReady = false;
+    let downloads = 0;
+    const checkpoints: string[] = [];
     const notifications = Effect.runSync(PubSub.unbounded<void>());
     let remote: ReturnType<typeof openApplication> | undefined;
 
@@ -140,20 +166,38 @@ test.each([false, true])(
           yield* application.exportPackage(returned, cloudPackageLimits);
         }).pipe(Effect.orDie),
       progress: (record) =>
-        Effect.succeed({
-          progress: {
-            id: record.id,
-            identity: cloudEngineIdentity,
-            phase: remotelyReady ? "ready" : "running",
-            execution: null,
-            message: "Test review ready",
-          },
-          resultSnapshotId: remotelyReady ? "test-result-snapshot" : null,
-          sourceStopped: false,
+        Effect.gen(function* () {
+          const progress = yield* parseCloudWorkerProgress(
+            record,
+            JSON.stringify({
+              id: record.id,
+              identity: {
+                ...cloudEngineIdentity,
+                protocol: legacyPhase !== null && record.workerProtocol === undefined ? 2 : 3,
+              },
+              phase: remotelyReady ? "ready" : "running",
+              execution: null,
+              message: "Test review ready",
+            }),
+          );
+
+          if (progress.phase === "ready") {
+            yield* Effect.promise(() => cp(returned, checkpoint, { recursive: true }));
+            checkpoints.push(record.id);
+          }
+
+          return {
+            progress,
+            resultSnapshotId: progress.phase === "ready" ? "test-result-snapshot" : null,
+            sourceStopped: remotelyReady && legacyPhase === "running",
+          };
         }),
-      download: (_record, destination) =>
+      download: (record, destination) =>
         Effect.promise(async () => {
-          await cp(returned, destination, { recursive: true });
+          expect(record.resultSnapshotId).toBe("test-result-snapshot");
+          expect(checkpoints).toContain(record.id);
+          downloads++;
+          await cp(checkpoint, destination, { recursive: true });
 
           if (corrupt) {
             const path = join(destination, "app.sqlite");
@@ -285,7 +329,21 @@ test.each([false, true])(
         (await runtime.runPromise(application.review.snapshot(projectId, 0))).messages,
       ).toHaveLength(1);
 
+      if (legacyPhase === "dispatching")
+        await runtime.runPromise(
+          application.cloud.pauseSynchronization(
+            started.id,
+            new CloudReviewError({
+              reason: "incompatible",
+              message: "Previously rejected protocol-2 progress",
+            }),
+          ),
+        );
+
       await runtime.dispose();
+
+      if (legacyPhase !== null) await saveLegacyCloudReceipt(data, legacyPhase);
+
       runtime = openApplication(config, sandbox);
       application = await runtime.runPromise(Application);
       expect((await runtime.runPromise(application.cloud.status))?.id).toBe(started.id);
@@ -293,6 +351,15 @@ test.each([false, true])(
         (await runtime.runPromise(application.review.command(command).pipe(Effect.flip))).message,
       ).toContain("cloud review owns");
       remotelyReady = true;
+
+      if (legacyPhase === "dispatching") {
+        expect((await runtime.runPromise(application.cloud.status))?.syncFailure?.reason).toBe(
+          "incompatible",
+        );
+        expect(downloads).toBe(0);
+        await runtime.runPromise(application.cloudSync.retry);
+      }
+
       await Effect.runPromise(PubSub.publish(notifications, undefined));
 
       if (corrupt) {
@@ -311,6 +378,11 @@ test.each([false, true])(
         expect(failure?.message).toContain("hash");
         expect((await runtime.runPromise(application.cloud.status))?.phase).toBe("ready");
         expect(stopped).toBe(true);
+        expect(downloads).toBe(1);
+        expect(checkpoints).toEqual([started.id]);
+        expect(
+          (await runtime.runPromise(application.review.command(command).pipe(Effect.flip))).message,
+        ).toContain("cloud review owns");
         await runtime.dispose();
         runtime = openApplication(config, sandbox);
         application = await runtime.runPromise(Application);
@@ -323,15 +395,20 @@ test.each([false, true])(
         return;
       }
 
-      await runtime.runPromise(
+      const synced = await runtime.runPromise(
         application.cloudSync.observe.pipe(
-          Stream.filter((update) => update.status?.phase === "imported"),
+          Stream.filter((update) => update.status?.phase === "imported" || update.error !== null),
           Stream.take(1),
-          Stream.runDrain,
+          Stream.runCollect,
           Effect.timeout("5 seconds"),
         ),
       );
+
+      expect(synced[0]?.error).toBeNull();
+      expect(synced[0]?.status?.phase).toBe("imported");
       expect(stopped).toBe(true);
+      expect(downloads).toBe(1);
+      expect(checkpoints).toEqual([started.id]);
       const restored = await runtime.runPromise(application.review.snapshot(projectId, 0));
       expect(
         restored.messages.some((message) => message.text.startsWith("Cloud result imported")),
@@ -341,17 +418,25 @@ test.each([false, true])(
       expect(restored.sheets.every((sheet) => sheet.coverage === "partial")).toBe(true);
       await runtime.runPromise(application.review.command(command));
       expect(dispatched).toBe(1);
+      expect((await runtime.runPromise(application.cloud.start(request))).phase).toBe("imported");
+      await runtime.dispose();
+      runtime = openApplication(config, sandbox);
+      application = await runtime.runPromise(Application);
+      expect((await runtime.runPromise(application.cloud.status))?.phase).toBe("imported");
+      expect(dispatched).toBe(1);
+      expect(downloads).toBe(1);
     } finally {
       await runtime.dispose();
       await remote?.dispose();
       await Effect.runPromise(PubSub.shutdown(notifications));
       await rm(root, { recursive: true, force: true });
+      await rm(`${data}.cloud`, { recursive: true, force: true });
     }
   },
   30000,
 );
 
-test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
+test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worker"] as const)(
   "a cloud drawing-set review preserves %s scope and returns its real packet without a count check",
   async (scopeMode) => {
     const root = await mkdtemp(join(tmpdir(), "moke-cloud-packet-"));
@@ -484,16 +569,26 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
           }
         }),
       progress: (record) =>
-        Effect.succeed({
-          progress: {
-            ...latest,
-            id: record.id,
-            identity: cloudEngineIdentity,
-            phase: ready ? "ready" : "running",
-          },
-          resultSnapshotId: ready ? "result-snapshot" : null,
-          sourceStopped: false,
-        }),
+        Effect.map(
+          parseCloudWorkerProgress(
+            record,
+            JSON.stringify({
+              ...latest,
+              id: record.id,
+              identity: {
+                ...cloudEngineIdentity,
+                protocol:
+                  scopeMode === "legacy_worker" && record.workerProtocol === undefined ? 2 : 3,
+              },
+              phase: ready ? "ready" : "running",
+            }),
+          ),
+          (progress) => ({
+            progress,
+            resultSnapshotId: progress.phase === "ready" ? "result-snapshot" : null,
+            sourceStopped: scopeMode === "legacy_worker" && ready,
+          }),
+        ),
       download: (_record, destination) =>
         Effect.promise(() => cp(output, destination, { recursive: true })),
       stop: () =>
@@ -556,7 +651,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       });
 
       const request =
-        scopeMode === "legacy"
+        scopeMode === "legacy" || scopeMode === "legacy_worker"
           ? unscopedRequest
           : {
               ...unscopedRequest,
@@ -628,7 +723,17 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
           )
         ).reason,
       ).toBe("conflict");
-      ready = true;
+
+      if (scopeMode === "legacy_worker") {
+        await local.dispose();
+        await saveLegacyCloudReceipt(data, "running");
+        ready = true;
+        local = openApplication(config, sandbox);
+        localApplication = await local.runPromise(Application);
+      } else {
+        ready = true;
+      }
+
       await Effect.runPromise(PubSub.publish(notifications, undefined));
       await local.runPromise(
         localApplication.cloudSync.observe.pipe(
@@ -643,7 +748,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       expect(reviews).toHaveLength(1);
       expect(reviews[0]?.model).toBe(request.model);
       expect(reviews[0]?.scope._tag).toBe(
-        scopeMode === "legacy" || scopeMode === "discipline"
+        scopeMode === "legacy" || scopeMode === "legacy_worker" || scopeMode === "discipline"
           ? "Discipline"
           : scopeMode === "selected_sheets"
             ? "SelectedSheets"
@@ -651,7 +756,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       );
 
       const expectedSheets =
-        scopeMode === "legacy"
+        scopeMode === "legacy" || scopeMode === "legacy_worker"
           ? inventory.sheets
           : source.sheets.filter(
               (sheet) => scopeMode === "whole_set" || sheet.id === selectedSheet.id,
@@ -677,6 +782,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
         (await local.runPromise(localApplication.packets.list(request.projectId)))[0]?.summary,
       ).toContain("governing permit edition");
       expect(dispatched).toBe(1);
+      expect(modelCalls).toBe(1);
     } finally {
       await local?.dispose();
       await remote?.dispose();

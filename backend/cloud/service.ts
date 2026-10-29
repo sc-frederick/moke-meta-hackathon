@@ -10,7 +10,7 @@ import {
   type CloudReviewRequest,
 } from "#lib/review/cloud.ts";
 import { reviewModels } from "#lib/review/models.ts";
-import type { CloudReviewRecord } from "./contracts.ts";
+import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
 import { createCloudDirectory, readCloudState, writeCloudState } from "./files.ts";
 import type { CloudSandboxPort } from "./sandbox-port.ts";
 
@@ -293,6 +293,7 @@ export class CloudReviews extends Context.Service<
 
               let record: CloudReviewRecord = {
                 id,
+                workerProtocol: cloudEngineIdentity.protocol,
                 revision: 0,
                 syncFailure: null,
                 request,

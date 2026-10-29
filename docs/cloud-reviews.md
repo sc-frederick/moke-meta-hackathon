@@ -279,7 +279,18 @@ The protocol-3 handshake requires support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
 Rebuild and publish the worker image from this version before using it; protocol-2
 workers would discard the new selection fields and now fail the handshake before
-admitting model work. Cloud requests retain the selected scope through transfer
+admitting new model work. This deployment requirement is separate from recovery
+of reviews already dispatched to protocol-2 workers. New ownership receipts save
+`workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
+protocol-2 progress with the same engine, count/packet prompt and instruction
+identities and matching job ID. Unmarked protocol-3 receipts remain readable too.
+Recovery only observes existing work; it never redispatches or restarts a model.
+Ready results still require the external snapshot, bounded complete-package
+validation, source-version checks, confirmed remote stop and journaled restore
+before local ownership returns. An incompatible sync pause saved by an earlier
+build still requires **Retry sync** after upgrading; it is not cleared implicitly.
+
+Cloud requests retain the selected scope through transfer
 and automatic return. Local steering and editing remain fenced while the cloud
 owns the workspace; remote steering is unavailable.
 

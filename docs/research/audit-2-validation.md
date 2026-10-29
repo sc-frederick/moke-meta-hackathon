@@ -296,3 +296,55 @@ non-GUI checks passed 11 tests with 113 assertions and the Svelte analyzer
 reported zero issues. G1 and S1-S3 are resolved; G2-G4 and P1 remained resolved.
 The two Sol rounds used GPT-6.1 Sol on xhigh with priority service. Grok 4.6 on
 xhigh supplied the initial adversarial findings. Neither reviewer exposed usage.
+
+## Sol integration round 3 S4 recovery repair
+
+S4 reproduced a recovery regression after the protocol-3 scope handshake: an
+already-dispatched protocol-2 worker's progress failed decoding before the
+result directory could be snapshotted. Reopening or retrying could not return
+the paid work. Publishing a new image cannot change that existing worker.
+
+New ownership receipts now record `workerProtocol: 3`. The actual Modal progress
+decoder permits protocol 2 only for unmarked saved `dispatching`/`running`
+receipts, preserving protocol-3 recovery for receipts saved before the marker.
+Engine, count prompt, packet prompt, instruction revision, job ID, phases and
+progress payloads remain validated. Requests, warm admission and newly admitted
+jobs remain strict at protocol 3. No worker is dispatched by recovery, no model
+call is replayed, no SQL migration changes, and no existing receipt is rewritten
+on load. Persisted incompatible sync pauses still require explicit **Retry sync**.
+
+The offline regression uses the decoder called by Modal and the real cloud
+services, synchronization and application package restore. It reopens old
+dispatching and running receipts, decodes protocol-2 ready progress, creates a
+separate local result snapshot, downloads it once, confirms stop, verifies and
+restores the actual package, and proves local writes return. A paused old receipt
+recovers after Retry sync. A corrupt old result fails hash validation and retains
+the fence. A packet-service/Pi fixture also returns its saved answer across reopen
+with exactly one model-transport fixture call and one dispatch. Reopening again
+and replaying the original command do not download, dispatch or infer again.
+Negative cases cover the wrong job, unrelated protocols, each identity field,
+invalid phase/execution/message, protocol-2 warm admission and new-job progress.
+Existing strict protocol-3 request and scope tests remain.
+
+Before repair, `.local/audit-2/s4-red.log` recorded two passing current-protocol
+package cases and three failing legacy cases with the actual unreadable-progress
+error. Focused validation is in `.local/audit-2/s4-focused.log`; full verification
+is recorded in `.local/audit-2/s4-verify.log`.
+
+Final focused validation passes 34 tests with 398 assertions. Full verification
+passes all type/design checks, formatting and builds, 321 smoke tests with 2,152
+assertions, and all seven Electron tests (54.1 seconds). The same 24 baseline
+class-instance-spread lint warnings remain. Desktop preflight again confirms
+private Xvfb `:99` at 1600x1000 and desktop `:0` unreachable. Fresh screenshots
+and their hashes are retained in `.local/audit-2/s4-desktop/manifest.json`.
+The first lint-only failures are retained as `s4-verify-lint.log` and
+`s4-verify-receipt-spacing.log`; the earlier complete passing run before tightening
+the persisted dispatching-receipt assertion is `s4-verify-before-receipt-assertion.log`.
+
+All checks use Bun 1.4.4 at `nice -n 10`, sequentially. Desktop proof runs only
+when full verification invokes the unchanged hardened `scripts/isolated-desktop.ts`
+with the prepared private Xvfb. No inherited/user desktop, Windows/Helium browser,
+development app, live provider/Modal request, image build/publish, external write,
+credential change, push, PR or merge is part of this repair. Protocol-3 image
+deployment for new reviews and live/Windows/macOS/package validation remain
+separate work. Parent round 4 review remains pending.

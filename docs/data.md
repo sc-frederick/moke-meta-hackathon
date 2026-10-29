@@ -141,6 +141,14 @@ after reopen. Live status streams replay the current receipt; persistent receipt
 revisions prevent stale replies from rolling the interface back. The synced
 notification follows package validation and completion of application maintenance.
 
+New cloud receipts record the admitted worker protocol. Older unmarked receipts
+remain intact: only already-dispatched `dispatching`/`running` jobs can observe
+matching protocol-2 progress for result recovery. The current protocol-3 request
+and warm-worker handshake remain strict. This changes neither SQL migrations nor
+saved review content and never replays model work. Existing explicit sync pauses
+remain paused until **Retry sync**; ownership returns only through verified result
+restore or confirmed stop.
+
 Cloud connectivity is optional. Decide the source of truth, offline writes,
 conflict rules, idempotency keys, deletions, and compatibility with older desktop
 clients for the particular application. RPC provides transport and contracts;

@@ -14,6 +14,7 @@ import { CloudReviews, CloudSandbox } from "../../backend/cloud/service.ts";
 import type { CloudSandboxPort } from "../../backend/cloud/sandbox-port.ts";
 import {
   cloudEngineIdentity,
+  CloudWorkerProgress,
   CloudWorkerRequest,
   WarmSandboxMessage,
   type CloudReviewRecord,
@@ -22,6 +23,8 @@ import { parseCloudManifest } from "../../backend/cloud/transfer.ts";
 import { PackageManifest } from "#lib/review/packages.ts";
 import { NotFoundError } from "modal";
 import { confirmModalSandboxStopped, pollWarmSandbox } from "../../backend/cloud/modal.ts";
+import { parseCloudWorkerProgress } from "../../backend/cloud/progress.ts";
+import { readCloudState } from "../../backend/cloud/files.ts";
 
 const modal = Schema.decodeUnknownSync(ModalConfiguration)({
   tokenId: "test-token-id",
@@ -136,17 +139,22 @@ async function fixture() {
         return dispatchLost ? Effect.fail(fail()) : Effect.void;
       }),
     progress: (record) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         operations.push("progress");
 
-        return {
-          progress: {
+        const progress = yield* parseCloudWorkerProgress(
+          record,
+          JSON.stringify({
             id: wrongIdentity ? crypto.randomUUID() : record.id,
             identity: cloudEngineIdentity,
             phase: progressPhase,
             execution: null,
             message: "Ready",
-          },
+          }),
+        );
+
+        return {
+          progress,
           resultSnapshotId: checkpointReady ? "result-checkpoint" : null,
           sourceStopped,
         };
@@ -607,6 +615,93 @@ test("ownership receipts written before streaming acquire a revision on their ne
     expect((await runtime.runPromise(cloud.status))?.revision).toBe(0);
     expect((await runtime.runPromise(cloud.cancel(started.id))).revision).toBe(1);
     await runtime.runPromise(cloud.assertLocal);
+  } finally {
+    await runtime.dispose();
+    await session.dispose();
+  }
+});
+
+test("only unmarked dispatched receipts can recover v2 progress with the complete matching identity", async () => {
+  const session = await fixture();
+  const runtime = session.open();
+
+  try {
+    const cloud = await runtime.runPromise(CloudReviews);
+    await runtime.runPromise(cloud.start(request()));
+
+    const recorded = (
+      await Effect.runPromise(readCloudState(join(session.directory, "state.json")))
+    )[0];
+
+    if (recorded === undefined) throw new Error("Missing admitted receipt");
+    expect(recorded.phase).toBe("dispatching");
+    const { workerProtocol, ...unmarked } = recorded;
+    expect(workerProtocol).toBe(3);
+    const legacy = { ...unmarked, phase: "dispatching" as const };
+
+    const progress = {
+      id: recorded.id,
+      identity: { ...cloudEngineIdentity, protocol: 2 },
+      phase: "ready",
+      execution: null,
+      message: "Saved results",
+    };
+
+    const parse = (record: CloudReviewRecord, text: string) =>
+      Effect.runPromise(parseCloudWorkerProgress(record, text));
+
+    const rejected = (record: CloudReviewRecord, text: string) =>
+      Effect.runPromise(parseCloudWorkerProgress(record, text).pipe(Effect.flip));
+
+    expect(Schema.is(CloudWorkerProgress)(progress)).toBe(false);
+    expect(() =>
+      Schema.decodeUnknownSync(WarmSandboxMessage)(
+        JSON.stringify({
+          sandboxId: "old-worker",
+          imageName: "old-image",
+          identity: progress.identity,
+          expiresAt: recorded.expiresAt,
+        }),
+      ),
+    ).toThrow();
+
+    for (const phase of ["accepted", "running", "ready", "failed"] as const) {
+      const oldProgress = { ...progress, phase };
+      expect((await parse(legacy, JSON.stringify(oldProgress))).identity.protocol).toBe(2);
+      expect(
+        (await parse({ ...legacy, phase: "running" }, JSON.stringify(oldProgress))).phase,
+      ).toBe(phase);
+      expect((await rejected(recorded, JSON.stringify(oldProgress))).reason).toBe("incompatible");
+      const currentProgress = { ...oldProgress, identity: cloudEngineIdentity };
+      expect(Schema.is(CloudWorkerProgress)(currentProgress)).toBe(true);
+      expect((await parse(recorded, JSON.stringify(currentProgress))).identity.protocol).toBe(3);
+      expect((await parse(legacy, JSON.stringify(currentProgress))).identity.protocol).toBe(3);
+    }
+
+    for (const phase of [
+      "preparing",
+      "ready",
+      "importing",
+      "imported",
+      "failed",
+      "cancelled",
+    ] as const)
+      expect((await rejected({ ...legacy, phase }, JSON.stringify(progress))).reason).toBe(
+        "incompatible",
+      );
+
+    for (const invalid of [
+      { ...progress, id: crypto.randomUUID() },
+      { ...progress, phase: "complete" },
+      { ...progress, execution: {} },
+      { ...progress, message: "x".repeat(1001) },
+      ...[1, 4].map((protocol) => ({ ...progress, identity: { ...progress.identity, protocol } })),
+      ...["engine", "prompt", "instructions", "packetPrompt"].map((field) => ({
+        ...progress,
+        identity: { ...progress.identity, [field]: "unrelated-build" },
+      })),
+    ])
+      expect((await rejected(legacy, JSON.stringify(invalid))).reason).toBe("incompatible");
   } finally {
     await runtime.dispose();
     await session.dispose();
