@@ -207,7 +207,7 @@
   let followLatest = true;
 
   // The position this component last scrolled to; its own scroll events are not reader input.
-  let autoScrollTop = -1;
+  let autoScrollTop: number | null = null;
 
   function scrollToLatest(viewport: HTMLDivElement) {
     followLatest = true;
@@ -2106,9 +2106,13 @@
           class="chat-scroll"
           bind:this={chatViewport}
           onscroll={() => {
-            if (!chatViewport || Math.abs(chatViewport.scrollTop - autoScrollTop) < 2) return;
+            if (
+              !chatViewport ||
+              (autoScrollTop !== null && Math.abs(chatViewport.scrollTop - autoScrollTop) < 2)
+            )
+              return;
             // The reader moved; a later return to the same position is theirs too.
-            autoScrollTop = -1;
+            autoScrollTop = null;
             followLatest =
               chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight <= 24;
           }}

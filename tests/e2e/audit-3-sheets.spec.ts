@@ -478,6 +478,22 @@ test("a thread keeps following rapid updates until the reader scrolls up", async
     await expect.poll(distanceFromLatest).toBeGreaterThan(400);
     await grow(5);
     await expect.poll(distanceFromLatest).toBeGreaterThan(400);
+
+    // If resizing makes the whole thread visible, shrinking it should keep the latest in view.
+    await page.setViewportSize({ width: 1200, height: 7000 });
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollHeight === element.clientHeight))
+      .toBe(true);
+    // Let the browser deliver the scroll event caused by clamping the old position to zero.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await page.setViewportSize({ width: 1200, height: 700 });
+    await grow(5);
+    await expect.poll(distanceFromLatest).toBeLessThan(4);
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

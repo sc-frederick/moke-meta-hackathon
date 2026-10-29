@@ -303,7 +303,7 @@ test("audit workbench imports native and dropped revisions, assigns compact shee
     );
     expect(diagnostics).toEqual([]);
   } finally {
-    await app.close();
+    await test.step("close the workbench and its RPC runtime", () => app.close());
     await rm(directory, { recursive: true, force: true });
   }
 });

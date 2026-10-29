@@ -600,7 +600,8 @@ if (!app.requestSingleInstanceLock()) {
       });
 
       let quitting = false;
-      app.on("before-quit", (event) => {
+      // Closing the windows disconnects renderer streams before the RPC runtime drains.
+      app.on("will-quit", (event) => {
         if (quitting) return;
         event.preventDefault();
         quitting = true;
