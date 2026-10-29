@@ -327,6 +327,12 @@ export function createReviewClient() {
         "The review package could not be exported.",
       ),
 
+    openReviewSource: (url: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.OpenReviewSource({ url })),
+        "The source could not open. Copy its HTTPS URL and open it in your browser.",
+      ),
+
     chooseReviewRestore: () =>
       run(
         Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewRestore({})),

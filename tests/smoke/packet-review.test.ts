@@ -128,7 +128,7 @@ test("project-first review runs actual Moke system instructions and tools, persi
           {
             name: "record_finding",
             arguments: {
-              title: "Permit stage is absent from the supplied title blocks",
+              title: "Permit stage needs reviewer confirmation",
               discipline: "general",
               severity: "Minor",
               status: "Needs input",
@@ -147,7 +147,7 @@ test("project-first review runs actual Moke system instructions and tools, persi
                       },
               })),
               observed:
-                "The supplied schematic title blocks identify the revision but do not state permit stage or jurisdiction.",
+                "The supplied schematic title blocks identify the revision; current permit stage and jurisdiction require reviewer confirmation.",
               correction:
                 "Provide the current permit stage and governing jurisdiction before regulatory review.",
               evidenceIds: artifacts.map(({ artifact }) => artifact.id),
@@ -283,7 +283,7 @@ test("project-first review runs actual Moke system instructions and tools, persi
     // A save-dialog-approved follow-up export replaces the previous HTML atomically.
     await session.run(session.packets.exportReport(session.projectId, finished.id, reportPath));
     const html = await readFile(reportPath, "utf8");
-    expect(html).toContain("Permit stage is absent");
+    expect(html).toContain("Permit stage needs reviewer confirmation");
     expect(html).toContain("data:image/png;base64,");
     expect(html).toContain("Source page coordinate area");
     expect(html).toContain("Review has unresolved coverage or inputs");
@@ -327,7 +327,7 @@ test("discipline requests route to the selected model's own provider and preserv
       );
 
       const started = await session.run(session.packets.start(request));
-      const finished = await until(session, started.id, "completed");
+      const finished = await until(session, started.id, "failed");
       expect(finished.scope).toEqual(PacketScope.members[1].make({ discipline: "electrical" }));
       expect(finished.model).toBe(model);
       expect(finished.provider).toBe(model === "muse-wonder-1.0" ? "meta" : "baseten");
@@ -440,7 +440,7 @@ test("an optional call budget pauses instead of reporting a completed packet rev
         maxCalls: 3,
       }),
     );
-    const completed = await until(session, started.id, "completed");
+    const completed = await until(session, started.id, "failed");
     expect(completed.maxCalls).toBe(3);
     expect(completed.admittedCalls).toBe(2);
     expect(sends).toBe(2);
@@ -579,10 +579,10 @@ test("pause drains admitted work and explicit resume replays control receipts wi
     expect(sends).toBe(2);
 
     secondResponse.resolve();
-    const completed = await until(session, started.id, "completed");
+    const completed = await until(session, started.id, "failed");
     expect(completed.admittedCalls).toBe(2);
     expect(completed.summary).toContain("Continued the review after pause");
-    expect(completed.error).toBeNull();
+    expect(completed.error).toContain("without recording a completed source review");
     expect(await session.run(session.packets.control(pauseCommand))).toEqual(paused);
     expect(sends).toBe(2);
   } finally {

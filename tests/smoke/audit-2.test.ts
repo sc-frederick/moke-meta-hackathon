@@ -150,7 +150,14 @@ test.each(["complete", "budget", "cancel", "admission failure"] as const)(
         continued.resolve();
         await releaseContinuation.promise;
 
-        return response([], "Boundary instruction answered.");
+        return requests.length === 2
+          ? response([
+              {
+                name: "finish_review",
+                arguments: { summary: "Boundary instruction answered.", missingInputs: [] },
+              },
+            ])
+          : response([], "Boundary instruction answered.");
       },
       true,
       async (value) => {
@@ -252,7 +259,7 @@ test.each(["complete", "budget", "cancel", "admission failure"] as const)(
       const final = await until(api, review.id, terminal[outcome]);
 
       expect(final.steering?.[0]?.status).toBe(outcome === "complete" ? "applied" : "unanswered");
-      expect(requests).toHaveLength(outcome === "complete" ? 2 : 1);
+      expect(requests).toHaveLength(outcome === "complete" ? 3 : 1);
       expect(
         (await api.snapshot()).messages.filter((message) => message.id === instruction.commandId),
       ).toHaveLength(1);
@@ -452,7 +459,7 @@ test("sheet assignments persist without confirming count coverage and explicit s
       ),
     );
 
-    const complete = await until(api, selected.id, "completed");
+    const complete = await until(api, selected.id, "failed");
     expect(complete.scope._tag).toBe("SelectedSheets");
     expect(complete.sheets.map((sheet) => sheet.id)).toEqual([second.id]);
 
@@ -465,7 +472,7 @@ test("sheet assignments persist without confirming count coverage and explicit s
       ),
     );
 
-    const done = await until(api, discipline.id, "completed");
+    const done = await until(api, discipline.id, "failed");
     expect(done.scope).toEqual(PacketScope.cases.Discipline.make({ discipline: "electrical" }));
     expect(done.sheets.map((sheet) => [sheet.id, sheet.discipline])).toEqual([
       [first.id, "electrical"],
@@ -507,7 +514,7 @@ test("sheet assignments persist without confirming count coverage and explicit s
       ),
     );
 
-    const wholeDone = await until(api, whole.id, "completed");
+    const wholeDone = await until(api, whole.id, "failed");
     expect(wholeDone.scope._tag).toBe("WholeSet");
     expect(wholeDone.sheets).toHaveLength(2);
     expect(wholeDone.sheets.every((sheet) => sheet.revisionId === latestRevision.id)).toBe(true);
@@ -620,7 +627,7 @@ test("ended progress streams reload missed durable records, reconnect automatica
         listPacketReviews: async (projectId) => {
           reloads++;
           release.resolve();
-          await until(api, review.id, "completed");
+          await until(api, review.id, "failed");
 
           return { ok: true, value: await api.run(api.packets.list(projectId)) };
         },
@@ -628,7 +635,7 @@ test("ended progress streams reload missed durable records, reconnect automatica
       onReview: (value) => {
         states.push(value.state);
 
-        if (attempts >= 4 && value.state === "completed") recovered.resolve();
+        if (attempts >= 4 && value.state === "failed") recovered.resolve();
       },
       onConnectionLost: (lost) => connections.push(lost),
       onError: (message) => expect(message).toBe("Injected transport interruption"),
@@ -638,12 +645,12 @@ test("ended progress streams reload missed durable records, reconnect automatica
     controller.abort();
     await following;
     expect(states).toContain("running");
-    expect(states).toContain("completed");
+    expect(states).toContain("failed");
     expect(reloads).toBe(3);
     expect(attempts).toBe(4);
     expect(connections).toContain(true);
     expect(connections.at(-1)).toBe(false);
-    expect((await api.run(api.packets.get(api.projectId, review.id))).state).toBe("completed");
+    expect((await api.run(api.packets.get(api.projectId, review.id))).state).toBe("failed");
   } finally {
     release.resolve();
     controller.abort();
@@ -673,7 +680,17 @@ test.each(["tool round", "final answer"] as const)(
           : response([], "Initial answer before the queued steering instruction.");
       }
 
-      return response([], "Applied the follow-up instruction to this review.");
+      return requests.length === 2
+        ? response([
+            {
+              name: "finish_review",
+              arguments: {
+                summary: "Applied the follow-up instruction to this review.",
+                missingInputs: [],
+              },
+            },
+          ])
+        : response([], "Applied the follow-up instruction to this review.");
     });
 
     const observed: number[] = [];
@@ -725,7 +742,7 @@ test.each(["tool round", "final answer"] as const)(
       release.resolve();
       const done = await until(api, review.id, "completed");
       expect(done.steering?.map((item) => item.status)).toEqual(["applied"]);
-      expect(requests).toHaveLength(2);
+      expect(requests).toHaveLength(3);
       expect(requests[1]).toContain(instruction.text);
       expect(
         (await api.snapshot()).messages.filter((message) => message.text === instruction.text),
@@ -779,7 +796,14 @@ test("queued follow-up survives an exhausted call budget and explicit resume", a
       return response([{ name: "inventory_packet", arguments: {} }]);
     }
 
-    return response([], "Resumed with the queued instruction.");
+    return requests.length === 2
+      ? response([
+          {
+            name: "finish_review",
+            arguments: { summary: "Resumed with the queued instruction.", missingInputs: [] },
+          },
+        ])
+      : response([], "Resumed with the queued instruction.");
   });
 
   try {
@@ -810,7 +834,7 @@ test("queued follow-up survives an exhausted call budget and explicit resume", a
     const done = await until(api, review.id, "completed");
     expect(requests[1]).toContain("Prioritize Room 101");
     expect(done.steering?.[0]?.status).toBe("applied");
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
   } finally {
     release.resolve();
     await api.dispose();

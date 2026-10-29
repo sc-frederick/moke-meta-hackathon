@@ -273,3 +273,49 @@ test("only packet review admits the actual compaction summarize phase while inva
   expect(wrong.stopReason).toBe("error");
   expect(packet.requests).toHaveLength(1);
 });
+
+test("Spark Open retains the latest eight image bytes and all source metadata without changing the durable transcript", async () => {
+  const session = fixture("baseten");
+
+  const images = Array.from({ length: 12 }, (_, index) => {
+    const canvas = createCanvas(32, 32);
+    const drawing = canvas.getContext("2d");
+    drawing.fillStyle = `rgb(${index * 20}, 50, 100)`;
+    drawing.fillRect(0, 0, 32, 32);
+
+    return {
+      type: "image" as const,
+      mimeType: "image/png",
+      data: canvas.toBuffer("image/png").toString("base64"),
+    };
+  });
+
+  const context = {
+    messages: images.map((part, index) => ({
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: `Exact source artifact-${index}; PDF page ${index + 1}.` },
+        part,
+      ],
+      timestamp: index,
+    })),
+  };
+
+  const original = JSON.stringify(context);
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, context, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("stop");
+  const body = session.requests[0]?.body ?? "";
+  expect(body.split("data:image/png;base64,").length - 1).toBe(8);
+
+  for (const image of images.slice(-8)) expect(body).toContain(image.data);
+
+  for (const image of images.slice(0, 4)) expect(body).not.toContain(image.data);
+
+  for (let index = 0; index < images.length; index++) expect(body).toContain(`artifact-${index}`);
+  expect(body).toContain("Earlier image omitted");
+  expect(JSON.stringify(context)).toBe(original);
+});

@@ -20,6 +20,7 @@
   } from "#lib/review/cloud.ts";
   import { createCloudReturnHydration } from "#lib/review/cloud-delivery.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
+  import RevisionMapping from "./RevisionMapping.svelte";
   import SheetSetup from "./SheetSetup.svelte";
   import {
     ReviewDisciplineSelection,
@@ -34,6 +35,7 @@
   import type { PacketReview } from "#lib/review/packet.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
+  import ReviewText from "./ReviewText.svelte";
   import SourceViewer from "./SourceViewer.svelte";
   import ReviewSelect from "./ReviewSelect.svelte";
   import { ReviewModelId, reviewModels } from "#lib/review/models.ts";
@@ -46,6 +48,8 @@
 
   let { client }: { client: ReviewClient } = $props();
 
+  let shortcutLabel = $state("Ctrl K");
+  let historyReviewId = $state<string | null>(null);
   let theme = $state<"dark" | "light">("dark");
   let sidebarOpen = $state(true);
   let mobileNavigationOpen = $state(false);
@@ -106,7 +110,22 @@
   let sourceLoading = $state(false);
   let previewedSheet = $state.raw<Sheet | null>(null);
   let projectConversations = $state.raw<Readonly<Record<string, ReadonlyArray<Conversation>>>>({});
-  const conversationViews = new Map<string, { draft: string; scroll: number }>();
+
+  const conversationViews = new Map<
+    string,
+    {
+      draft: string;
+      scroll: number;
+      scopeMode: "whole_set" | "selected_sheets" | "discipline";
+      revisionId: string;
+      sheetIds: ReadonlyArray<Sheet["id"]>;
+      discipline: typeof ReviewDisciplineSelection.Type;
+      model: typeof ReviewModelId.Type;
+      location: "local" | "cloud";
+      callLimit: number | undefined;
+    }
+  >();
+
   let sourceRequest = 0;
   let refreshRequest = 0;
 
@@ -124,32 +143,7 @@
   let applySelectedRegion: ((region: import("#lib/review/contracts.ts").Region) => void) | null =
     null;
 
-  let revisionChoices = $state<
-    Array<{
-      oldSheetId: string;
-      newSheetId: string;
-      confirmed: boolean;
-      content: "changed" | "unchanged";
-    }>
-  >([]);
-
-  function stageRevision(
-    oldSheetId: string,
-    update: { newSheetId?: string; confirmed?: boolean; content?: "changed" | "unchanged" },
-  ) {
-    const previous = revisionChoices.find((pair) => pair.oldSheetId === oldSheetId);
-    revisionChoices = [
-      ...revisionChoices.filter((pair) => pair.oldSheetId !== oldSheetId),
-      {
-        oldSheetId,
-        newSheetId: previous?.newSheetId ?? "",
-        confirmed: previous?.confirmed ?? false,
-        content: previous?.content ?? "changed",
-        ...update,
-      },
-    ];
-  }
-
+  let sourceZoomFactor = $state(1);
   let sourceImageUrl = $state("");
   let sourceArtifact = $state.raw<Artifact | null>(null);
   let sourceRequestedDpi = 96;
@@ -212,7 +206,12 @@
   );
 
   const activePacketReview = $derived(conversationReviews.at(-1) ?? null);
-  const packetFindings = $derived(activePacketReview?.findings ?? []);
+
+  const displayedPacketReview = $derived(
+    conversationReviews.find((review) => review.id === historyReviewId) ?? activePacketReview,
+  );
+
+  const packetFindings = $derived(displayedPacketReview?.findings ?? []);
 
   const selectedPacketFinding = $derived(
     packetFindings.find((finding) => finding.id === selectedPacketFindingId) ?? null,
@@ -415,7 +414,6 @@
     selectedFindingId = null;
     panelOpen = true;
     sourceTab = "evidence";
-    closeFindings();
 
     if (artifact) {
       sourceLoading = true;
@@ -488,7 +486,6 @@
         return true;
       }),
     };
-    error = "";
 
     if (result.value.project !== null)
       projectConversations = {
@@ -529,6 +526,7 @@
       return false;
     }
 
+    error = "";
     selectedProjectId = result.value.projectId;
     await refresh(result.value.projectId);
     busy = false;
@@ -552,7 +550,7 @@
     newProjectName = "";
     projectDialog?.close();
     selectedFindingId = null;
-    selectedConversationId = snapshot?.conversations[0]?.id ?? null;
+    await chooseConversation(snapshot?.conversations[0]?.id ?? null, false);
     reviewFindingId = null;
     executionStatus = null;
     draft = "";
@@ -570,7 +568,17 @@
 
   function rememberConversation() {
     if (activeConversation)
-      conversationViews.set(activeConversation.id, { draft, scroll: chatViewport?.scrollTop ?? 0 });
+      conversationViews.set(activeConversation.id, {
+        draft,
+        scroll: chatViewport?.scrollTop ?? 0,
+        scopeMode,
+        revisionId: scopeRevisionId,
+        sheetIds: selectedSheetIds,
+        discipline,
+        model: selectedModel,
+        location,
+        callLimit,
+      });
   }
 
   async function selectProject(entry: Project, conversationId?: string) {
@@ -588,6 +596,8 @@
     eventCursor = 0;
     selectedProjectId = entry.id;
     selectedConversationId = null;
+    notice = "";
+    error = "";
     selectedFindingId = null;
     await refresh(entry.id);
     const first = snapshot?.conversations[0];
@@ -816,7 +826,6 @@
     pendingDropImport = null;
     scopeRevisionId = revisions.at(-1)?.id ?? "";
     selectedSheetIds = [];
-    revisionChoices = [];
     selectedPacketFindingId = null;
     importDialog?.close();
     sourceRequest++;
@@ -831,6 +840,23 @@
     notice = "PDF imported. Assign sheet disciplines if useful, then choose a review scope.";
     busy = false;
     importing = false;
+  }
+
+  async function loadThumbnail(sheet: Sheet): Promise<string | null> {
+    if (cloudBlocked) return null;
+
+    const rendered = await client.renderSource({
+      projectId: sheet.projectId,
+      sheetId: sheet.id,
+      operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+      region: sheet.box,
+      dpi: 24,
+    });
+
+    if (!rendered.ok) return null;
+    const blob = await client.loadArtifactBlobUrl(sheet.projectId, rendered.value);
+
+    return blob.ok ? blob.value : null;
   }
 
   async function assignSheetDiscipline(
@@ -1029,6 +1055,7 @@
   }
 
   function closeSource() {
+    notice = "";
     selectingRegion = false;
     applySelectedRegion = null;
     sourceRequest++;
@@ -1090,6 +1117,23 @@
     }
 
     if (id !== selectedConversationId) closeSource();
+    notice = "";
+    error = "";
+    historyReviewId = null;
+    selectedPacketFindingId = null;
+    const saved = id === null ? undefined : conversationViews.get(id);
+    const previousReview = packetReviews.findLast((review) => review.conversationId === id);
+    scopeMode = saved?.scopeMode ?? "whole_set";
+    scopeRevisionId = saved?.revisionId ?? "";
+    selectedSheetIds = saved?.sheetIds ?? [];
+    discipline = saved?.discipline ?? "auto";
+    selectedModel =
+      saved?.model ??
+      previousReview?.model ??
+      setup?.models?.find((model) => model.available)?.id ??
+      selectedModel;
+    location = saved?.location ?? "local";
+    callLimit = saved?.callLimit;
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
@@ -1264,9 +1308,9 @@
     revisionId: string,
     pairs: Array<{
       oldSheetId: string;
-      newSheetId: string;
+      newSheetId: string | null;
       confirmed: boolean;
-      content: "changed" | "unchanged";
+      content: "changed" | "unchanged" | "removed" | "unresolved";
     }>,
   ) {
     if (project === null) return;
@@ -1322,11 +1366,34 @@
   });
 
   onMount(() => {
+    shortcutLabel = /Mac/.test(navigator.userAgent) ? "⌘ K" : "Ctrl K";
     const controller = new AbortController();
     void client.snapshot(null, 0, controller.signal).then(async (result) => {
       if (controller.signal.aborted) return;
 
       if (result.ok) {
+        const remote = await client.cloudStatus();
+
+        if (controller.signal.aborted) return;
+
+        if (remote.ok && remote.value && cloudReviewLocksWorkspace(remote.value.phase)) {
+          cloudStatus = latestCloudReviewStatus(cloudStatus, remote.value);
+          selectedProjectId = remote.value.projectId;
+          eventCursor = 0;
+          await refresh(remote.value.projectId);
+          selectedConversationId =
+            remote.value.conversationId ??
+            remote.value.packet?.conversationId ??
+            snapshot?.conversations[0]?.id ??
+            null;
+
+          if (remote.value.packet) selectedModel = remote.value.packet.model;
+          location = "cloud";
+          ready = true;
+
+          return;
+        }
+
         snapshot = result.value;
 
         if (result.value.project) {
@@ -1377,6 +1444,29 @@
   >
 {/snippet}
 
+{#snippet packetPanel(review: PacketReview, historical = false)}
+  <PacketReviewPanel
+    {review}
+    {historical}
+    busy={packetBusy || busy || cloudBlocked}
+    onControl={(action, maxCalls) => controlPacketReview(review, action, maxCalls)}
+    onFinding={async (id) => {
+      historyReviewId = historical ? review.id : null;
+      await tick();
+      await showPacketFinding(id);
+    }}
+    onExport={async () => {
+      const result = await client.choosePacketReport(review.projectId, review.id);
+      if (!result.ok) error = result.error.message;
+      else if (result.value) notice = "Review report exported.";
+    }}
+    onOpenSource={async (url) => {
+      const result = await client.openReviewSource(url);
+      if (!result.ok) error = result.error.message;
+    }}
+  />
+{/snippet}
+
 <div class="workbench-root" data-theme={theme}>
   <div
     class={[
@@ -1410,6 +1500,16 @@
           >{theme === "dark" ? "Light" : "Dark"}</button
         >
         {#if project}
+          <span class="compact-project" title={project.name}>{project.name}</span>
+          <details class="compact-actions">
+            <summary aria-label="More project actions">More</summary>
+            <div>
+              <button disabled={busy || cloudBlocked} onclick={() => openSetup("sheets", true)}
+                >New count check</button
+              >
+              <button disabled={busy || cloudBlocked} onclick={importPdf}>Import PDF</button>
+            </div>
+          </details>
           <button
             type="button"
             class="ghost"
@@ -1597,6 +1697,7 @@
       <section class="settings-section">
         <h3>Cloud reviews</h3>
         <p>{cloudSetup?.configured ? "Connected" : "Cloud connection needs setup"}</p>
+        {#if cloudSetup?.message}<p class="muted">{cloudSetup.message}</p>{/if}
         <p class="muted">
           Choose Push to cloud in the composer. Progress and results sync automatically, including
           after you reopen Moke. Local edits pause during the review.
@@ -1661,7 +1762,8 @@
             ></button
           >
           <button class="nav-action" onclick={openSearch}
-            ><ReviewIcon name="search" size={16} /><span>Search findings</span><kbd>⌘ K</kbd
+            ><ReviewIcon name="search" size={16} /><span>Search findings</span><kbd
+              >{shortcutLabel}</kbd
             ></button
           >
           {#if !ready}<p role="status">Loading projects…</p>{/if}
@@ -1817,7 +1919,9 @@
                         "general"}</span
                     >{/if}
                 </div>
-                <p>{message.text}</p>
+                {#if message.role === "application"}<ReviewText text={message.text} />{:else}<p>
+                    {message.text}
+                  </p>{/if}
                 {#if message.origin}<button
                     class="message-source"
                     onclick={() => {
@@ -1830,13 +1934,12 @@
               </article>
             {/each}
             {#if activePacketReview}
-              {#key activePacketReview.id}<PacketReviewPanel
-                  review={activePacketReview}
-                  busy={packetBusy || busy || cloudBlocked}
-                  onControl={(action, maxCalls) =>
-                    controlPacketReview(activePacketReview, action, maxCalls)}
-                  onFinding={showPacketFinding}
-                />{/key}
+              {#if displayedPacketReview && displayedPacketReview.id !== activePacketReview.id}
+                <h3>Saved review</h3>
+                {@render packetPanel(displayedPacketReview, true)}
+                <h3>Latest review</h3>
+              {/if}
+              {@render packetPanel(activePacketReview)}
               {#if conversationReviews.length > 1}<details class="previous-reviews">
                   <summary>Previous reviews in this conversation</summary>{#each conversationReviews
                     .slice(0, -1)
@@ -1848,8 +1951,20 @@
                             ? "Selected sheets"
                             : "Whole set"} · {new Date(review.startedAt).toLocaleString()} · {review.state}</span
                       >
+                      <button
+                        class="text-button"
+                        onclick={() => {
+                          historyReviewId = review.id;
+                        }}>Open saved review</button
+                      >
                     </div>{/each}
                 </details>{/if}
+              {#if historyReviewId}<button
+                  class="text-button"
+                  onclick={() => {
+                    historyReviewId = null;
+                  }}>Back to latest review</button
+                >{/if}
             {/if}
             {#if reviewFinding && !cloudBlocked}
               {#key reviewFinding.id + (activeConversation?.id ?? "")}<ExecutionControls
@@ -1872,6 +1987,9 @@
           bind:status={cloudStatus}
           bind:setup={cloudSetup}
           bind:loaded={cloudLoaded}
+          projectId={selectedProjectId}
+          conversationId={activeConversation?.id ?? null}
+          projectName={project?.name ?? ""}
           onReturned={onCloudReturned}
         />
         {#if project}
@@ -1895,7 +2013,8 @@
                   }}
                 />
                 <span class="muted review-scope"
-                  >{scopeRevision?.name ?? "No revision"} · {scopeCount} sheets</span
+                  >{scopeRevision?.name ?? "No revision"} · {scopeCount}
+                  {scopeCount === 1 ? "sheet" : "sheets"}</span
                 >
                 {#if findings.length > 0}<div class="scope-select">
                     <ReviewSelect
@@ -2023,7 +2142,7 @@
               {#if cloudBlocked}{cloudLoaded
                   ? "Cloud review in progress. Results sync automatically; local edits are paused."
                   : "Connecting to your cloud review…"}{:else if reviewMode === "review" && location === "cloud"}Pushes
-                every project in this workspace, including PDFs and review history (up to 256 MiB /
+                every project in this workspace, including PDFs and review history (up to 1 GiB /
                 5,000 files). Results sync automatically. Local edits pause until sync completes or
                 you stop the review.{:else if reviewMode === "note"}Notes are saved without starting
                 a review.{:else if activePacketReview?.state === "running"}Follow-ups join this
@@ -2038,9 +2157,11 @@
                   onclick={() => openSetup("settings")}>Open review settings</button
                 >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
                 review settings.{:else if !validCallLimit}Enter a positive whole-number call budget
-                or leave it blank.{:else if executionBlocked}Resume or cancel this review before
-                sending another request.{:else}Review the findings, source status, and coverage
-                before using the results.{/if}
+                or leave it blank.{:else if executionBlocked}{activePacketReview?.state ===
+                "uncertain"
+                  ? "Cancel the stopped review to unlock a new request. Its saved work and possible charges remain recorded."
+                  : "Use the review controls above before sending another request."}{:else}Review
+                the findings, source status, and coverage before using the results.{/if}
             </div>
           </div>
         {/if}
@@ -2088,8 +2209,11 @@
                     " ",
                   )}
                 </p>
-                <p>{selectedPacketFinding.observed}</p>
-                <p><strong>Correction</strong> {selectedPacketFinding.correction}</p>
+                <details class="finding-description">
+                  <summary>Observation and correction</summary>
+                  <p>{selectedPacketFinding.observed}</p>
+                  <p><strong>Correction</strong> {selectedPacketFinding.correction}</p>
+                </details>
                 <div class="finding-evidence-actions">
                   {#each selectedPacketFinding.locations as location, index (index)}<button
                       class="ghost"
@@ -2117,7 +2241,7 @@
                     {selectedPacketFinding.evidenceNote}
                   </p>{/if}
                 {#each selectedPacketFinding.citationIds as id (id)}{@const citation =
-                    activePacketReview?.citations.find(
+                    displayedPacketReview?.citations.find(
                       (item) => item.id === id,
                     )}{#if citation}<details>
                       <summary>{citation.document} {citation.section} · {citation.status}</summary>
@@ -2130,9 +2254,9 @@
                     checked={selectedPacketFinding.completed}
                     disabled={packetBusy || busy || cloudBlocked}
                     onchange={(event) => {
-                      if (activePacketReview && selectedPacketFinding)
+                      if (displayedPacketReview && selectedPacketFinding)
                         void completePacketFinding(
-                          activePacketReview,
+                          displayedPacketReview,
                           selectedPacketFinding.id,
                           event.currentTarget.checked,
                         );
@@ -2155,6 +2279,7 @@
                 ></label
               >
               <SheetSetup
+                {loadThumbnail}
                 sheets={scopeSheets}
                 bind:selectedIds={selectedSheetIds}
                 onAssign={assignSheetDiscipline}
@@ -2173,6 +2298,7 @@
               {#if sourceLoading}<p class="muted" role="status">
                   Rendering source…
                 </p>{:else if sourceImageUrl}<SourceViewer
+                  bind:zoomFactor={sourceZoomFactor}
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
@@ -2230,6 +2356,12 @@
               {#if sourceLoading}<p class="muted" role="status">
                   Rendering source…
                 </p>{:else if sourceImageUrl}<SourceViewer
+                  bind:zoomFactor={sourceZoomFactor}
+                  sheets={sheets.filter((sheet) => sheet.revisionId === previewedSheet?.revisionId)}
+                  currentSheetId={previewedSheet?.id ?? null}
+                  onSheet={async (sheet) => {
+                    await loadSheetSource(sheet, 96);
+                  }}
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
@@ -2245,95 +2377,13 @@
               <button class="ghost" disabled={busy || cloudBlocked} onclick={importPdf}
                 >Import revision</button
               >
-              {#if revisions.length >= 2}
-                {@const latest = revisions.at(-1)}
-                {@const previous = revisions.at(-2)}
-                {#if latest && previous}
-                  <p>Map sheets from {previous.name} to {latest.name}.</p>
-                  <ul class="sheet-list">
-                    {#each sheets.filter((s) => s.revisionId === previous.id) as oldSheet (oldSheet.id)}
-                      {@const candidates = sheets.filter((s) => s.revisionId === latest.id)}
-                      {@const choice = revisionChoices.find(
-                        (pair) => pair.oldSheetId === oldSheet.id,
-                      )}
-                      <li>
-                        {oldSheet.label}
-                        <label
-                          >New sheet<select
-                            value={choice?.newSheetId ?? ""}
-                            data-testid={`revision-map-${oldSheet.id}`}
-                            onchange={(event) =>
-                              stageRevision(oldSheet.id, { newSheetId: event.currentTarget.value })}
-                          >
-                            <option value="">Select new sheet…</option>
-                            {#each candidates as candidate (candidate.id)}<option
-                                value={candidate.id}>{candidate.label}</option
-                              >{/each}
-                          </select></label
-                        >
-                        <label
-                          >Contents<select
-                            value={choice?.content ?? "changed"}
-                            data-testid={`revision-content-${oldSheet.id}`}
-                            onchange={(event) =>
-                              stageRevision(oldSheet.id, {
-                                content:
-                                  event.currentTarget.value === "unchanged"
-                                    ? "unchanged"
-                                    : "changed",
-                              })}
-                          >
-                            <option value="changed">Changed</option><option value="unchanged"
-                              >Unchanged</option
-                            >
-                          </select></label
-                        >
-                        <label
-                          ><input
-                            type="checkbox"
-                            checked={choice?.confirmed ?? false}
-                            data-testid={`revision-confirm-${oldSheet.id}`}
-                            onchange={(event) =>
-                              stageRevision(oldSheet.id, {
-                                confirmed: event.currentTarget.checked,
-                              })}
-                          />Sheet correspondence confirmed</label
-                        >
-                      </li>
-                    {/each}
-                  </ul>
-                  <p>Confirm each match. Unsure sheets remain unresolved.</p>
-                  <button
-                    data-testid="apply-revision"
-                    disabled={busy ||
-                      sheets
-                        .filter((sheet) => sheet.revisionId === previous.id)
-                        .some(
-                          (sheet) =>
-                            !revisionChoices.some(
-                              (pair) => pair.oldSheetId === sheet.id && pair.newSheetId,
-                            ),
-                        )}
-                    onclick={async () => {
-                      await associateRevision(
-                        latest.id,
-                        revisionChoices.filter((pair) =>
-                          sheets.some(
-                            (sheet) =>
-                              sheet.id === pair.oldSheetId && sheet.revisionId === previous.id,
-                          ),
-                        ),
-                      );
-                      revisionChoices = [];
-                    }}>Apply revision correspondence</button
-                  >
-                {/if}
-              {:else}
-                <p>
-                  Import the next revision, then map sheet correspondence. Earlier sources and
-                  review history are preserved.
-                </p>
-              {/if}
+              <RevisionMapping
+                {revisions}
+                {sheets}
+                correspondence={snapshot?.sheetCorrespondence ?? []}
+                busy={busy || cloudBlocked}
+                onApply={associateRevision}
+              />
             {/if}
           </div>
         </aside>
@@ -2669,7 +2719,14 @@
     flex-direction: column;
     gap: 10px;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .project-group,
+  .projects,
+  .threads {
+    min-width: 0;
   }
   .new-chat,
   .project-heading,
@@ -2713,6 +2770,7 @@
   }
   .project-heading span,
   .threads button span {
+    min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -3123,13 +3181,11 @@
     margin: 0;
     font-size: 15px;
   }
-  .project-form label,
-  .sheet-list label {
+  .project-form label {
     display: grid;
     gap: 6px;
   }
-  .project-form input,
-  .sheet-list select {
+  .project-form input {
     width: 100%;
     min-width: 0;
     border: 1px solid var(--nd-hairline-strong);
@@ -3148,20 +3204,7 @@
     background: var(--nd-ink);
     color: var(--nd-shell);
   }
-  .sheet-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 14px;
-  }
-  .sheet-list li {
-    display: grid;
-    gap: 10px;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 8px;
-    padding: 12px;
-  }
+
   .workspace-dialog {
     color: var(--nd-ink);
     background: var(--nd-panel);
@@ -3302,6 +3345,9 @@
       display: none;
     }
     .sheets-trigger {
+      display: inline-flex;
+    }
+    .secondary-count {
       display: none;
     }
   }
@@ -3418,6 +3464,64 @@
     gap: 12px;
     align-items: center;
     margin-bottom: 16px;
+  }
+  .compact-actions {
+    display: none;
+    position: relative;
+    font-size: 12px;
+  }
+  .compact-actions summary {
+    cursor: pointer;
+    padding: 7px;
+  }
+  .compact-actions > div {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    min-width: 170px;
+    padding: 6px;
+    background: var(--nd-panel);
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 7px;
+    z-index: 20;
+  }
+  .compact-actions button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    text-align: left;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  @media (max-width: 900px) {
+    .compact-actions {
+      display: block;
+    }
+  }
+  .compact-project {
+    display: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+    font-size: 12px;
+  }
+  @media (max-width: 900px) {
+    .compact-project {
+      display: block;
+    }
+    .window-actions {
+      min-width: 0;
+    }
+  }
+  @media (max-width: 700px) {
+    .window-actions .ghost[data-testid="import-pdf"] {
+      display: none;
+    }
   }
   .secondary-count {
     color: var(--nd-ink-muted);

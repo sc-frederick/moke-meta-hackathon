@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Effect, Layer, ManagedRuntime, PubSub, Redacted, Schema, Stream } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, PubSub, Redacted, Schema, Stream } from "effect";
 import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -80,6 +80,10 @@ test.each([
     let remotelyReady = false;
     let downloads = 0;
     const checkpoints: string[] = [];
+    const uploadStarted = Effect.runSync(Deferred.make<void>());
+    const uploadContinue = Effect.runSync(Deferred.make<void>());
+    const downloadStarted = Effect.runSync(Deferred.make<void>());
+    const downloadContinue = Effect.runSync(Deferred.make<void>());
     const notifications = Effect.runSync(PubSub.unbounded<void>());
     let remote: ReturnType<typeof openApplication> | undefined;
 
@@ -113,19 +117,25 @@ test.each([
     });
 
     const port: CloudSandboxPort = {
+      preflight: () => Effect.void,
       changes: () => Stream.fromPubSub(notifications),
       allocate: () => Effect.succeed("local-test-sandbox"),
       upload: (_record, source) =>
-        Effect.tryPromise({
-          try: async () => {
-            await cp(source, uploaded, { recursive: true });
-            const manifest = await readFile(join(uploaded, "manifest.json"), "utf8");
-            expect(manifest).not.toContain("secret-sentinel");
+        Effect.gen(function* () {
+          yield* Deferred.succeed(uploadStarted, undefined);
+          yield* Deferred.await(uploadContinue);
 
-            return "test-input-snapshot";
-          },
-          catch: () =>
-            new CloudReviewError({ reason: "unavailable", message: "Test upload failed" }),
+          return yield* Effect.tryPromise({
+            try: async () => {
+              await cp(source, uploaded, { recursive: true });
+              const manifest = await readFile(join(uploaded, "manifest.json"), "utf8");
+              expect(manifest).not.toContain("secret-sentinel");
+
+              return "test-input-snapshot";
+            },
+            catch: () =>
+              new CloudReviewError({ reason: "unavailable", message: "Test upload failed" }),
+          });
         }),
       dispatch: (record) =>
         Effect.gen(function* () {
@@ -193,18 +203,22 @@ test.each([
           };
         }),
       download: (record, destination) =>
-        Effect.promise(async () => {
-          expect(record.resultSnapshotId).toBe("test-result-snapshot");
-          expect(checkpoints).toContain(record.id);
-          downloads++;
-          await cp(checkpoint, destination, { recursive: true });
+        Effect.gen(function* () {
+          yield* Deferred.succeed(downloadStarted, undefined);
+          yield* Deferred.await(downloadContinue);
+          yield* Effect.promise(async () => {
+            expect(record.resultSnapshotId).toBe("test-result-snapshot");
+            expect(checkpoints).toContain(record.id);
+            downloads++;
+            await cp(checkpoint, destination, { recursive: true });
 
-          if (corrupt) {
-            const path = join(destination, "app.sqlite");
-            const bytes = await readFile(path);
-            bytes[0] = (bytes[0] ?? 0) ^ 0xff;
-            await writeFile(path, bytes);
-          }
+            if (corrupt) {
+              const path = join(destination, "app.sqlite");
+              const bytes = await readFile(path);
+              bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+              await writeFile(path, bytes);
+            }
+          });
         }),
       stop: () =>
         Effect.sync(() => {
@@ -308,7 +322,30 @@ test.each([
         transferScope: "whole-application" as const,
       };
 
-      const started = await runtime.runPromise(application.cloud.start(request));
+      const starting = runtime.runPromise(application.cloud.start(request));
+      await runtime.runPromise(Deferred.await(uploadStarted));
+
+      const readingDuringTransfer = runtime.runPromise(
+        application.review.snapshot(projectId, 0).pipe(
+          Effect.as(true),
+          Effect.catch(() => Effect.succeed(false)),
+        ),
+      );
+
+      try {
+        expect(
+          await Promise.race([
+            readingDuringTransfer,
+            runtime.runPromise(Effect.sleep("2 seconds").pipe(Effect.as(false))),
+          ]),
+        ).toBe(true);
+      } finally {
+        await runtime.runPromise(Deferred.succeed(uploadContinue, undefined));
+      }
+
+      const started = await starting;
+
+      expect(await readingDuringTransfer).toBe(true);
       expect(dispatched).toBe(1);
 
       const command = ReviewCommand.cases.CreateProject.make({
@@ -361,6 +398,21 @@ test.each([
       }
 
       await Effect.runPromise(PubSub.publish(notifications, undefined));
+
+      await runtime.runPromise(Deferred.await(downloadStarted).pipe(Effect.timeout("5 seconds")));
+
+      try {
+        const duringDownload = await runtime.runPromise(
+          application.review.snapshot(projectId, 0).pipe(Effect.timeout("2 seconds")),
+        );
+
+        expect(duringDownload.messages).toHaveLength(1);
+        expect(
+          (await runtime.runPromise(application.review.command(command).pipe(Effect.flip))).message,
+        ).toContain("maintenance");
+      } finally {
+        await runtime.runPromise(Deferred.succeed(downloadContinue, undefined));
+      }
 
       if (corrupt) {
         const failedSync = await runtime.runPromise(
@@ -479,6 +531,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
     });
 
     const port: CloudSandboxPort = {
+      preflight: () => Effect.void,
       changes: () => Stream.fromPubSub(notifications),
       allocate: () => Effect.succeed("packet-sandbox"),
       upload: (_record, source) =>

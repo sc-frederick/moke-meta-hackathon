@@ -29,6 +29,13 @@ export const CloudPacketProgress = Schema.Struct({
   state: PacketReview.fields.state,
   version: PacketReview.fields.version,
   admittedCalls: PacketReview.fields.admittedCalls,
+  projectName: Schema.optionalKey(Schema.String),
+  openedSheets: Schema.optionalKey(Schema.Int),
+  totalSheets: Schema.optionalKey(Schema.Int),
+  findings: Schema.optionalKey(Schema.Int),
+  recordedPasses: Schema.optionalKey(Schema.Int),
+  totalPasses: Schema.optionalKey(Schema.Int),
+  changedAt: Schema.optionalKey(Schema.Finite),
 });
 
 /** Stable cloud operation identity; sandbox identifiers stay in the backend. */
@@ -65,9 +72,13 @@ export class CloudReviewStatus extends Schema.Class<CloudReviewStatus>("CloudRev
   revision: Schema.Int,
   projectId: ProjectId,
   findingId: Schema.NullOr(FindingId),
+  conversationId: Schema.optionalKey(PacketReview.fields.conversationId),
+  model: Schema.optionalKey(PacketReview.fields.model),
+  scopeLabel: Schema.optionalKey(Schema.String),
   phase: CloudReviewPhase,
   createdAt: Schema.Finite,
   expiresAt: Schema.Finite,
+  transferBytes: Schema.optionalKey(Schema.Int),
   execution: Schema.NullOr(ExecutionStatus),
   packet: Schema.optionalKey(CloudPacketProgress),
   message: Schema.String,
@@ -79,6 +90,7 @@ export class CloudReviewStatus extends Schema.Class<CloudReviewStatus>("CloudRev
 /** Safe capability information; credits are managed by Modal rather than guessed locally. */
 export class CloudReviewSetup extends Schema.Class<CloudReviewSetup>("CloudReviewSetup")({
   configured: Schema.Boolean,
+  message: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
   timeoutMinutes: Schema.Int,
   warmPool: Schema.Boolean,
   transferScope: Schema.Literal("whole-application"),

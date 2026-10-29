@@ -6,6 +6,10 @@ import type { CloudRecoveredWorkerProgress } from "./progress.ts";
 
 /** Sandbox mechanics stay behind the cloud application's replay and ownership policy. */
 export interface CloudSandboxPort {
+  /** Resolve the published image and every outbound provider secret without starting compute. */
+  readonly preflight: (
+    providers: ReadonlyArray<typeof InferenceConfiguration.Type>,
+  ) => Effect.Effect<void, CloudReviewError>;
   /** Change signals are hints; callers reconcile the durable job after subscribing and on reconnect. */
   readonly changes: (record: CloudReviewRecord) => Stream.Stream<void, CloudReviewError>;
   readonly allocate: (record: CloudReviewRecord) => Effect.Effect<string, CloudReviewError>;

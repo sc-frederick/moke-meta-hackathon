@@ -22,6 +22,7 @@ import {
 import {
   exportReviewPackage,
   restoreReviewPackage,
+  validateReviewPackage,
   recoverInterruptedRestore,
   hasReviewBearingRows,
 } from "./review/packages.ts";
@@ -62,6 +63,7 @@ export class Application extends Context.Service<
       destination: string,
       limits?: typeof PackageLimits.Type,
     ) => Effect.Effect<PackageExportResult, PackageError>;
+    readonly validatePackage: (source: string) => Effect.Effect<void, PackageError>;
     readonly restorePackage: (source: string) => Effect.Effect<PackageRestoreResult, PackageError>;
   }
 >()("app/Application") {
@@ -115,20 +117,24 @@ export class Application extends Context.Service<
         const reviewQuery = <A>(
           operation: Effect.Effect<A, typeof ReviewError.Type, ReviewStore>,
         ) =>
-          Effect.scoped(
-            Effect.gen(function* () {
-              const sql = yield* SqlClient.SqlClient;
-              yield* sql`PRAGMA foreign_keys=ON`;
-              yield* sql`PRAGMA synchronous=FULL`;
-              yield* Schema.decodeUnknownEffect(
-                Schema.Array(Schema.Struct({ foreign_keys: Schema.Literal(1) })),
-              )(yield* sql`PRAGMA foreign_keys`);
-              yield* Schema.decodeUnknownEffect(
-                Schema.Array(Schema.Struct({ synchronous: Schema.Literal(2) })),
-              )(yield* sql`PRAGMA synchronous`);
+          Effect.suspend(() =>
+            pendingRestore()
+              ? Effect.fail(new ReviewConflict({ message: restoreMessage }))
+              : Effect.scoped(
+                  Effect.gen(function* () {
+                    const sql = yield* SqlClient.SqlClient;
+                    yield* sql`PRAGMA foreign_keys=ON`;
+                    yield* sql`PRAGMA synchronous=FULL`;
+                    yield* Schema.decodeUnknownEffect(
+                      Schema.Array(Schema.Struct({ foreign_keys: Schema.Literal(1) })),
+                    )(yield* sql`PRAGMA foreign_keys`);
+                    yield* Schema.decodeUnknownEffect(
+                      Schema.Array(Schema.Struct({ synchronous: Schema.Literal(2) })),
+                    )(yield* sql`PRAGMA synchronous`);
 
-              return yield* operation.pipe(Effect.provide(ReviewStore.layer));
-            }).pipe(Effect.provide(database)),
+                    return yield* operation.pipe(Effect.provide(ReviewStore.layer));
+                  }).pipe(Effect.provide(database)),
+                ),
           ).pipe(
             Effect.mapError((error) =>
               Schema.is(ReviewError)(error)
@@ -331,12 +337,13 @@ export class Application extends Context.Service<
                   message:
                     "Finish or cancel existing local inspections and acknowledge any unresolved charges before starting a separate cloud review.",
                 });
-              yield* exportReviewPackage(
+
+              return yield* exportReviewPackage(
                 { ...packages, limits: cloudPackageLimits },
                 destination,
               ).pipe(
                 cloudFailure(
-                  "The complete workspace could not be prepared for cloud review. Cloud transfers are limited to 256 MiB.",
+                  "The complete workspace could not be prepared for cloud review. Cloud transfers are limited to 1,024 MiB. Export a backup and use a separate workspace for smaller reviews.",
                 ),
               );
             }),
@@ -410,7 +417,8 @@ export class Application extends Context.Service<
         const publicReview = {
           ...review,
           snapshot: (...args: Parameters<typeof review.snapshot>) =>
-            admit(review.snapshot(...args)),
+            // SQL exclusion protects replacement; a network transfer must not block navigation.
+            review.snapshot(...args).pipe(Semaphore.withPermit(workSlots)),
           command: (...args: Parameters<typeof review.command>) =>
             admit(locally(review.command(...args))),
           importPdf: (...args: Parameters<typeof review.importPdf>) =>
@@ -461,6 +469,7 @@ export class Application extends Context.Service<
                     destination,
                   ),
             ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
+          validatePackage: (source) => validateReviewPackage(packages, source),
           restorePackage: (source) =>
             Effect.suspend(() =>
               pendingRestore()
@@ -544,6 +553,7 @@ export const BackendHandlers = BackendRpc.toLayer(
       ImportReviewPdf: (request) => application.review.importPdf(request),
       ExportReviewPackage: ({ destination }) => application.exportPackage(destination),
       RestoreReviewPackage: ({ source }) => application.restorePackage(source),
+      ValidateReviewPackage: ({ source }) => application.validatePackage(source),
       ExecutionSetup: () => application.execution.setup,
       CloudReviewSetup: () => application.cloud.setup,
       StartCloudReview: (request) => application.cloud.start(request),

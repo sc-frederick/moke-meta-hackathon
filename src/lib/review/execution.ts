@@ -92,6 +92,27 @@ export class ExecutionBudget extends Schema.Class<ExecutionBudget>("ExecutionBud
   maxOutputTokens: Schema.Int.check(Schema.isBetween({ minimum: 16, maximum: 8192 })),
 }) {}
 
+/** Safe provider diagnostics exclude prompts, credentials and raw response bodies. */
+export const ProviderFailure = Schema.Struct({
+  category: Schema.Literals(["timeout", "aborted", "http", "network", "response", "admission"]),
+  phase: Schema.Literals(["admission", "dispatch", "response", "receipt"]),
+  elapsedMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+  httpStatus: Schema.NullOr(Schema.Int),
+  detail: Schema.optionalKey(
+    Schema.Literals([
+      "image_limit",
+      "context_limit",
+      "payload_limit",
+      "authentication",
+      "rate_limit",
+      "invalid_request",
+      "unclassified",
+    ]),
+  ),
+  requestImages: Schema.optionalKey(Schema.Int),
+  requestBytes: Schema.optionalKey(Schema.Int),
+});
+
 /** Renderer-safe status separates the route from unresolved provider evidence. */
 export class ExecutionStatus extends Schema.Class<ExecutionStatus>("ExecutionStatus")({
   runId: RunId,

@@ -241,6 +241,17 @@ export class ReviewEvent extends Schema.Class<ReviewEvent>("ReviewEvent")({
   createdAt: Schema.String,
 }) {}
 
+/** Saved sheet matches and explicit removed or unresolved revision decisions. */
+export class RevisionCorrespondence extends Schema.Class<RevisionCorrespondence>(
+  "RevisionCorrespondence",
+)({
+  revisionId: RevisionId,
+  oldSheetId: SheetId,
+  newSheetId: Schema.NullOr(SheetId),
+  confirmed: Schema.Boolean,
+  content: Schema.Literals(["changed", "unchanged", "removed", "unresolved"]),
+}) {}
+
 /** A bounded workbench snapshot contains current records and immutable history. */
 export class ReviewSnapshot extends Schema.Class<ReviewSnapshot>("ReviewSnapshot")({
   projects: Schema.Array(Project),
@@ -254,6 +265,7 @@ export class ReviewSnapshot extends Schema.Class<ReviewSnapshot>("ReviewSnapshot
   conversations: Schema.Array(Conversation),
   messages: Schema.Array(ReviewMessage),
   events: Schema.Array(ReviewEvent),
+  sheetCorrespondence: Schema.optionalKey(Schema.Array(RevisionCorrespondence)),
 }) {}
 
 /** A command receipt is committed with its mutation and returned unchanged on replay. */
@@ -321,9 +333,9 @@ export const ReviewCommand = Schema.Union([
     correspondence: Schema.NonEmptyArray(
       Schema.Struct({
         oldSheetId: SheetId,
-        newSheetId: SheetId,
+        newSheetId: Schema.NullOr(SheetId),
         confirmed: Schema.Boolean,
-        content: Schema.Literals(["changed", "unchanged"]),
+        content: Schema.Literals(["changed", "unchanged", "removed", "unresolved"]),
       }),
     ),
   }),

@@ -21,7 +21,11 @@ import {
   type CloudReviewRecord,
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
-import { parseCloudManifest } from "./transfer.ts";
+import {
+  clearInterruptedCloudDownloads,
+  downloadedCloudFileMatches,
+  parseCloudManifest,
+} from "./transfer.ts";
 import { parseCloudWorkerProgress } from "./progress.ts";
 
 const ModalFileChange = Schema.Struct({
@@ -82,6 +86,14 @@ export const emptyReviewOutboundPolicy = () =>
     domain: "api.meta.ai",
     headers: { "X-Moke-Sandbox": "review" },
   });
+
+/** Bounded review capacity shared by cold allocation and optional warm capacity. */
+export const modalReviewResources = {
+  cpu: 4,
+  cpuLimit: 4,
+  memoryMiB: 8192,
+  memoryLimitMiB: 8192,
+} as const;
 
 /** Official Modal SDK adapter; API keys are injected into outbound HTTPS outside the workload. */
 export const modalSandboxLayer = (
@@ -216,6 +228,7 @@ export const modalSandboxLayer = (
             if (
               Option.isNone(warm) ||
               warm.value.imageName !== config.imageName ||
+              warm.value.resourceProfile !== "4cpu-8gib" ||
               warm.value.expiresAt < record.expiresAt + 30_000
             ) {
               yield* modalCall(() => sandbox.terminate({ wait: true }));
@@ -256,10 +269,7 @@ export const modalSandboxLayer = (
           client.sandboxes.create(app, image, {
             command: ["sleep", "infinity"],
             name: record.sandboxName,
-            cpu: 1,
-            cpuLimit: 1,
-            memoryMiB: 2048,
-            memoryLimitMiB: 2048,
+            ...modalReviewResources,
             timeoutMs: config.timeoutMinutes * 60_000 + 120_000,
             experimentalOptions: { enable_exit_snapshot: true },
             experimentalOutboundPolicy: emptyReviewOutboundPolicy(),
@@ -351,7 +361,70 @@ export const modalSandboxLayer = (
           }),
         );
 
+      let compatibleImageId: string | null = null;
+
       return CloudSandbox.of({
+        preflight: (providers) =>
+          Effect.gen(function* () {
+            const image = yield* modalCall(() =>
+              client.images.fromName(config.imageName, { environment: config.environment }),
+            ).pipe(
+              Effect.mapError(
+                () =>
+                  new CloudReviewError({
+                    reason: "configuration",
+                    message:
+                      "The selected cloud worker image could not be found or accessed. Check the image and environment in Cloud setup before sending.",
+                  }),
+              ),
+            );
+
+            for (const provider of providers) {
+              yield* modalCall(() =>
+                client.secrets.fromName(`${config.appName}-${provider.provider}-api`, {
+                  environment: config.environment,
+                  requiredKeys: ["MOKE_API_KEY"],
+                }),
+              ).pipe(
+                Effect.mapError(
+                  () =>
+                    new CloudReviewError({
+                      reason: "configuration",
+                      message: `The cloud ${provider.provider === "baseten" ? "Muse Spark Open" : "Meta"} connection is missing or inaccessible. Configure the matching provider secret with MOKE_API_KEY in Modal before sending. Your workspace has not been uploaded.`,
+                    }),
+                ),
+              );
+            }
+
+            if (compatibleImageId !== image.imageId) {
+              const app = yield* modalCall(() =>
+                client.apps.fromName(config.appName, { environment: config.environment }),
+              );
+
+              yield* Effect.scoped(
+                Effect.gen(function* () {
+                  const probe = yield* Effect.acquireRelease(
+                    modalCall(() =>
+                      client.sandboxes.create(app, image, {
+                        command: ["sleep", "infinity"],
+                        timeoutMs: 60_000,
+                        blockNetwork: true,
+                        cpu: 1,
+                        cpuLimit: 1,
+                        memoryMiB: 2048,
+                        memoryLimitMiB: 2048,
+                        tags: { "moke-kind": "preflight" },
+                      }),
+                    ),
+                    (probe) => modalCall(() => probe.terminate({ wait: true })).pipe(Effect.ignore),
+                  );
+
+                  yield* identity(probe);
+                }),
+              );
+              compatibleImageId = image.imageId;
+            }
+          }),
         changes: (record) =>
           Stream.unwrap(
             Effect.gen(function* () {
@@ -553,6 +626,8 @@ export const modalSandboxLayer = (
               yield* modalCall(() => mkdir(destination, { recursive: true, mode: 0o700 }));
 
               for (const file of files) {
+                if (yield* downloadedCloudFileMatches(join(destination, file.path), file)) continue;
+
                 const info = yield* modalCall(() =>
                   sandbox.filesystem.stat(`/moke/output/${file.path}`),
                 );
@@ -570,6 +645,7 @@ export const modalSandboxLayer = (
                 );
               }
 
+              yield* clearInterruptedCloudDownloads(destination);
               yield* modalCall(() => Bun.write(join(destination, "manifest.json"), text));
             }),
           ),

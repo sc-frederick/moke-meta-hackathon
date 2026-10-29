@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-29T11:20:18.962Z",
+  "imageName": "moke-review-engine:audit3-fixes-20261029",
+  "imageId": "im-01M63P54VRN8PXFH7FJV3NZMS8",
+  "sandboxId": "sb-01M63P78F0RPA575WX93YZVFEV",
+  "hashes": [
+    {
+      "sha256": "f4510fceef0ba585b82a924ac9f6796a51b5f9116d0609f16da65a1db384abad",
+      "path": "/opt/moke/worker.mjs"
+    },
+    {
+      "sha256": "41cc82d85f68a87dc49f16e4c494a63dcbbcb70a9bfafa8c417a67c7202bbd53",
+      "path": "/opt/moke/pdf-worker.mjs"
+    }
+  ],
+  "workerMatchesCurrentSource": true,
+  "pdfWorkerMatchesCurrentSource": true,
+  "networkBlocked": true,
+  "terminated": true,
+  "sourceRebuildCheckedAt": "2026-10-29T11:20:23.952Z"
+}

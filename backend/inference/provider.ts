@@ -12,10 +12,11 @@ import type {
   ImageContent,
 } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import { Predicate, Redacted, Schema } from "effect";
+import { Option, Predicate, Redacted, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { parseResponseReceipt } from "./response.ts";
 import { createExecutionTelemetry, type RequestPhase } from "./telemetry.ts";
+import type { ProviderFailure } from "#lib/review/execution.ts";
 import { reviewModels } from "#lib/review/models.ts";
 
 /** Injectable HTTP transport; Bun's optional fetch utilities are supplied by the adapter. */
@@ -59,7 +60,7 @@ interface ProviderAdmission {
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
   readonly complete: (phase: RequestPhase, receipt: string) => Promise<void>;
-  readonly end: (uncertain: boolean) => Promise<void>;
+  readonly end: (uncertain: boolean, diagnostic?: typeof ProviderFailure.Type) => Promise<void>;
 }
 
 const ImageUrl = Schema.String.check(
@@ -104,7 +105,10 @@ function requestBounds(body: string) {
 }
 
 /** Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts. */
-function boundedImageContext(transcript: TranscriptContext): TranscriptContext {
+function boundedImageContext(
+  transcript: TranscriptContext,
+  limits = { images: 6, imageBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024 },
+): TranscriptContext {
   const retained = new Set<ImageContent>();
   let bytes = 0;
 
@@ -119,9 +123,9 @@ function boundedImageContext(transcript: TranscriptContext): TranscriptContext {
       if (part.type !== "image") continue;
       const size = Buffer.byteLength(part.data, "base64");
 
-      if (size > 1024 * 1024) throw new Error("Individual source image exceeds its bound");
+      if (size > limits.imageBytes) throw new Error("Individual source image exceeds its bound");
 
-      if (retained.size < 6 && bytes + size <= 2 * 1024 * 1024) {
+      if (retained.size < limits.images && bytes + size <= limits.totalBytes) {
         retained.add(part);
         bytes += size;
       }
@@ -144,12 +148,87 @@ function boundedImageContext(transcript: TranscriptContext): TranscriptContext {
             ? part
             : {
                 type: "text" as const,
-                text: "Earlier image omitted from the bounded six-image / 2 MiB request window. Its artifact metadata remains available; request a new detail if required.",
+                text: "Earlier image omitted from the current request image window. Its source metadata and durable artifact remain available. Render that sheet or detail again before making a new claim about its contents.",
               },
         ),
       };
     }),
   };
+}
+
+const ProviderRejection = Schema.Struct({
+  error: Schema.Union([Schema.String, Schema.Struct({ message: Schema.String })]),
+});
+
+/** Classify a bounded error body without retaining raw provider text or echoed inputs. */
+async function providerRejectionDetail(
+  response: Response,
+): Promise<NonNullable<(typeof ProviderFailure.Type)["detail"]>> {
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+
+  if (reader) {
+    try {
+      while (true) {
+        const part = await reader.read();
+
+        if (part.done) break;
+        bytes += part.value.length;
+
+        if (bytes > 16384) {
+          await reader.cancel();
+          break;
+        }
+
+        chunks.push(part.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  const decoded =
+    bytes <= 16384
+      ? Schema.decodeUnknownOption(Schema.fromJsonString(ProviderRejection))(
+          Buffer.concat(chunks).toString("utf8"),
+        )
+      : Option.none();
+
+  const message = Option.match(decoded, {
+    onNone: () => "",
+    onSome: (body) => (Predicate.isString(body.error) ? body.error : body.error.message),
+  });
+
+  if (
+    /too many images|(?:image|images).{0,40}(?:maximum|limit)|max(?:imum)? .{0,20}images/i.test(
+      message,
+    )
+  )
+    return "image_limit";
+
+  if (
+    /context.{0,30}(?:length|limit|exceed)|(?:token|tokens).{0,30}(?:limit|maximum|exceed)/i.test(
+      message,
+    )
+  )
+    return "context_limit";
+
+  if (
+    response.status === 413 ||
+    /payload.{0,30}(?:large|limit)|(?:media|image|request).{0,30}(?:size|bytes).{0,30}(?:large|limit|exceed)/i.test(
+      message,
+    )
+  )
+    return "payload_limit";
+
+  if (response.status === 401 || response.status === 403) return "authentication";
+
+  if (response.status === 429) return "rate_limit";
+
+  if (response.status === 400 || response.status === 422) return "invalid_request";
+
+  return "unclassified";
 }
 
 /** Both SDK entrypoints pass the same durable guard, including complete/completeSimple callers. */
@@ -209,6 +288,13 @@ export function createAdmittedModels(
   ) => {
     const output = createAssistantMessageEventStream();
     void (async () => {
+      const started = performance.now();
+      let failurePhase: (typeof ProviderFailure.Type)["phase"] = "admission";
+      let httpStatus: number | null = null;
+      let rejectionDetail: (typeof ProviderFailure.Type)["detail"];
+      let requestImages = 0;
+      let requestBytes = 0;
+      let transportFailure: (typeof ProviderFailure.Type)["category"] | undefined;
       let admitted = false;
       let completed = false;
 
@@ -223,7 +309,17 @@ export function createAdmittedModels(
         )
           throw new Error("Provider admission denied");
 
-        const bounded = admission.packetReview ? transcript : boundedImageContext(transcript);
+        // Baseten's Muse Spark media encoder accepts at most eight images per request,
+        // including images retained in earlier tool results. The durable journal stays intact.
+        const bounded = admission.packetReview
+          ? selected.provider === "baseten"
+            ? boundedImageContext(transcript, {
+                images: 8,
+                imageBytes: 10 * 1024 * 1024,
+                totalBytes: 64 * 1024 * 1024,
+              })
+            : transcript
+          : boundedImageContext(transcript);
 
         const fingerprint = createHash("sha256")
           .update(
@@ -255,25 +351,78 @@ export function createAdmittedModels(
           async (input: Parameters<FetchFunction>[0], init?: Parameters<FetchFunction>[1]) => {
             const body = Schema.decodeUnknownSync(Schema.String)(init?.body);
             const bounds = requestBounds(body);
+            requestImages = bounds.images;
+            requestBytes = bounds.requestBytes;
 
             if (
               dispatched ||
               bounds.textBytes > admission.maxInputTokens ||
               bounds.imageBytes > (admission.packetReview ? 64 : 2) * 1024 * 1024 ||
               bounds.requestBytes > (admission.packetReview ? 72 : 3) * 1024 * 1024 ||
-              (!admission.packetReview && bounds.images > 6)
+              (!admission.packetReview && bounds.images > 6) ||
+              (selected.provider === "baseten" && bounds.images > 8)
             )
               throw new Error("Transport admission denied");
             dispatched = true;
             await admission.send(phase);
 
-            return (configuration.transport ?? globalThis.fetch)(input, init);
+            failurePhase = "dispatch";
+
+            try {
+              const response = await (configuration.transport ?? globalThis.fetch)(input, init);
+              httpStatus = response.status;
+              failurePhase = "response";
+
+              if (!response.ok) {
+                transportFailure = "http";
+                rejectionDetail = await providerRejectionDetail(response);
+
+                // Do not pass potentially sensitive provider error text into SDK diagnostics.
+                return Response.json(
+                  { error: { message: `Provider rejected request: ${rejectionDetail}` } },
+                  { status: response.status },
+                );
+              }
+
+              return response;
+            } catch (cause) {
+              transportFailure = init?.signal?.aborted
+                ? init.signal.reason instanceof DOMException &&
+                  init.signal.reason.name === "TimeoutError"
+                  ? "timeout"
+                  : "aborted"
+                : cause instanceof Error && /timeout|timed out/i.test(cause.message)
+                  ? "timeout"
+                  : "network";
+              throw cause;
+            }
           },
           { preconnect: globalThis.fetch.preconnect },
         );
 
         // Buffer the final normalized response. No tool can consume a response before its receipt commits.
-        const message = parseResponseReceipt(await send(transport, bounded).result());
+        const response = await send(transport, bounded).result();
+
+        if (response.stopReason === "error" || response.stopReason === "aborted") {
+          // The SDK's deadline abort uses a plain AbortError internally. Its normalized
+          // timeout result distinguishes that deadline from an explicit caller abort.
+          if (
+            !options?.signal?.aborted &&
+            (transportFailure === undefined || transportFailure === "aborted") &&
+            /timeout|timed out/i.test(response.errorMessage ?? "")
+          )
+            transportFailure = "timeout";
+
+          transportFailure ??=
+            response.stopReason === "aborted"
+              ? "aborted"
+              : /timeout|timed out/i.test(response.errorMessage ?? "")
+                ? "timeout"
+                : "response";
+        }
+
+        failurePhase = transportFailure ? failurePhase : "receipt";
+        const message = parseResponseReceipt(response);
         const receipt = JSON.stringify(message);
 
         if (
@@ -287,7 +436,19 @@ export function createAdmittedModels(
         admitted = false;
         output.push({ type: "done", reason: message.stopReason, message });
       } catch {
-        if (admitted) await admission.end(!completed).catch(() => undefined);
+        if (admitted)
+          await admission
+            .end(!completed, {
+              category:
+                transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
+              phase: failurePhase,
+              elapsedMs: Math.max(0, performance.now() - started),
+              httpStatus,
+              detail: rejectionDetail ?? "unclassified",
+              requestImages,
+              requestBytes,
+            })
+            .catch(() => undefined);
 
         const message: AssistantMessage = {
           role: "assistant",
@@ -324,7 +485,7 @@ export function createAdmittedModels(
       fetch,
       transport: "sse",
       maxRetries: 0,
-      timeoutMs: configuration.timeoutMs ?? 60000,
+      timeoutMs: configuration.timeoutMs ?? (admission.packetReview ? 300_000 : 60_000),
       reasoning: admission.packetReview ? "high" : "low",
     };
 

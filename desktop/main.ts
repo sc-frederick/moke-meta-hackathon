@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from "electron";
 import { Effect, Layer, Logger, ManagedRuntime, Option, Schema } from "effect";
 import { MainRpcServer } from "electron-effect-rpc/main";
 import { appendFileSync } from "node:fs";
@@ -164,6 +164,12 @@ if (!app.requestSingleInstanceLock()) {
           const { api } = yield* BackendApi;
 
           return {
+            OpenReviewSource: ({ url }) =>
+              Effect.tryPromise({
+                try: () => shell.openExternal(url),
+                catch: () =>
+                  new ReviewStorageError({ message: "The source could not open in your browser." }),
+              }),
             ChoosePacketReport: ({ projectId, reviewId }) =>
               Effect.tryPromise({
                 try: () =>
@@ -285,53 +291,61 @@ if (!app.requestSingleInstanceLock()) {
                 }),
               ),
             ChooseReviewRestore: () =>
-              Effect.tryPromise({
-                try: async () => {
-                  const result = await dialog.showOpenDialog({
-                    title: "Choose a complete MOKE review package",
-                    properties: ["openDirectory"],
-                  });
+              Effect.gen(function* () {
+                const selection = yield* Effect.tryPromise({
+                  try: () =>
+                    dialog.showOpenDialog({
+                      title: "Choose a complete MOKE review package",
+                      properties: ["openDirectory"],
+                    }),
+                  catch: () =>
+                    new ReviewStorageError({ message: "The restore chooser could not open." }),
+                });
 
-                  const source = result.filePaths[0];
+                const source = selection.filePaths[0];
 
-                  if (result.canceled || source === undefined) return undefined;
+                if (selection.canceled || source === undefined) return false;
+                yield* api.ValidateReviewPackage({ source }).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ReviewStorageError({
+                        message: `This folder is not a valid review package. ${cause.message} Choose another folder. Your workspace has not changed.`,
+                      }),
+                  ),
+                );
 
-                  const confirmation = await dialog.showMessageBox({
-                    type: "warning",
-                    buttons: ["Cancel", "Restore complete package"],
-                    defaultId: 0,
-                    cancelId: 0,
-                    message: "Replace local projects with this package?",
-                    detail:
-                      "A complete pre-restore package is retained. Restored reviews open as non-executing history. The app restarts after restore.",
-                  });
+                const confirmation = yield* Effect.tryPromise({
+                  try: () =>
+                    dialog.showMessageBox({
+                      type: "warning",
+                      buttons: ["Cancel", "Restore complete package"],
+                      defaultId: 0,
+                      cancelId: 0,
+                      message: "Replace local projects with this package?",
+                      detail:
+                        "A complete pre-restore package is retained. Restored reviews open as non-executing history. The app restarts after restore.",
+                    }),
+                  catch: () =>
+                    new ReviewStorageError({ message: "The restore confirmation could not open." }),
+                });
 
-                  return confirmation.response === 1 ? source : undefined;
-                },
-                catch: () =>
-                  new ReviewStorageError({ message: "The restore chooser could not open." }),
-              }).pipe(
-                Effect.flatMap((source) =>
-                  source === undefined
-                    ? Effect.succeed(false)
-                    : api.RestoreReviewPackage({ source }).pipe(
-                        Effect.tap(() =>
-                          Effect.sync(() => {
-                            app.relaunch();
-                            app.quit();
-                          }),
-                        ),
-                        Effect.as(true),
-                        Effect.mapError(
-                          () =>
-                            new ReviewStorageError({
-                              message:
-                                "The package restore did not finish. Reopen the application to recover before continuing.",
-                            }),
-                        ),
-                      ),
-                ),
-              ),
+                if (confirmation.response !== 1) return false;
+                yield* api.RestoreReviewPackage({ source }).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ReviewStorageError({
+                        message:
+                          cause.reason === "interrupted"
+                            ? "The package replacement was interrupted. Reopen the application to recover before continuing."
+                            : `The package was not restored. ${cause.message}`,
+                      }),
+                  ),
+                );
+                app.relaunch();
+                app.quit();
+
+                return true;
+              }),
           };
         }),
       );

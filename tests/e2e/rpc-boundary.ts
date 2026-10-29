@@ -6,6 +6,7 @@ declare global {
   interface Window {
     auditRpc: {
       holdRender: boolean;
+      holdSnapshot: boolean;
       held: boolean;
       release: () => void;
       loseImportResponse: boolean;
@@ -22,6 +23,7 @@ export async function installRpcBoundary(page: Page) {
     const requests = new Map<string, string>();
     window.auditRpc = {
       holdRender: false,
+      holdSnapshot: false,
       held: false,
       release: () => {},
       loseImportResponse: false,
@@ -85,8 +87,12 @@ export async function installRpcBoundary(page: Page) {
           const tag = requests.get(String(message.requestId));
 
           if (message._tag === "Exit" && message.exit?._tag === "Success") {
-            if (tag === "RenderSource" && window.auditRpc.holdRender) {
-              window.auditRpc.holdRender = false;
+            if (
+              (tag === "RenderSource" && window.auditRpc.holdRender) ||
+              (tag === "ReviewSnapshot" && window.auditRpc.holdSnapshot)
+            ) {
+              if (tag === "ReviewSnapshot") window.auditRpc.holdSnapshot = false;
+              else window.auditRpc.holdRender = false;
               window.auditRpc.held = true;
               window.auditRpc.release = () => {
                 window.auditRpc.held = false;

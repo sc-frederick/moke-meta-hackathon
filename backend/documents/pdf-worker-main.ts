@@ -10,6 +10,7 @@ import { Schema } from "effect";
 import { containsRegion, transformRegion, invertTransform } from "#lib/review/geometry.ts";
 import { Affine, Region, ReviewInputError } from "#lib/review/contracts.ts";
 import { DocumentsLimits } from "./config.ts";
+import { suggestedSheetLabel } from "./sheet-label.ts";
 import {
   WorkerFailure,
   WorkerInspectResult,
@@ -118,16 +119,42 @@ async function inspectPdf(id: string, pdfPath: string) {
     }
 
     const pages = [];
+    let pageLabels: Array<string> | null = null;
+
+    try {
+      pageLabels = await document.getPageLabels();
+    } catch {
+      // Malformed advisory page labels must not block otherwise valid source pages.
+    }
 
     for (let pageIndex = 0; pageIndex < count; pageIndex++) {
       const page = await document.getPage(pageIndex + 1);
       const view = page.view;
       const rotate = normalizeRotation(page.rotate);
       const userUnit = page.userUnit > 0 ? page.userUnit : 1;
+      const box = pageBox(view);
+      let label = `Page ${pageIndex + 1}`;
+
+      try {
+        const content = await page.getTextContent();
+        label = suggestedSheetLabel(
+          pageIndex,
+          pageLabels?.[pageIndex] ?? null,
+          content.items.flatMap((item) =>
+            "str" in item
+              ? [{ text: item.str, x: item.transform[4] ?? 0, y: item.transform[5] ?? 0 }]
+              : [],
+          ),
+          box,
+        );
+      } catch {
+        // Text extraction is advisory. Scanned or damaged text must not block source import.
+      }
+
       pages.push({
         pageIndex,
-        label: `Page ${pageIndex + 1}`,
-        box: pageBox(view),
+        label,
+        box,
         rotation: rotate,
         userUnit,
       });

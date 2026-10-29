@@ -3,18 +3,27 @@
   import { Match } from "effect";
   import type { PacketReview } from "#lib/review/packet.ts";
   import { packetCoverageProgress } from "#lib/review/packet-coverage.ts";
+  import ReviewText from "./ReviewText.svelte";
+  import { ReviewSourceUrl } from "#lib/review/source-url.ts";
+  import { Schema } from "effect";
   import { formatElapsed } from "./review-format.ts";
 
   let {
     review,
     busy = false,
+    historical = false,
     onControl,
     onFinding,
+    onExport,
+    onOpenSource,
   }: {
     review: PacketReview;
     busy?: boolean;
+    historical?: boolean;
     onControl: (action: "pause" | "resume" | "cancel", maxCalls?: number | null) => Promise<void>;
     onFinding: (findingId: string) => Promise<void>;
+    onExport: () => Promise<void>;
+    onOpenSource: (url: string) => Promise<void>;
   } = $props();
 
   const passLabels = {
@@ -23,6 +32,32 @@
     coordination: "Drawing coordination",
     prior_comments: "Prior comments",
   } as const;
+
+  let diagnosticNotice = $state("");
+
+  async function copyDiagnostics() {
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(
+          {
+            reviewId: review.id,
+            model: review.model,
+            state: review.state,
+            error: review.error,
+            providerFailure: review.providerFailure ?? null,
+            admittedCalls: review.admittedCalls,
+            openedSheets: review.inspectedSheetIds.length,
+          },
+          null,
+          2,
+        ),
+      );
+      diagnosticNotice = "Review diagnostics copied.";
+    } catch {
+      diagnosticNotice =
+        "Copy is unavailable. The saved review report contains the failure details.";
+    }
+  }
 
   let additionalCallsDraft = $state<string | null>(null);
   const additionalCalls = $derived(Number(additionalCallsDraft ?? review.maxCalls ?? 1));
@@ -42,7 +77,16 @@
 
   let now = $state(Date.now());
   const running = $derived(review.state === "running");
-  const elapsed = $derived(Math.max(0, (running ? now : review.changedAt) - review.startedAt));
+
+  const elapsed = $derived(
+    Math.max(
+      0,
+      review.activeDurationMs === undefined
+        ? (running ? now : review.changedAt) - review.startedAt
+        : review.activeDurationMs +
+            (running && review.activeSince != null ? now - review.activeSince : 0),
+    ),
+  );
 
   const scope = $derived(
     Match.value(review.scope).pipe(
@@ -88,7 +132,11 @@
   });
 </script>
 
-<section class="packet-review" aria-label={scope} data-testid="packet-review-panel">
+<section
+  class="packet-review"
+  aria-label={scope}
+  data-testid={historical ? "historical-review-panel" : "packet-review-panel"}
+>
   <header>
     <div>
       <p class="eyebrow">MOKE · {scope}</p>
@@ -106,7 +154,7 @@
     </p>
     {#if review.summary.length > 500}<details class="records">
         <summary>Full review notes</summary>
-        <p class="summary">{review.summary}</p>
+        <ReviewText text={review.summary} />
       </details>{/if}{/if}
   {#if review.steering?.length}<details class="records">
       <summary>Follow-up instructions · {review.steering.length}</summary
@@ -133,9 +181,12 @@
     </div>
   {/if}
   <div class="actions">
-    {#if running}<button disabled={busy} onclick={() => onControl("pause")}>Pause review</button
+    <button disabled={busy} onclick={onExport}>Export review report</button>
+    {#if review.error}<button onclick={copyDiagnostics}>Copy review diagnostics</button>{/if}
+    {#if running && !historical}<button disabled={busy} onclick={() => onControl("pause")}
+        >Pause review</button
       >{/if}
-    {#if budgetExhausted}<div class="budget-extension">
+    {#if budgetExhausted && !historical}<div class="budget-extension">
         <label
           >Additional calls<input
             type="number"
@@ -155,18 +206,20 @@
           {#if validAdditionalCalls}New call budget: {extendedBudget} total, including {review.admittedCalls}
             already used.{:else}Enter a positive whole number of additional calls.{/if}
         </p>
-      </div>{:else if review.state === "paused"}<button
+      </div>{:else if review.state === "paused" && !historical}<button
         disabled={busy}
         onclick={() => onControl("resume")}>Resume review</button
       >{/if}
-    {#if ["running", "paused", "uncertain"].includes(review.state)}<button
+    {#if !historical && ["running", "paused", "uncertain"].includes(review.state)}<button
         disabled={busy}
         onclick={() => onControl("cancel")}>Cancel review</button
       >{/if}
   </div>
+  {#if diagnosticNotice}<p role="status" class="muted">{diagnosticNotice}</p>{/if}
   {#if review.state === "uncertain"}<p class="muted">
       The last provider request has an uncertain outcome. Its recorded work is preserved; it will
-      not be sent again automatically.
+      not be sent again automatically. It may have been charged. Cancel this stopped review to
+      unlock a new request; saved findings and failure details remain in history.
     </p>{/if}
   {#if review.findings.length > 0}
     <div class="findings">
@@ -212,7 +265,18 @@
           {source.title || source.url} · {source.status}{source.official
             ? " · official source"
             : ""}
-        </p>{/each}
+        </p>
+        <section class="source-record">
+          <p>{source.url}</p>
+          <p class="muted">Retrieved {new Date(source.retrievedAt).toLocaleString()}</p>
+          {#if Schema.is(ReviewSourceUrl)(source.url)}<button
+              onclick={() => onOpenSource(source.url)}>Open source in browser</button
+            >{/if}
+          <details>
+            <summary>Saved retrieved text</summary>
+            <p>{source.text || "No text was retrieved."}</p>
+          </details>
+        </section>{/each}
     </details>{/if}
   {#if review.priorComments.length > 0}<details class="records">
       <summary>Prior comments · {review.priorComments.length}</summary
@@ -237,18 +301,21 @@
         this ledger. Excluded disciplines require an explicit Not applicable reason.
       </p>
       {#each review.sheets as sheet (sheet.id)}
-        <section>
-          <h4>
+        <details class="sheet-coverage">
+          <summary>
             {sheet.label}
             <span class="muted">· {sheet.documentName}, page {sheet.pageIndex + 1}</span>
-          </h4>
+            · {coverageProgress.rows.filter(
+              (item) => item.sheetId === sheet.id && item.status !== "unreviewed",
+            ).length} / {coverageProgress.rows.filter((item) => item.sheetId === sheet.id).length} recorded
+          </summary>
           {#each coverageProgress.ledger.filter((item) => item.sheetId === sheet.id) as item (`${item.pass}:${item.discipline}`)}<p
             >
               <span>{passLabels[item.pass]} · {item.discipline.replaceAll("_", " ")}</span><strong
                 >{item.status.replaceAll("_", " ")}</strong
               >{#if item.note}<small>{item.note}</small>{/if}
             </p>{/each}
-        </section>
+        </details>
       {/each}
       <p class="muted">
         {review.citations.length} citations · {review.calculations.length} calculations · {review
@@ -459,6 +526,17 @@
   .coverage > summary {
     cursor: pointer;
     color: var(--nd-ink-muted);
+  }
+  .sheet-coverage {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .sheet-coverage summary {
+    cursor: pointer;
+    line-height: 1.6;
+  }
+  .source-record {
+    overflow-wrap: anywhere;
   }
   .coverage-list section {
     margin-top: 14px;

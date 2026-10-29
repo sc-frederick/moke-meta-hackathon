@@ -2215,6 +2215,16 @@ export const exportReviewPackage = Effect.fn("exportReviewPackage")(function* (
   );
 });
 
+/** Validate a selected package without quiescing or replacing the live workspace. */
+export const validateReviewPackage = Effect.fn("validateReviewPackage")(function* (
+  config: PackagesConfig,
+  source: string,
+) {
+  const limits = yield* parseLimits(config.limits);
+  yield* assertEngine;
+  yield* validatePackage(source, limits, config.migrationDirectory);
+});
+
 /**
  * Validate a package, keep a pre-restore package, then replace database, artifacts, and journals.
  * Failure before the replacement journal leaves the current files in place.

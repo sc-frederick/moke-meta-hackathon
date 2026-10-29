@@ -7,9 +7,29 @@ const LegacyCloudWorkerProgress = Schema.Struct({
   identity: Schema.Struct({ ...CloudEngineIdentity.fields, protocol: Schema.Literal(2) }),
 });
 
+const PriorPacketCloudWorkerProgress = Schema.Struct({
+  ...CloudWorkerProgress.fields,
+  identity: Schema.Struct({
+    ...CloudEngineIdentity.fields,
+    packetPrompt: Schema.Literal("moke-packet-review-v1"),
+  }),
+});
+
+const PriorPacketLegacyCloudWorkerProgress = Schema.Struct({
+  ...PriorPacketCloudWorkerProgress.fields,
+  identity: Schema.Struct({
+    ...PriorPacketCloudWorkerProgress.fields.identity.fields,
+    protocol: Schema.Literal(2),
+  }),
+});
+
+const CurrentProtocolRecovery = Schema.Union([CloudWorkerProgress, PriorPacketCloudWorkerProgress]);
+
 const RecoverableCloudWorkerProgress = Schema.Union([
   CloudWorkerProgress,
   LegacyCloudWorkerProgress,
+  PriorPacketCloudWorkerProgress,
+  PriorPacketLegacyCloudWorkerProgress,
 ]);
 
 /** Recovery retains the worker's actual protocol without relaxing new worker admission. */
@@ -22,11 +42,13 @@ export const parseCloudWorkerProgress = Effect.fn("parseCloudWorkerProgress")(fu
 ) {
   // Old receipts also include v3 jobs saved before this marker was introduced. Only
   // observation of already dispatched work can accept v2; this never admits a request.
-  const schema =
-    record.workerProtocol === undefined &&
-    (record.phase === "dispatching" || record.phase === "running")
+  const dispatched = record.phase === "dispatching" || record.phase === "running";
+
+  const schema = !dispatched
+    ? CloudWorkerProgress
+    : record.workerProtocol === undefined
       ? RecoverableCloudWorkerProgress
-      : CloudWorkerProgress;
+      : CurrentProtocolRecovery;
 
   const progress = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
     Effect.mapError(

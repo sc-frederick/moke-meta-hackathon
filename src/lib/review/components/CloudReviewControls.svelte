@@ -12,12 +12,18 @@
 
   let {
     client,
+    projectId = null,
+    conversationId = null,
+    projectName = "",
     status = $bindable(null),
     setup = $bindable(null),
     loaded = $bindable(false),
     onReturned,
   }: {
     client: ReviewClient;
+    projectId?: string | null;
+    conversationId?: string | null;
+    projectName?: string;
     status?: CloudReviewStatus | null;
     setup?: CloudReviewSetup | null;
     loaded?: boolean;
@@ -27,9 +33,33 @@
   let busy = $state(false);
   let error = $state("");
   let acknowledge = $state(false);
+  let dismissedId = $state<string | null>(null);
+  let now = $state(Date.now());
   const deliver = createCloudResultDelivery((action) => onReturned(action));
   let viewTimer: ReturnType<typeof setTimeout> | undefined;
   let destroyed = false;
+
+  const visible = $derived(
+    status !== null &&
+      (cloudReviewLocksWorkspace(status.phase) ||
+        (status.projectId === projectId &&
+          (status.conversationId === undefined || status.conversationId === conversationId))) &&
+      status.id !== dismissedId,
+  );
+
+  const targetName = $derived(
+    (status?.packet?.projectName ?? (status?.projectId === projectId ? projectName : "")) ||
+      `Project ${status?.projectId.slice(0, 8) ?? ""}`,
+  );
+
+  const calls = $derived(status?.packet?.admittedCalls ?? status?.execution?.admittedCalls ?? 0);
+
+  const duration = (ms: number) => {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  };
+
   const locked = $derived(status !== null && cloudReviewLocksWorkspace(status.phase));
 
   const partial = $derived(
@@ -56,8 +86,11 @@
     if (update.status !== null && next !== update.status) return;
 
     if (next !== null && (next.phase === "imported" || next.phase === "cancelled")) loaded = false;
+
+    if (next?.id !== status?.id) acknowledge = false;
     status = next;
-    error = update.error?.message ?? "";
+    error =
+      next !== null && cloudReviewLocksWorkspace(next.phase) ? (update.error?.message ?? "") : "";
 
     const delivered = await deliver(next);
 
@@ -99,6 +132,11 @@
 
   onMount(() => {
     const controller = new AbortController();
+
+    const clock = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+
     let timer: ReturnType<typeof setTimeout> | undefined;
     void client.cloudSetup().then((result) => {
       if (!controller.signal.aborted && result.ok) setup = result.value;
@@ -111,7 +149,12 @@
         }, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
-          error = result.ok ? "Cloud updates disconnected. Reconnecting…" : result.error.message;
+          error =
+            status !== null && cloudReviewLocksWorkspace(status.phase)
+              ? result.ok
+                ? "Cloud updates disconnected. Reconnecting…"
+                : result.error.message
+              : "";
           timer = setTimeout(connect, 2000);
         });
     }
@@ -120,6 +163,7 @@
 
     return () => {
       controller.abort();
+      clearInterval(clock);
       destroyed = true;
       clearTimeout(timer);
       clearTimeout(viewTimer);
@@ -127,9 +171,9 @@
   });
 </script>
 
-{#if status || error || !loaded}
+{#if visible || error || !loaded}
   <section class="cloud-review" aria-label="Cloud review" data-testid="cloud-review-controls">
-    {#if status}
+    {#if status && visible}
       <div class="summary" role="status">
         <strong
           >Cloud review · {!loaded && status.phase === "imported"
@@ -141,15 +185,45 @@
                 : phaseLabels[status.phase]}</strong
         >
         {#if status.execution || status.packet}<span
-            >{status.packet?.admittedCalls ?? status.execution?.admittedCalls} review calls</span
+            >{calls} review {calls === 1 ? "call" : "calls"}</span
+          >{/if}
+        {#if !locked}<button
+            class="dismiss"
+            onclick={() => {
+              dismissedId = status?.id ?? null;
+            }}>Dismiss</button
           >{/if}
       </div>
+      <p class="context">
+        {targetName}{#if status.model}
+          · {status.model === "meta-models/muse-spark-open-1026"
+            ? "Muse Spark Open"
+            : status.model}{/if}{#if status.scopeLabel}
+          · {status.scopeLabel.replaceAll("_", " ")}{/if}
+      </p>
       <p>{status.message}</p>
+      {#if status.transferBytes !== undefined && locked}
+        <p>
+          Workspace transfer: {(status.transferBytes / 1024 / 1024).toFixed(1)} MiB of 1,024 MiB maximum.
+        </p>
+      {/if}
+      {#if status.packet?.totalSheets !== undefined}
+        <p>
+          {status.packet.openedSheets ?? 0}/{status.packet.totalSheets} sheets opened · {status
+            .packet.findings ?? 0} findings · {status.packet.recordedPasses ?? 0}/{status.packet
+            .totalPasses ?? 0} passes recorded
+        </p>
+      {/if}
+      {#if status.packet?.changedAt !== undefined && locked}
+        <p>Last review activity {duration(now - status.packet.changedAt)} ago.</p>
+      {/if}
       {#if locked}
         <p>
-          Local edits are paused while this workspace is in the cloud. Review time limit: {new Date(
-            status.expiresAt,
-          ).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
+          Elapsed {duration(now - status.createdAt)} · Remaining {duration(status.expiresAt - now)}.
+          Local edits are paused. Ends by {new Date(status.expiresAt).toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })}.
         </p>
         <label
           ><input type="checkbox" bind:checked={acknowledge} /> I understand this review may have used
@@ -181,6 +255,12 @@
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+  .dismiss {
+    margin-left: auto;
+  }
+  .context {
+    color: var(--nd-ink);
   }
   strong {
     color: var(--nd-ink);

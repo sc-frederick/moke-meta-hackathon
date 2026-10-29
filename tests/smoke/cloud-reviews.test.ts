@@ -3,6 +3,7 @@ import { Effect, Layer, ManagedRuntime, Schema, Stream } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { InferenceConfiguration, ModalConfiguration } from "#lib/backend-rpc.ts";
 import {
   CloudReviewError,
@@ -19,7 +20,11 @@ import {
   WarmSandboxMessage,
   type CloudReviewRecord,
 } from "../../backend/cloud/contracts.ts";
-import { parseCloudManifest } from "../../backend/cloud/transfer.ts";
+import {
+  clearInterruptedCloudDownloads,
+  downloadedCloudFileMatches,
+  parseCloudManifest,
+} from "../../backend/cloud/transfer.ts";
 import { PackageManifest } from "#lib/review/packages.ts";
 import { NotFoundError } from "modal";
 import { confirmModalSandboxStopped, pollWarmSandbox } from "../../backend/cloud/modal.ts";
@@ -41,6 +46,39 @@ const provider = Schema.decodeUnknownSync(InferenceConfiguration)({
   apiKey: "test-model-secret",
   baseUrl: "https://api.meta.ai/v1",
   model: "muse-spark-1.3",
+});
+
+test("cloud download retries reuse only complete files matching the result identity", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-cloud-resume-"));
+  const path = join(directory, "artifact.png");
+  const content = Buffer.from("verified result bytes");
+
+  const expected = {
+    path: "artifacts/artifact.png",
+    bytes: content.length,
+    sha256: createHash("sha256").update(content).digest("hex"),
+  };
+
+  try {
+    expect(await Effect.runPromise(downloadedCloudFileMatches(path, expected))).toBe(false);
+    await writeFile(path, content.subarray(0, 4));
+    expect(await Effect.runPromise(downloadedCloudFileMatches(path, expected))).toBe(false);
+    await writeFile(path, Buffer.alloc(content.length));
+    expect(await Effect.runPromise(downloadedCloudFileMatches(path, expected))).toBe(false);
+    await writeFile(path, content);
+    expect(await Effect.runPromise(downloadedCloudFileMatches(path, expected))).toBe(true);
+    const scratch = join(directory, ".modal-sandbox-fs-tmp-0123456789abcdef");
+    const other = join(directory, "unexpected-file");
+
+    await writeFile(scratch, "interrupted copy");
+    await writeFile(other, "must remain for package validation to reject");
+    await Effect.runPromise(clearInterruptedCloudDownloads(directory));
+    expect(await Bun.file(scratch).exists()).toBe(false);
+    expect(await readFile(other, "utf8")).toContain("must remain");
+    expect(await Effect.runPromise(downloadedCloudFileMatches(path, expected))).toBe(true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 const request = () =>
@@ -106,6 +144,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "moke-cloud-test-"));
   const operations: string[] = [];
   let dispatchLost = false;
+  let preflightFailure = false;
   let stopLost = false;
   let stopMissing: Error | null = null;
   let restoreLost = false;
@@ -118,6 +157,16 @@ async function fixture() {
   let last: CloudReviewRecord | null = null;
 
   const port: CloudSandboxPort = {
+    preflight: () =>
+      preflightFailure
+        ? Effect.fail(
+            new CloudReviewError({
+              reason: "configuration",
+              message:
+                "The cloud provider secret is missing. Your workspace has not been uploaded.",
+            }),
+          )
+        : Effect.void,
     changes: () => Stream.never,
     allocate: (record) =>
       Effect.sync(() => {
@@ -208,6 +257,9 @@ async function fixture() {
     },
     restorePending: (value: boolean) => {
       restorePending = value;
+    },
+    failPreflight: (value: boolean) => {
+      preflightFailure = value;
     },
     loseDispatch: () => {
       dispatchLost = true;
@@ -464,7 +516,7 @@ test("cloud transfer rejects traversal, duplicate paths, and oversized packages"
         parseCloudManifest(
           JSON.stringify({
             ...manifest,
-            database: { ...manifest.database, bytes: 256 * 1024 * 1024 },
+            database: { ...manifest.database, bytes: 1024 * 1024 * 1024 },
           }),
         ).pipe(Effect.flip),
       )
@@ -702,6 +754,136 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
       })),
     ])
       expect((await rejected(legacy, JSON.stringify(invalid))).reason).toBe("incompatible");
+  } finally {
+    await runtime.dispose();
+    await session.dispose();
+  }
+});
+
+test("cloud setup validates remote prerequisites and failed preflight never creates an owner", async () => {
+  const session = await fixture();
+  const runtime = session.open();
+
+  try {
+    session.failPreflight(true);
+    const setup = await runtime.runPromise(Effect.flatMap(CloudReviews, (cloud) => cloud.setup));
+
+    expect(setup.configured).toBe(false);
+    expect(setup.message).toContain("provider secret");
+
+    const failure = await runtime.runPromise(
+      Effect.flatMap(CloudReviews, (cloud) => cloud.start(request())).pipe(Effect.flip),
+    );
+
+    expect(failure.reason).toBe("configuration");
+    expect(
+      await runtime.runPromise(Effect.flatMap(CloudReviews, (cloud) => cloud.status)),
+    ).toBeNull();
+    expect(session.operations).toEqual([]);
+    await runtime.runPromise(Effect.flatMap(CloudReviews, (cloud) => cloud.assertLocal));
+    session.failPreflight(false);
+    expect(
+      (await runtime.runPromise(Effect.flatMap(CloudReviews, (cloud) => cloud.setup))).configured,
+    ).toBe(true);
+  } finally {
+    await runtime.dispose();
+    await rm(session.directory, { recursive: true, force: true });
+  }
+});
+
+test("cloud admits the observed accumulated workspace while preserving a bounded transfer cap", async () => {
+  const manifest = {
+    format: "moke-review-package",
+    formatVersion: 1,
+    scope: "application",
+    scopeLabel: "whole-application",
+    createdAt: new Date().toISOString(),
+    hash: "sha256",
+    engine: cloudEngineIdentity.engine,
+    migrations: [],
+    database: { path: "app.sqlite", sha256: "a".repeat(64), bytes: 271986285 },
+    artifacts: [],
+    journals: [],
+    runs: [],
+  };
+
+  expect(
+    (await Effect.runPromise(parseCloudManifest(JSON.stringify(manifest)))).files[0]?.bytes,
+  ).toBe(271986285);
+
+  const failure = await Effect.runPromise(
+    parseCloudManifest(
+      JSON.stringify({
+        ...manifest,
+        database: { ...manifest.database, bytes: 1024 * 1024 * 1024 },
+      }),
+    ).pipe(Effect.flip),
+  );
+
+  expect(failure.reason).toBe("limit");
+  expect(failure.message).toContain("1,024 MiB");
+  expect(failure.message).toContain("transfer was refused");
+});
+
+test("already-dispatched packet prompt v1 jobs remain recoverable without admitting a v1 worker", async () => {
+  const session = await fixture();
+  const runtime = session.open();
+
+  try {
+    const cloud = await runtime.runPromise(CloudReviews);
+    await runtime.runPromise(cloud.start(request()));
+
+    const recorded = (
+      await Effect.runPromise(readCloudState(join(session.directory, "state.json")))
+    )[0];
+
+    if (recorded === undefined) throw new Error("Missing admitted receipt");
+
+    const prior = {
+      id: recorded.id,
+      identity: { ...cloudEngineIdentity, packetPrompt: "moke-packet-review-v1" },
+      phase: "ready",
+      execution: null,
+      message: "Saved result from prior build",
+    };
+
+    expect(Schema.is(CloudWorkerProgress)(prior)).toBe(false);
+    expect(
+      (await Effect.runPromise(parseCloudWorkerProgress(recorded, JSON.stringify(prior)))).identity
+        .packetPrompt,
+    ).toBe("moke-packet-review-v1");
+    expect(
+      (
+        await Effect.runPromise(
+          parseCloudWorkerProgress({ ...recorded, phase: "preparing" }, JSON.stringify(prior)).pipe(
+            Effect.flip,
+          ),
+        )
+      ).reason,
+    ).toBe("incompatible");
+    expect(
+      (
+        await Effect.runPromise(
+          parseCloudWorkerProgress(
+            recorded,
+            JSON.stringify({ ...prior, identity: { ...prior.identity, protocol: 2 } }),
+          ).pipe(Effect.flip),
+        )
+      ).reason,
+    ).toBe("incompatible");
+    const { workerProtocol, ...unmarked } = recorded;
+
+    expect(workerProtocol).toBe(3);
+    expect(
+      (
+        await Effect.runPromise(
+          parseCloudWorkerProgress(
+            unmarked,
+            JSON.stringify({ ...prior, identity: { ...prior.identity, protocol: 2 } }),
+          ),
+        )
+      ).identity.protocol,
+    ).toBe(2);
   } finally {
     await runtime.dispose();
     await session.dispose();

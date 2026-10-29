@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { electron } from "./isolated-electron.ts";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -164,10 +164,35 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(panel).toContainText("1 of 2 sheets opened");
     await expect(panel.locator(".progress")).toContainText("1 of 88 review passes recorded");
     await expect(panel).toContainText("Offline desktop fixture");
+    const reportPath = join(directory, "exported-review.html");
+    await app.evaluate(({ dialog }, filePath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+    }, reportPath);
+    await page.getByRole("button", { name: "Export review report", exact: true }).click();
+    await expect
+      .poll(async () => readFile(reportPath, "utf8").catch(() => ""))
+      .toContain(seeded.findingTitle);
+    await panel.getByText("Governing sources and citations", { exact: true }).click();
+    await expect(
+      panel.getByRole("button", { name: "Open source in browser", exact: true }),
+    ).toBeVisible();
+    await panel.getByText("Saved retrieved text", { exact: true }).click();
+    await expect(
+      panel.getByText("Stored source text remains inspectable offline.", { exact: true }),
+    ).toBeVisible();
+    await panel.getByText("Governing sources and citations", { exact: true }).click();
+    await page.getByText("Previous reviews in this conversation", { exact: true }).click();
+    await page.getByRole("button", { name: "Open saved review", exact: true }).first().click();
+    await expect(page.getByTestId("historical-review-panel")).toContainText(seeded.previousSummary);
+    await expect(panel).toContainText(seeded.currentSummary);
+    await page.getByRole("button", { name: "Back to latest review", exact: true }).click();
+    await expect(panel).toContainText(seeded.currentSummary);
+
     await expect(page.locator(".application-message")).toContainText(seeded.previousSummary);
     await expect(page.locator(".application-message")).not.toContainText(seeded.currentSummary);
     await expect(page.getByRole("button", { name: /^Check:/ })).toHaveCount(0);
     await panel.getByText("Sheet coverage and review records", { exact: true }).click();
+    await panel.locator(".sheet-coverage > summary").first().click();
     await expect(panel).toContainText("unreviewed");
     const finding = page.getByTestId(`packet-finding-${seeded.findingId}`);
     await finding.click();
@@ -273,6 +298,8 @@ test("document QA needs no count check and persisted findings support evidence, 
 
     app = await electron.launch(options);
     page = await app.firstWindow();
+    await installRpcBoundary(page);
+    await page.reload();
     monitor();
     await expect(page.getByTestId("packet-review-panel")).toContainText(seeded.findingTitle);
     await page.getByTestId(`packet-finding-${seeded.findingId}`).click();
@@ -298,13 +325,20 @@ test("document QA needs no count check and persisted findings support evidence, 
     await form.locator('input[type="checkbox"]').check();
     await page.getByTestId("create-finding-submit").click();
     await expect(page.getByTestId("drawn-count-input")).toBeVisible();
+    await page.evaluate(() => {
+      window.auditRpc.holdSnapshot = true;
+    });
     await page.getByRole("button", { name: "Open findings", exact: true }).click();
     await page
       .locator(".findings-bubble")
       .getByRole("button", { name: seeded.findingTitle, exact: false })
       .click();
     await expect(page.getByTestId("selected-packet-finding")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.auditRpc.held)).toBe(true);
     await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page.evaluate(() => window.auditRpc.release());
+    await expect(page.locator(".viewer img")).toBeVisible();
+    await expect(page.locator(".findings-bubble")).toBeVisible();
     await page
       .locator(".findings-bubble")
       .getByRole("button", { name: "Count comparison selection", exact: false })
@@ -324,6 +358,53 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(page.locator(".source-scroll .banner")).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("audit-missing-source-finding.png") });
 
+    // History is independent of the latest run's controls and composer admission.
+    await app.close();
+    const controlDatabase = new DatabaseSync(join(directory, "app.sqlite"));
+
+    try {
+      const row = controlDatabase
+        .prepare("SELECT payload FROM packet_reviews ORDER BY rowid DESC LIMIT 1")
+        .get();
+
+      const savedReview = Schema.decodeUnknownSync(Schema.fromJsonString(PacketReview))(
+        row?.payload,
+      );
+
+      const pausedReview = new PacketReview(
+        Struct.assign(savedReview, { state: "paused" as const, maxCalls: null }),
+      );
+
+      controlDatabase
+        .prepare("UPDATE packet_reviews SET payload=? WHERE id=?")
+        .run(JSON.stringify(pausedReview), pausedReview.id);
+    } finally {
+      controlDatabase.close();
+    }
+
+    app = await electron.launch(options);
+    page = await app.firstWindow();
+    await installRpcBoundary(page);
+    await page.reload();
+    monitor();
+    const livePanel = page.getByTestId("packet-review-panel");
+    await expect(livePanel).toContainText("Review paused");
+    await page.getByText("Previous reviews in this conversation", { exact: true }).click();
+    await page.getByRole("button", { name: "Open saved review", exact: true }).first().click();
+    await expect(page.getByTestId("historical-review-panel")).toContainText(seeded.previousSummary);
+    await expect(
+      livePanel.getByRole("button", { name: "Resume review", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Message", { exact: true })
+      .fill("This must remain blocked while the latest run is paused.");
+    await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+    await expect(
+      page
+        .getByTestId("historical-review-panel")
+        .getByRole("button", { name: "Resume review", exact: true }),
+    ).toHaveCount(0);
+
     // Reopen with a persisted remote owner and no configured cloud transport. No live calls occur.
     await app.close();
     await Effect.runPromise(
@@ -333,6 +414,8 @@ test("document QA needs no count check and persisted findings support evidence, 
     );
     app = await electron.launch(options);
     page = await app.firstWindow();
+    await installRpcBoundary(page);
+    await page.reload();
     monitor();
     await page.setViewportSize({ width: 1440, height: 1000 });
     await expect(page.getByTestId("cloud-review-controls")).toContainText("Local edits are paused");
@@ -467,7 +550,18 @@ function seedCompletedReview(directory: string) {
           note: "Offline UI fixture; no model inspection is asserted.",
         })),
       ),
-      sources: [],
+      sources: [
+        {
+          id: crypto.randomUUID(),
+          url: "https://example.com/governing-source",
+          title: "Saved source fixture",
+          retrievedAt: new Date(now).toISOString(),
+          status: "available",
+          official: false,
+          sha256: null,
+          text: "Stored source text remains inspectable offline.",
+        },
+      ],
       citations: [],
       calculations: [],
       findings: [

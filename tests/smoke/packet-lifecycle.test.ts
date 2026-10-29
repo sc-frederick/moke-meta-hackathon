@@ -317,7 +317,7 @@ test.each(["uncertain", "completed"] as const)(
             maxCalls: 3,
           }),
         );
-        const completed = await until(session, started.id, "completed");
+        const completed = await until(session, started.id, "failed");
         expect(completed.summary).toContain("explicitly resumed");
         expect(completed.admittedCalls).toBe(2);
         expect(sends).toBe(2);

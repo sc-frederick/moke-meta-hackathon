@@ -34,7 +34,9 @@ export interface CloudReviewConfiguration {
   readonly inspect: (
     request: typeof CloudReviewRequest.Type,
   ) => Effect.Effect<WorkspaceVersions, CloudReviewError>;
-  readonly prepare: (destination: string) => Effect.Effect<void, CloudReviewError>;
+  readonly prepare: (
+    destination: string,
+  ) => Effect.Effect<void | { readonly bytes: number }, CloudReviewError>;
   readonly restore: (source: string) => Effect.Effect<void, CloudReviewError>;
   readonly restorePending: () => boolean;
 }
@@ -60,8 +62,28 @@ const publicStatus = (record: CloudReviewRecord) => {
     syncFailure: record.syncFailure,
   };
 
+  const contextual =
+    "kind" in record.request
+      ? {
+          ...status,
+          conversationId: record.request.conversationId,
+          model: record.request.model,
+          scopeLabel:
+            record.request.selection?.mode === "selected_sheets"
+              ? "Selected sheets"
+              : record.request.discipline === "auto"
+                ? "Whole set"
+                : record.request.discipline,
+        }
+      : status;
+
+  const transfer =
+    record.transferBytes === undefined
+      ? contextual
+      : { ...contextual, transferBytes: record.transferBytes };
+
   return new CloudReviewStatus(
-    record.packet === undefined ? status : { ...status, packet: record.packet },
+    record.packet === undefined ? transfer : { ...transfer, packet: record.packet },
   );
 };
 
@@ -213,14 +235,28 @@ export class CloudReviews extends Context.Service<
         });
 
         return CloudReviews.of({
-          setup: Effect.succeed(
-            new CloudReviewSetup({
-              configured: config.modal !== undefined && config.provider !== undefined,
+          setup: Effect.gen(function* () {
+            const configured = config.modal !== undefined && config.provider !== undefined;
+
+            const checked = configured
+              ? yield* sandbox
+                  .preflight(
+                    config.providers ?? (config.provider === undefined ? [] : [config.provider]),
+                  )
+                  .pipe(
+                    Effect.as(null),
+                    Effect.catch((error) => Effect.succeed(error.message)),
+                  )
+              : "Set up the cloud and model connections before pushing a review.";
+
+            return new CloudReviewSetup({
+              configured: configured && checked === null,
+              message: checked,
               timeoutMinutes: config.modal?.timeoutMinutes ?? 15,
               warmPool: config.modal?.poolQueue !== undefined && config.modal.poolQueue !== null,
               transferScope: "whole-application",
-            }),
-          ),
+            });
+          }),
           status: Effect.sync(() => {
             const job = jobs.at(-1);
 
@@ -284,11 +320,12 @@ export class CloudReviews extends Context.Service<
                   reason: "limit",
                   message: "The cloud review receipt limit has been reached.",
                 });
+              yield* sandbox.preflight(config.providers ?? [provider]);
               const versions = yield* config.inspect(request);
               const id = randomUUID();
               const input = join(config.directory, id, "input");
               yield* createCloudDirectory(join(config.directory, id));
-              yield* config.prepare(input);
+              const prepared = yield* config.prepare(input);
               const now = yield* Clock.currentTimeMillis;
 
               let record: CloudReviewRecord = {
@@ -311,6 +348,8 @@ export class CloudReviews extends Context.Service<
                 execution: null,
                 message: "Preparing your cloud review. Local editing is paused.",
               };
+
+              if (prepared !== undefined) record = { ...record, transferBytes: prepared.bytes };
 
               yield* save(record);
               const sandboxId = yield* sandbox.allocate(record);
@@ -426,6 +465,13 @@ export class CloudReviews extends Context.Service<
 export const unavailableCloudSandbox = Layer.succeed(
   CloudSandbox,
   CloudSandbox.of({
+    preflight: () =>
+      Effect.fail(
+        new CloudReviewError({
+          reason: "configuration",
+          message: "The cloud connection needs setup.",
+        }),
+      ),
     changes: () =>
       Stream.fail(
         new CloudReviewError({

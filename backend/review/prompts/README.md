@@ -6,7 +6,7 @@ the upstream paths and SHA-256 hashes. Read the original skill repository to
 update them; this application does not edit that source repository.
 
 `review-prompt.ts` imports the files with Bun's text loader, embedding them in the
-compiled backend. Packet review version `moke-packet-review-v1` supplies the full
+compiled backend. Packet review version `moke-packet-review-v2` supplies the full
 master AGENTS.md and REVIEW_METHOD.md, including Report and release, as Pi
 Durable's conversation `agent.instructions`. The reviewer request and document
 inventory are separate input data. Each run records the prompt version and
@@ -54,3 +54,9 @@ specialized protocol. Packet review uses the full system instructions and its
 own project/conversation root. Both paths preserve reviewer acceptance of
 engineering count inputs; general model findings and prose do not become
 accepted count facts.
+
+Audit 3 adds a page-by-page contradiction search before missing-content claims.
+The tool boundary requires current-run inspection of every source page, targeted
+inspection at the claimed location, an explicit source search and permit-stage
+basis. This is an evidence gate, not proof that model interpretation is correct;
+live acceptance still checks the visible source against the released finding.

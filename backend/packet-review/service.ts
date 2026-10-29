@@ -56,7 +56,11 @@ import {
 } from "../inference/provider.ts";
 import { openReviewJournal, journalFormat } from "../inference/journal.ts";
 import { ResponseReceipt } from "../inference/response.ts";
-import { packetReviewPrompt, reviewInstructionRevision } from "../review/prompts/review-prompt.ts";
+import {
+  packetReviewPrompt,
+  packetPromptVersion,
+  reviewInstructionRevision,
+} from "../review/prompts/review-prompt.ts";
 import { calculate, CalculationInput } from "./calculations.ts";
 import { readSource, searchSources } from "./sources.ts";
 import { renderPacketReport } from "./report.ts";
@@ -65,7 +69,7 @@ import { preparePacketSamRequest, decodePacketSamResponse } from "./sam.ts";
 import { citationHasSourceSupport } from "./citations.ts";
 import { initializePacketCoverage, samePacketSheetSource } from "#lib/review/packet-coverage.ts";
 
-const promptVersion = "moke-packet-review-v1";
+const promptVersion = packetPromptVersion;
 
 const error = (reason: ExecutionError["reason"], message: string) =>
   new ExecutionError({ reason, message });
@@ -223,13 +227,29 @@ export class PacketReviews extends Context.Service<
         const save = Effect.fn("PacketReviews.save")(function* (row: Row, value: PacketReview) {
           const sql = yield* SqlClient.SqlClient;
 
+          const timestamp = now(yield* DateTime.now);
+          const wasRunning = row.payload.state === "running";
+
+          const activeDurationMs =
+            row.payload.activeDurationMs ??
+            (wasRunning ? 0 : Math.max(0, row.payload.changedAt - row.payload.startedAt));
+
+          const activeSince =
+            row.payload.activeSince ?? (wasRunning ? row.payload.startedAt : null);
+
           const next = new PacketReview({
             ...value,
+            activeDurationMs:
+              activeDurationMs +
+              (wasRunning && value.state !== "running" && activeSince !== null
+                ? Math.max(0, timestamp - activeSince)
+                : 0),
+            activeSince: value.state === "running" ? (wasRunning ? activeSince : timestamp) : null,
             version: row.payload.version + 1,
             changedAt:
               value.state === row.payload.state && value.state !== "running"
                 ? row.payload.changedAt
-                : now(yield* DateTime.now),
+                : timestamp,
           });
 
           yield* sql`UPDATE packet_reviews SET payload=${JSON.stringify(next)} WHERE id=${row.id}`;
@@ -452,6 +472,7 @@ export class PacketReviews extends Context.Service<
 
         const registryFor = (row: Row) => {
           const registry = createRegistry();
+          let renderedSinceRequest = 0;
 
           const tool = <S extends Schema.Top & Schema.ConstraintCodec<unknown, unknown>, O>(
             name: string,
@@ -518,6 +539,13 @@ export class PacketReviews extends Context.Service<
                     }),
                   ),
                 );
+
+                if (row.payload.provider === "baseten" && renderedSinceRequest >= 8)
+                  throw error(
+                    "input",
+                    "The current source batch already contains eight images. Inspect those results before requesting more pages or details; Muse Spark Open accepts eight images per request.",
+                  );
+
                 const sheet = row.payload.sheets.find((item) => item.id === input.sheetId);
 
                 if (!sheet) throw error("input", "That page is outside the frozen packet.");
@@ -548,10 +576,18 @@ export class PacketReviews extends Context.Service<
                       inspectedThisReviewSheetIds: [
                         ...new Set([...(review.inspectedThisReviewSheetIds ?? []), sheet.id]),
                       ],
+                      detailInspectedSheetIds:
+                        input.region &&
+                        (input.region.width < sheet.box.width ||
+                          input.region.height < sheet.box.height)
+                          ? [...new Set([...(review.detailInspectedSheetIds ?? []), sheet.id])]
+                          : (review.detailInspectedSheetIds ?? []),
                       evidenceIds: [...new Set([...review.evidenceIds, artifact.id])],
                     }),
                   { artifactId: artifact.id },
                 );
+
+                renderedSinceRequest++;
 
                 return {
                   output: [
@@ -792,6 +828,44 @@ export class PacketReviews extends Context.Service<
                         "input",
                         "Finding evidence must come from this packet's inspected source regions.",
                       );
+
+                    const claimsAbsence =
+                      /\b(?:missing|absent|omitted|not (?:provided|supplied|included|shown|present)|does not (?:contain|include|show)|no .{0,70}(?:provided|shown|included|calculations?|matri(?:x|ces)|schedules?|tables?))\b/i.test(
+                        `${finding.title} ${finding.observed}`,
+                      );
+
+                    if (claimsAbsence) {
+                      const check = finding.absenceCheck;
+
+                      if (
+                        !check ||
+                        review.sheets.some(
+                          (sheet) =>
+                            !check.searchedSheetIds.includes(sheet.id) ||
+                            !(review.inspectedThisReviewSheetIds ?? []).includes(sheet.id),
+                        )
+                      )
+                        throw error(
+                          "input",
+                          "Before claiming missing content, inspect every frozen source page in this review and provide absenceCheck with searchedSheetIds, searchDescription, contradictingEvidence and permitStageBasis. Read calculations, schedules and matrices at detail scale; otherwise record Needs input without claiming absence.",
+                        );
+
+                      if (
+                        !finding.locations.some((location) =>
+                          (review.detailInspectedSheetIds ?? []).includes(location.sheetId),
+                        )
+                      )
+                        throw error(
+                          "input",
+                          "A missing-content claim needs a targeted source detail inspection at its actual file and page location.",
+                        );
+
+                      if (check.contradictingEvidence.trim())
+                        throw error(
+                          "input",
+                          "Source content contradicts this absence claim. Describe the supplied content and any specific inadequacy instead of recording it as missing.",
+                        );
+                    }
 
                     if (!finding.evidenceIds.length && !finding.evidenceNote.trim())
                       throw error(
@@ -1157,7 +1231,12 @@ export class PacketReviews extends Context.Service<
             );
           registry.install(defineExtension({ name: "moke-packet-review-v1", tools }));
 
-          return registry;
+          return {
+            registry,
+            nextRequest: () => {
+              renderedSinceRequest = 0;
+            },
+          };
         };
 
         const launch = async (row: Row, existing: boolean, resumeRequestId?: string) => {
@@ -1174,6 +1253,7 @@ export class PacketReviews extends Context.Service<
               throw error("unavailable", "The selected model's provider is not connected.");
 
             const capabilities = reviewModelCapabilities(row.payload.model);
+            const toolRegistry = registryFor(row);
 
             const admitted = createAdmittedModels(
               { ...provider, model: row.payload.model },
@@ -1236,24 +1316,30 @@ export class PacketReviews extends Context.Service<
                         return null;
                       }),
                     ),
-                  ).catch(async (cause) => {
-                    if (cause instanceof ExecutionError && cause.reason === "budget")
-                      await run(
-                        mutate(
-                          row.project_id,
-                          row.id,
-                          (review) =>
-                            new PacketReview({
-                              ...review,
-                              state: "paused",
-                              error:
-                                "The optional call budget was reached. Add calls on resume to continue.",
-                            }),
-                          false,
-                        ),
-                      );
-                    throw cause;
-                  }),
+                  )
+                    .then((receipt) => {
+                      toolRegistry.nextRequest();
+
+                      return receipt;
+                    })
+                    .catch(async (cause) => {
+                      if (cause instanceof ExecutionError && cause.reason === "budget")
+                        await run(
+                          mutate(
+                            row.project_id,
+                            row.id,
+                            (review) =>
+                              new PacketReview({
+                                ...review,
+                                state: "paused",
+                                error:
+                                  "The optional call budget was reached. Add calls on resume to continue.",
+                              }),
+                            false,
+                          ),
+                        );
+                      throw cause;
+                    }),
                 send: (phase) =>
                   run(
                     query(
@@ -1295,7 +1381,7 @@ export class PacketReviews extends Context.Service<
                       }),
                     ),
                   ),
-                end: async (uncertain) => {
+                end: async (uncertain, diagnostic) => {
                   if (uncertain)
                     await run(
                       mutate(
@@ -1305,8 +1391,29 @@ export class PacketReviews extends Context.Service<
                           new PacketReview({
                             ...review,
                             state: review.state === "cancelled" ? "cancelled" : "uncertain",
-                            error:
-                              "A provider request has an unresolved outcome. It will not be retried automatically.",
+                            providerFailure: diagnostic ?? null,
+                            error: Match.value(diagnostic?.category).pipe(
+                              Match.when(
+                                "timeout",
+                                () =>
+                                  "The provider request timed out. Findings and coverage were saved. The request may have been charged and will not be sent again.",
+                              ),
+                              Match.when(
+                                "http",
+                                () =>
+                                  `The provider returned HTTP ${diagnostic?.httpStatus ?? "error"}${Match.value(
+                                    diagnostic?.detail,
+                                  ).pipe(
+                                    Match.when("image_limit", () => " (too many images)"),
+                                    Match.when("context_limit", () => " (context limit)"),
+                                    Match.orElse(() => ""),
+                                  )}. Findings and coverage were saved. The request may have been charged and will not be sent again.`,
+                              ),
+                              Match.orElse(
+                                () =>
+                                  "The provider did not return a complete response. Findings and coverage were saved. The request may have been charged and will not be sent again.",
+                              ),
+                            ),
                           }),
                         false,
                       ),
@@ -1329,7 +1436,7 @@ export class PacketReviews extends Context.Service<
                 storage,
                 {
                   models: admitted.models,
-                  registry: registryFor(row),
+                  registry: toolRegistry.registry,
                   telemetry: admitted.telemetry,
                   settings: {
                     retry: { enabled: false, maxRetries: 0 },
@@ -1466,6 +1573,7 @@ export class PacketReviews extends Context.Service<
                       const state = unresolved.length
                         ? "uncertain"
                         : result.status === "done" &&
+                            current.payload.finished &&
                             !steering.unanswered &&
                             (current.payload.steering ?? []).every(
                               (item) =>
@@ -1494,7 +1602,9 @@ export class PacketReviews extends Context.Service<
                           ),
                           error:
                             state === "failed"
-                              ? "The review stopped before finishing. Saved findings and coverage remain available."
+                              ? current.payload.finished
+                                ? "The review stopped before finishing. Saved findings and coverage remain available."
+                                : "The reviewer stopped without recording a completed source review. Saved findings, coverage and the partial summary remain available."
                               : current.payload.error,
                         }),
                       );
@@ -1695,6 +1805,9 @@ export class PacketReviews extends Context.Service<
             version: 0,
             startedAt: timestamp,
             changedAt: timestamp,
+            activeDurationMs: 0,
+            activeSince: timestamp,
+            providerFailure: null,
             maxCalls: request.maxCalls,
             admittedCalls: 0,
             promptVersion,
@@ -2057,10 +2170,22 @@ export class PacketReviews extends Context.Service<
                 return { row, next: saved.result_json.value, replay: true };
               }
 
-              if (row.payload.version !== input.expectedVersion)
+              const compatibleControl =
+                input.expectedVersion <= row.payload.version &&
+                ((input.action === "pause" && ["running", "paused"].includes(row.payload.state)) ||
+                  (input.action === "cancel" &&
+                    ["running", "paused", "uncertain"].includes(row.payload.state)));
+
+              if (row.payload.version !== input.expectedVersion && !compatibleControl)
                 return yield* error(
                   "conflict",
                   "Review progress changed. Refresh before controlling it.",
+                );
+
+              if (input.action !== "resume" && !compatibleControl)
+                return yield* error(
+                  "conflict",
+                  "This review is already terminal. Refresh its saved result.",
                 );
 
               if (
@@ -2119,7 +2244,7 @@ export class PacketReviews extends Context.Service<
                     input.action === "resume" && input.maxCalls !== undefined
                       ? input.maxCalls
                       : row.payload.maxCalls,
-                  error: null,
+                  error: input.action === "cancel" ? row.payload.error : null,
                 }),
               );
 

@@ -4,6 +4,7 @@ import { ArtifactId, CommandId, ConversationId, ProjectId, Region, SheetId } fro
 import {
   routeReviewDiscipline,
   ExecutionError,
+  ProviderFailure,
   ReviewDiscipline,
   ReviewDisciplineSelection,
 } from "./execution.ts";
@@ -119,6 +120,15 @@ export const PacketFinding = Schema.Struct({
   calculationIds: Schema.Array(Id),
   priorCommentId: Schema.NullOr(Id),
   completed: Schema.Boolean,
+  /** Missing-content claims retain the complete source search and contradiction check. */
+  absenceCheck: Schema.optionalKey(
+    Schema.Struct({
+      searchedSheetIds: Schema.Array(SheetId),
+      searchDescription: Required,
+      contradictingEvidence: Text,
+      permitStageBasis: Required,
+    }),
+  ),
 });
 
 /** Prior comments require source-based closure independently of a user's completion checkbox. */
@@ -163,6 +173,10 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   version: Schema.Int,
   startedAt: Schema.Number,
   changedAt: Schema.Number,
+  /** Active work excludes paused, failed and cancelled waiting time. */
+  activeDurationMs: Schema.optionalKey(Schema.Number),
+  activeSince: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  providerFailure: Schema.optionalKey(Schema.NullOr(ProviderFailure)),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   admittedCalls: Schema.Int,
   promptVersion: Schema.String,
@@ -171,6 +185,7 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   inspectedSheetIds: Schema.Array(SheetId),
   baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   inspectedThisReviewSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
+  detailInspectedSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   evidenceIds: Schema.Array(ArtifactId),
   steering: Schema.optionalKey(
     Schema.Array(

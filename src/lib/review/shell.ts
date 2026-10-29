@@ -1,3 +1,4 @@
+import { ReviewSourceUrl } from "./source-url.ts";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { PacketReviewRpc } from "./packet.ts";
@@ -20,6 +21,11 @@ const ChooseReviewPdf = Schema.Struct({
 
 /** Parent implements the file dialog and backend ImportReviewPdf call. */
 export class ReviewShellRpc extends RpcGroup.make(
+  Rpc.make("OpenReviewSource", {
+    payload: { url: ReviewSourceUrl },
+    success: Schema.Void,
+    error: ReviewError,
+  }),
   Rpc.make("ChoosePacketReport", {
     payload: Schema.Struct({
       projectId: ProjectId,

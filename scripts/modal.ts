@@ -9,7 +9,11 @@ import {
   WarmSandboxMessage,
   cloudEngineIdentity,
 } from "../backend/cloud/contracts.ts";
-import { emptyReviewOutboundPolicy, modalReadinessProbe } from "../backend/cloud/modal.ts";
+import {
+  emptyReviewOutboundPolicy,
+  modalReadinessProbe,
+  modalReviewResources,
+} from "../backend/cloud/modal.ts";
 
 const failed = () =>
   new CloudReviewError({
@@ -176,10 +180,7 @@ const main = Effect.scoped(
       client.sandboxes.create(app, image, {
         command: ["sleep", "infinity"],
         timeoutMs: ttlMs,
-        cpu: 1,
-        cpuLimit: 1,
-        memoryMiB: 2048,
-        memoryLimitMiB: 2048,
+        ...modalReviewResources,
         experimentalOptions: { enable_exit_snapshot: true },
         experimentalOutboundPolicy: emptyReviewOutboundPolicy(),
         readinessProbe: modalReadinessProbe(),
@@ -196,6 +197,7 @@ const main = Effect.scoped(
             imageName: config.imageName,
             identity: cloudEngineIdentity,
             expiresAt: createdAt + ttlMs,
+            resourceProfile: "4cpu-8gib",
           }),
           { timeoutMs: 1000, partitionTtlMs: ttlMs },
         );

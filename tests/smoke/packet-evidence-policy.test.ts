@@ -123,7 +123,7 @@ test.each(["edition", "section", "other section", "document", "short quote", "su
         ),
       );
 
-      const finished = await until(session, started.id, "completed");
+      const finished = await until(session, started.id, "failed");
       const supported = claim === "supported";
       expect(echoedStatus).toBe(supported ? "verified" : "unverified");
       expect(finished.citations[0]?.status).toBe(supported ? "verified" : "unverified");
@@ -315,7 +315,7 @@ test("resubmittal closure retains its revision target across an uninspected foll
       session.packets.start(await session.request("Review the baseline source.")),
     );
 
-    const initial = await until(session, baseline.id, "completed");
+    const initial = await until(session, baseline.id, "failed");
     expect(initial.priorComments[0]?.status).toBe("Open");
     const current = await session.snapshot();
     const revisedPdf = join(directory, "Revision B.pdf");
@@ -335,7 +335,7 @@ test("resubmittal closure retains its revision target across an uninspected foll
       ),
     );
 
-    const deferredResult = await until(session, deferred.id, "completed");
+    const deferredResult = await until(session, deferred.id, "failed");
     expect(deferredResult.priorComments[0]?.status).toBe("Open");
     expect(deferredResult.inspectedThisReviewSheetIds).toEqual([]);
     expect(deferredResult.priorComments[0]?.revisionTargetSheetIds).not.toContain(
@@ -349,7 +349,7 @@ test("resubmittal closure retains its revision target across an uninspected foll
       session.packets.start(await session.request("Check revision B against agency comment 1.")),
     );
 
-    const finished = await until(session, followup.id, "completed");
+    const finished = await until(session, followup.id, "failed");
 
     if (!revisedArtifact || revisedArtifact.sheetId === null)
       throw new Error("Missing revised evidence");

@@ -3,6 +3,7 @@
   import type { Sheet } from "#lib/review/contracts.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import { sheetCaption } from "./review-format.ts";
+  import SheetThumbnail from "./SheetThumbnail.svelte";
 
   let {
     sheets,
@@ -13,6 +14,7 @@
     selectedIds = $bindable([]),
     onPreview,
     onCreate,
+    loadThumbnail,
   }: {
     sheets: ReadonlyArray<Sheet>;
     busy: boolean;
@@ -24,6 +26,7 @@
     ) => Promise<void>;
     onConfirm: (sheet: Sheet, label: string, coverage: Sheet["coverage"]) => Promise<void>;
     onPreview: (sheet: Sheet) => void;
+    loadThumbnail?: (sheet: Sheet) => Promise<string | null>;
     onCreate: (input: {
       title: string;
       objectClass: string;
@@ -39,6 +42,20 @@
   let drawnSheetId = $state("");
   let scheduledSheetId = $state("");
   let applicabilityConfirmed = $state(false);
+  let query = $state("");
+
+  const filteredSheets = $derived(
+    sheets.filter((sheet) =>
+      `${sheet.label} ${sheet.discipline ?? "unassigned"} page ${sheet.pageIndex + 1}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+    ),
+  );
+
+  function focusCheckName(element: HTMLInputElement) {
+    element.scrollIntoView({ block: "center" });
+    element.focus({ preventScroll: true });
+  }
 
   const Confirmation = Schema.Struct({
     label: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
@@ -49,7 +66,7 @@
 <section class="sheet-setup" aria-label="Project sheets">
   <div class="section-heading">
     <h2>Project sheets</h2>
-    <span>{sheets.length} sheets</span>
+    <span>{sheets.length} {sheets.length === 1 ? "sheet" : "sheets"}</span>
   </div>
   <p class="muted">
     Assign disciplines to focus a review, or review the whole set. No sheet confirmation is needed
@@ -59,14 +76,25 @@
       Import a drawing PDF to begin. Earlier revisions stay in the project.
     </p>
   {:else}
+    <label class="sheet-search"
+      >Find a sheet<input
+        type="search"
+        placeholder="Sheet number, title, discipline or page"
+        bind:value={query}
+      /></label
+    >
     <div class="bulk-actions">
       <label class="checkbox"
         ><input
           type="checkbox"
           aria-label="Select all sheets"
-          checked={sheets.every((sheet) => selectedIds.includes(sheet.id))}
+          checked={filteredSheets.length > 0 &&
+            filteredSheets.every((sheet) => selectedIds.includes(sheet.id))}
           onchange={(event) => {
-            selectedIds = event.currentTarget.checked ? sheets.map((sheet) => sheet.id) : [];
+            const visibleIds = new Set(filteredSheets.map((sheet) => sheet.id));
+            selectedIds = event.currentTarget.checked
+              ? [...new Set([...selectedIds, ...visibleIds])]
+              : selectedIds.filter((id) => !visibleIds.has(id));
           }}
         />Select all</label
       >
@@ -93,9 +121,9 @@
       </select>
     </div>
     <ul class="sheet-list" data-testid="sheet-list">
-      {#each sheets as sheet (sheet.id)}
+      {#each filteredSheets as sheet (sheet.id)}
         <li>
-          <div class="sheet-row">
+          <div class="sheet-row" class:with-thumbnail={loadThumbnail !== undefined}>
             <input
               type="checkbox"
               aria-label={`Select ${sheet.label}`}
@@ -106,7 +134,20 @@
                   : selectedIds.filter((id) => id !== sheet.id);
               }}
             />
-            <span title={sheetCaption(sheet)}>{sheet.label}</span>
+            {#if loadThumbnail}<button
+                class="thumbnail-button"
+                type="button"
+                disabled={busy}
+                aria-label={`Preview ${sheet.label}`}
+                onclick={() => onPreview(sheet)}><SheetThumbnail {sheet} {loadThumbnail} /></button
+              >{/if}
+            <span class="sheet-identity" title={sheetCaption(sheet)}
+              ><strong>{sheet.label}</strong><small
+                >Original PDF page {sheet.pageIndex + 1}{!sheet.confirmed
+                  ? " · label unverified"
+                  : ""}</small
+              ></span
+            >
             <select
               aria-label={`Discipline for ${sheet.label}`}
               value={sheet.discipline ?? ""}
@@ -171,6 +212,7 @@
         </li>
       {/each}
     </ul>
+    {#if filteredSheets.length === 0}<p role="status">No sheets match “{query}”.</p>{/if}
   {/if}
   {#if createOpen}
     <form
@@ -200,6 +242,7 @@
       </p>
       <label
         >Check name<input
+          {@attach focusCheckName}
           bind:value={title}
           required
           maxlength="160"
@@ -283,16 +326,52 @@
     grid-template-columns: 18px minmax(90px, 1fr) minmax(130px, 180px) auto;
     gap: 10px;
     align-items: center;
-    padding: 8px 0;
+    padding: 4px 0;
   }
   .sheet-row span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .sheet-identity {
+    display: grid;
+    gap: 3px;
+  }
+  .sheet-identity strong {
+    font-weight: 500;
+  }
+  .sheet-identity small {
+    color: var(--nd-ink-muted);
+    font-size: 11px;
+  }
   .sheet-row select,
   .sheet-row button {
     padding: 6px 8px;
+  }
+  .sheet-row.with-thumbnail {
+    grid-template-columns: 18px 32px minmax(90px, 1fr) minmax(110px, 150px) auto;
+  }
+  .sheet-row .thumbnail-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  @media (max-width: 720px) {
+    .sheet-row,
+    .sheet-row.with-thumbnail {
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+    }
+    .sheet-row.with-thumbnail .thumbnail-button {
+      display: none;
+    }
+    .sheet-row select {
+      grid-column: 2;
+      grid-row: 2;
+    }
+    .sheet-row > button:last-child {
+      grid-column: 3;
+      grid-row: 1 / 3;
+    }
   }
   .sheet-list {
     list-style: none;

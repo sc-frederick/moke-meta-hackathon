@@ -18,6 +18,7 @@ import {
   ProjectId,
   Revision,
   RevisionId,
+  RevisionCorrespondence,
   ReviewCommand,
   ReviewConflict,
   ReviewError,
@@ -266,6 +267,17 @@ export class ReviewStore extends Context.Service<
         const conversations = yield* records(Conversation, project.id, "conversation");
         const messages = yield* records(ReviewMessage, project.id, "message");
 
+        const correspondenceRows = yield* Schema.decodeUnknownEffect(
+          Schema.Array(Schema.Struct({ ...RevisionCorrespondence.fields, confirmed: Schema.Int })),
+        )(
+          yield* sql`SELECT json_extract(r.payload,'$.revisionId') AS revisionId,l.old_sheet_id AS oldSheetId,l.new_sheet_id AS newSheetId,1 AS confirmed,l.content AS content FROM review_sheet_links l JOIN review_records r ON r.project_id=l.project_id AND r.id=l.new_sheet_id WHERE l.project_id=${project.id}
+          UNION ALL SELECT revision_id AS revisionId,old_sheet_id AS oldSheetId,NULL AS newSheetId,state='removed' AS confirmed,state AS content FROM review_sheet_dispositions WHERE project_id=${project.id} AND id IN (SELECT MAX(id) FROM review_sheet_dispositions WHERE project_id=${project.id} GROUP BY revision_id,old_sheet_id)`,
+        );
+
+        const sheetCorrespondence = correspondenceRows.map(
+          (row) => new RevisionCorrespondence({ ...row, confirmed: row.confirmed === 1 }),
+        );
+
         const events =
           yield* sql`SELECT sequence,project_id AS projectId,command_id AS commandId,kind,message,created_at AS createdAt FROM review_events WHERE project_id=${project.id} AND sequence>${afterSequence} ORDER BY sequence LIMIT 2000`.pipe(
             Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(ReviewEvent))),
@@ -283,6 +295,7 @@ export class ReviewStore extends Context.Service<
           conversations,
           messages,
           events,
+          sheetCorrespondence,
         });
       });
 
@@ -638,12 +651,34 @@ export class ReviewStore extends Context.Service<
 
                 const confirmedDestinations = new Set(
                   command.correspondence
-                    .filter((pair) => pair.confirmed)
+                    .filter((pair) => pair.confirmed && pair.newSheetId !== null)
                     .map((pair) => pair.newSheetId),
                 );
 
                 for (const pair of command.correspondence) {
                   const old = findSheet(pair.oldSheetId);
+
+                  if (pair.newSheetId === null) {
+                    if (
+                      old === undefined ||
+                      old.revisionId === command.revisionId ||
+                      oldIds.has(old.id) ||
+                      existingLinks.some((link) => link.old_sheet_id === old.id) ||
+                      (pair.content !== "removed" && pair.content !== "unresolved") ||
+                      (pair.content === "removed" && !pair.confirmed)
+                    )
+                      return yield* failure(
+                        "Removed or unresolved sheets require a prior sheet, no replacement, and confirmation when removed.",
+                      );
+                    oldIds.add(old.id);
+                    yield* sql`INSERT INTO review_sheet_dispositions(project_id,revision_id,old_sheet_id,state,command_id) VALUES (${project.id},${command.revisionId},${old.id},${pair.content},${command.commandId})`;
+                    continue;
+                  }
+
+                  if (pair.content !== "changed" && pair.content !== "unchanged")
+                    return yield* failure(
+                      "Retained sheets must identify changed or unchanged contents.",
+                    );
                   const next = findSheet(pair.newSheetId);
 
                   if (
@@ -681,6 +716,8 @@ export class ReviewStore extends Context.Service<
                     ].find((link) => link.oldSheetId === cursor);
 
                     if (successor === undefined) break;
+
+                    if (successor.newSheetId === null) break;
                     cursor = successor.newSheetId;
                   }
 
@@ -727,10 +764,14 @@ export class ReviewStore extends Context.Service<
                     "finding",
                     new Finding(
                       Struct.assign(finding, {
-                        drawnSheetId: drawn?.confirmed ? drawn.newSheetId : finding.drawnSheetId,
-                        scheduledSheetId: scheduled?.confirmed
-                          ? scheduled.newSheetId
-                          : finding.scheduledSheetId,
+                        drawnSheetId:
+                          drawn?.confirmed && drawn.newSheetId !== null
+                            ? drawn.newSheetId
+                            : finding.drawnSheetId,
+                        scheduledSheetId:
+                          scheduled?.confirmed && scheduled.newSheetId !== null
+                            ? scheduled.newSheetId
+                            : finding.scheduledSheetId,
                         outcome: unchanged ? finding.outcome : "stale",
                       } as const),
                     ),
@@ -739,7 +780,10 @@ export class ReviewStore extends Context.Service<
                   for (const id of [finding.drawnSheetId, finding.scheduledSheetId]) {
                     const pair = mapSide(id);
 
-                    if ((pair === undefined || !pair.confirmed) && !confirmedDestinations.has(id)) {
+                    if (
+                      (pair === undefined || !pair.confirmed || pair.newSheetId === null) &&
+                      !confirmedDestinations.has(id)
+                    ) {
                       const old = findSheet(id);
 
                       if (old !== undefined)

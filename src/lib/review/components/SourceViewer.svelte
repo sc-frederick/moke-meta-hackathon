@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ReviewInputError, type Affine, type Region } from "#lib/review/contracts.ts";
+  import { ReviewInputError, type Affine, type Region, type Sheet } from "#lib/review/contracts.ts";
   import { invertTransform, transformRegion } from "#lib/review/geometry.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
 
@@ -10,6 +10,10 @@
     label = "Source view",
     selecting = $bindable(false),
     onSelectRegion,
+    sheets = [],
+    currentSheetId = null,
+    onSheet,
+    zoomFactor = $bindable(1),
   }: {
     imageUrl: string;
     pdfToPixels: typeof Affine.Type;
@@ -17,6 +21,10 @@
     label?: string;
     selecting?: boolean;
     onSelectRegion?: (region: Region) => void;
+    sheets?: ReadonlyArray<Sheet>;
+    currentSheetId?: Sheet["id"] | null;
+    onSheet?: (sheet: Sheet) => void;
+    zoomFactor?: number;
   } = $props();
 
   let scale = $state(1);
@@ -32,6 +40,22 @@
   let imageHeight = $state(1);
   let selection = $state<{ x: number; y: number; width: number; height: number } | null>(null);
   let selectionStart = { x: 0, y: 0 };
+  let sheetQuery = $state("");
+  const currentIndex = $derived(sheets.findIndex((sheet) => sheet.id === currentSheetId));
+
+  const matchingSheets = $derived(
+    sheets.filter((sheet) =>
+      `${sheet.label} page ${sheet.pageIndex + 1}`
+        .toLowerCase()
+        .includes(sheetQuery.trim().toLowerCase()),
+    ),
+  );
+
+  function moveSheet(direction: -1 | 1) {
+    const sheet = sheets[currentIndex + direction];
+
+    if (sheet && currentIndex >= 0) onSheet?.(sheet);
+  }
 
   function imagePoint(event: PointerEvent & { currentTarget: HTMLDivElement }) {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -71,6 +95,9 @@
 
   function zoom(delta: number) {
     scale = Math.min(8, Math.max(0.02, scale * (delta > 0 ? 1.25 : 0.8)));
+    const fit = Math.min(viewportWidth / imageWidth, viewportHeight / imageHeight) * 0.95;
+
+    if (fit > 0) zoomFactor = scale / fit;
   }
 
   function resetView() {
@@ -78,6 +105,7 @@
     rotation = 0;
     panX = 0;
     panY = 0;
+    zoomFactor = 1;
   }
 
   function onPointerDown(event: PointerEvent & { currentTarget: HTMLDivElement }) {
@@ -138,6 +166,44 @@
 </script>
 
 <section class="viewer" aria-label={label}>
+  {#if onSheet && sheets.length > 0}
+    <nav class="sheet-navigation" aria-label="Source sheets">
+      <button
+        type="button"
+        aria-label="Previous sheet"
+        disabled={currentIndex <= 0 || selecting}
+        onclick={() => moveSheet(-1)}>←</button
+      >
+      <span>{currentIndex + 1} of {sheets.length}</span>
+      <button
+        type="button"
+        aria-label="Next sheet"
+        disabled={currentIndex < 0 || currentIndex >= sheets.length - 1 || selecting}
+        onclick={() => moveSheet(1)}>→</button
+      >
+      <details>
+        <summary>Jump to sheet</summary>
+        <div class="sheet-picker">
+          <input
+            aria-label="Find source sheet"
+            type="search"
+            bind:value={sheetQuery}
+            placeholder="Sheet or page…"
+          />
+          {#each matchingSheets as sheet (sheet.id)}<button
+              type="button"
+              disabled={selecting}
+              aria-current={sheet.id === currentSheetId ? "page" : undefined}
+              onclick={(event) => {
+                onSheet(sheet);
+                event.currentTarget.closest("details")?.removeAttribute("open");
+              }}>{sheet.label} · page {sheet.pageIndex + 1}</button
+            >{/each}
+          {#if matchingSheets.length === 0}<p>No matching sheet.</p>{/if}
+        </div>
+      </details>
+    </nav>
+  {/if}
   <div class="viewer-toolbar">
     <button type="button" class="icon-button" aria-label="Zoom in" onclick={() => zoom(0.2)}
       ><ReviewIcon name="zoom-in" size={16} /></button
@@ -153,8 +219,12 @@
         rotation = (rotation + 90) % 360;
       }}><ReviewIcon name="rotate-clockwise" size={16} /></button
     >
-    <button type="button" class="icon-button" aria-label="Reset view" onclick={resetView}
-      ><ReviewIcon name="refresh" size={16} /></button
+    <button
+      type="button"
+      class="icon-button"
+      aria-label="Reset view"
+      title="Fit sheet"
+      onclick={resetView}><ReviewIcon name="refresh" size={16} /></button
     >
   </div>
   {#if selecting}<p class="selection-help" role="status">
@@ -199,7 +269,11 @@
           if (!(event.currentTarget instanceof HTMLImageElement)) return;
           imageWidth = event.currentTarget.naturalWidth;
           imageHeight = event.currentTarget.naturalHeight;
-          resetView();
+          scale =
+            Math.min(viewportWidth / imageWidth, viewportHeight / imageHeight) * 0.95 * zoomFactor;
+          rotation = 0;
+          panX = 0;
+          panY = 0;
         }}
       />
       {#each pixelOverlays as overlay, index (index)}
@@ -246,6 +320,51 @@
     display: flex;
     gap: 4px;
     flex-shrink: 0;
+  }
+  .sheet-navigation {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .sheet-navigation button,
+  .sheet-picker input {
+    font: inherit;
+    color: inherit;
+    background: var(--nd-raised);
+    border: 1px solid var(--nd-hairline);
+    border-radius: 5px;
+    padding: 5px 8px;
+  }
+  .sheet-navigation button {
+    cursor: pointer;
+  }
+  .sheet-navigation button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .sheet-navigation details {
+    position: relative;
+  }
+  .sheet-navigation summary {
+    cursor: pointer;
+  }
+  .sheet-picker {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 2;
+    display: grid;
+    gap: 6px;
+    width: min(300px, 60vw);
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 8px;
+    background: var(--nd-shell);
+    border: 1px solid var(--nd-hairline);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px #0003;
   }
   .icon-button {
     display: inline-flex;
