@@ -83,7 +83,7 @@ test("warm queue messages preserve millisecond deadlines as JSON instead of SDK 
   expect(Schema.decodeUnknownSync(WarmSandboxMessage)(encoded).expiresAt).toBe(expiresAt);
 });
 
-test("the cloud worker protocol admits whole-second deadlines and rejects incompatible precision", () => {
+test("the cloud worker protocol rejects pre-scope workers and incompatible deadline precision", () => {
   const job = {
     id: crypto.randomUUID(),
     identity: cloudEngineIdentity,
@@ -92,6 +92,9 @@ test("the cloud worker protocol admits whole-second deadlines and rejects incomp
   };
 
   expect(Schema.is(CloudWorkerRequest)(job)).toBe(true);
+  expect(
+    Schema.is(CloudWorkerRequest)({ ...job, identity: { ...cloudEngineIdentity, protocol: 2 } }),
+  ).toBe(false);
   expect(Schema.is(CloudWorkerRequest)({ ...job, timeoutMs: 61_001 })).toBe(false);
   expect(Schema.is(CloudWorkerRequest)({ ...job, timeoutMs: 59_000 })).toBe(false);
 });

@@ -49,6 +49,9 @@ export const electron = {
               "MODEL_API_KEY",
               "BASETEN_API_KEY",
               "MOKE_SESSION_CREDENTIAL_FILE",
+              "MODAL_TOKEN_ID",
+              "MODAL_TOKEN_SECRET",
+              "MOKE_MODAL_CONFIG",
             ].includes(key)
               ? []
               : [[key, value]],

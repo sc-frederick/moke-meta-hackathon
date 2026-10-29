@@ -1,5 +1,53 @@
 # MOKE Audit 2 implementation and validation
 
+## Cloud integration (2026-10-29)
+
+Approved audit commit `9aa92c1f041a7c589d011f378451a330f35bed24` was
+rebased onto PR10's `c359e522f06f1a73888057233b4854193e2da9b2` as
+`2596c9ecd06b3525c444949054bdb45b6cfee45b`. The three conflicts combine
+Modal setup with trusted PDF drop imports, cloud ownership controls with the
+audit composer/canvas, and cloud-return assertions with saved-answer,
+source-generation and count-selection regressions. Auto-merged RPC, fixtures,
+package scripts and subscription paths were inspected.
+
+Local steering now enters the application's existing cloud ownership fence.
+The centered import dialog, scope/reviewer controls, count edits and mirrored
+finding completion also honor cloud ownership. Existing backend reconciliation,
+automatic package return and immutable history remain in use; remote steering
+is unavailable. Explicit scope travels through the shared cloud request and
+worker JSON contracts. Offline round trips cover legacy requests and whole-set,
+selected-sheet and discipline scopes, excluding later revisions as requested
+and retaining sheet discipline metadata.
+
+Cloud protocol 3 rejects PR10 worker images before model dispatch because those
+images would silently discard the new scope fields. A matching worker image
+must be built and published separately before cloud use. No image build, cloud
+operation, credential change, dependency upgrade or migration was performed.
+`bun install --frozen-lockfile` installed upstream's pinned Modal dependency.
+The hardened isolation runner and packaged-executable support are unchanged
+from the approved audit commit. The isolated launch adapter also strips ambient
+Modal configuration so it cannot reintroduce credentials removed by each test.
+
+Integration evidence is recorded in `.local/audit-2/integration-verify.log`,
+`.local/audit-2/integration-svelte-autofixer.log`,
+`.local/audit-2/integration-desktop/manifest.json` and the ignored review ledger.
+Final `bun run verify` passes 316 smoke tests across 33 files (1,988 assertions),
+all builds and checks, and all seven Electron tests. Both GUI runs passed the
+hardened preflight. All five Svelte components/routes have zero autofixer issues;
+the existing dialog-ref and Map/Set suggestions remain advisory. The 24 existing
+class-instance-spread lint warnings remain. Fresh cloud-owner, mirrored-finding
+and missing-source screenshots were inspected from the final run. No live
+provider/cloud validation ran. Windows/macOS hosted CI and packaged execution
+remain external validation; no inference-quality claim is added.
+
+The focused comparison is
+`git range-diff 0fe032e3e..9aa92c1f0 c359e522f..HEAD`, preserved in
+`.local/audit-2/integration-range-diff.txt`. Parent round 3 reviews this
+integration; publication remains with the parent. The sections below record
+the pre-integration audit approval and its historical evidence.
+
+## Approved audit baseline
+
 Work resumed on `fix/moke-audit-2` from base
 `0fe032e3e1b9aac35967545065a8c7677e089e44`. The existing implementation diff
 was retained and completed. No migration, dependency upgrade, deployment, PR,

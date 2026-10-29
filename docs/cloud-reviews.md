@@ -275,9 +275,13 @@ outbound header policies. Packet findings, coverage, evidence and reports return
 through the same complete-package boundary. Packet controls and finding completion
 are fenced while the cloud owns the workspace.
 
-The protocol-2 handshake includes both packet and count prompt versions. Rebuild
-and publish the worker image from this version before using it; older worker
-images fail the handshake before admitting model work.
+The protocol-3 handshake requires support for explicit revision, selected-sheet
+and persisted-discipline scope, and includes both packet and count prompt versions.
+Rebuild and publish the worker image from this version before using it; protocol-2
+workers would discard the new selection fields and now fail the handshake before
+admitting model work. Cloud requests retain the selected scope through transfer
+and automatic return. Local steering and editing remain fenced while the cloud
+owns the workspace; remote steering is unavailable.
 
 Offline validation runs the actual packet service and recorded Baseten transport,
 exports a real capped package, automatically restores it in the local application,

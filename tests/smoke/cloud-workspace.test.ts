@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 import { Application, type ApplicationEntry } from "../../backend/application.ts";
 import { CloudSandbox } from "../../backend/cloud/service.ts";
 import type { CloudSandboxPort } from "../../backend/cloud/sandbox-port.ts";
-import { cloudEngineIdentity, type CloudWorkerProgress } from "../../backend/cloud/contracts.ts";
+import {
+  cloudEngineIdentity,
+  CloudWorkerRequest,
+  type CloudWorkerProgress,
+} from "../../backend/cloud/contracts.ts";
 import { BackendConfig, ModalConfiguration, InferenceConfiguration } from "#lib/backend-rpc.ts";
 import { CommandId, FindingId, ReviewCommand } from "#lib/review/contracts.ts";
 import { ExecutionBudget } from "#lib/review/execution.ts";
@@ -369,6 +373,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
     const input = join(root, "input");
     const output = join(root, "output");
     const data = join(root, "local");
+
     const base = {
       migrationDirectory: resolve("migrations"),
       token: Redacted.make("t".repeat(32)),
@@ -407,6 +412,15 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
           expect("kind" in record.request).toBe(true);
           dispatched++;
 
+          const workerRequest = Schema.decodeUnknownSync(Schema.fromJsonString(CloudWorkerRequest))(
+            JSON.stringify({
+              id: record.id,
+              identity: cloudEngineIdentity,
+              request: record.request,
+              timeoutMs: 60_000,
+            }),
+          );
+
           const restore = openApplication(
             new BackendConfig({ ...base, dataDirectory: join(root, "remote") }),
           );
@@ -438,7 +452,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
                 packets: remote.packets,
                 exportPackage: remote.exportPackage,
               },
-              record.request,
+              workerRequest.request,
               60_000,
               output,
               (progress) =>
@@ -511,6 +525,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       const seed = await openPacketFixture(data, async () =>
         chatResponse("No model call expected"),
       );
+
       let source = await seed.snapshot();
       const selectedSheet = source.sheets[0];
 
@@ -534,20 +549,23 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       });
       const inventory = await seed.snapshot();
 
-      const request = await seed.request("Review the electrical drawing set", {
+      const unscopedRequest = await seed.request("Review the electrical drawing set", {
         model: "meta-models/muse-spark-open-1026",
         discipline: "electrical",
         maxCalls: 2,
-        ...(scopeMode === "legacy"
-          ? {}
+      });
+
+      const request =
+        scopeMode === "legacy"
+          ? unscopedRequest
           : {
+              ...unscopedRequest,
               selection: {
                 mode: scopeMode,
                 revisionId: selectedSheet.revisionId,
                 sheetIds: scopeMode === "selected_sheets" ? [selectedSheet.id] : [],
               },
-            }),
-      });
+            };
 
       await seed.dispose();
       local = openApplication(config, sandbox);
@@ -562,6 +580,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
       );
 
       expect(started.findingId).toBeNull();
+
       const steering = {
         commandId: id(),
         projectId: request.projectId,
@@ -569,9 +588,11 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
         conversationId: request.conversationId,
         text: "Do not send this instruction to local mirrored state",
       };
+
       const fencedSteering = await local.runPromise(
         localApplication.packets.steer(steering).pipe(Effect.flip),
       );
+
       expect(fencedSteering.reason).toBe("conflict");
       expect(fencedSteering.message).toContain("cloud review owns");
       expect(
@@ -628,12 +649,14 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline"] as const)(
             ? "SelectedSheets"
             : "WholeSet",
       );
+
       const expectedSheets =
         scopeMode === "legacy"
           ? inventory.sheets
           : source.sheets.filter(
               (sheet) => scopeMode === "whole_set" || sheet.id === selectedSheet.id,
             );
+
       expect(reviews[0]?.sheets.map((sheet) => sheet.id).toSorted()).toEqual(
         expectedSheets.map((sheet) => sheet.id).toSorted(),
       );

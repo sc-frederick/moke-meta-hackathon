@@ -17,7 +17,7 @@ import { packageEngineFormat } from "#lib/review/packages.ts";
 
 /** Version handshake covers the worker protocol, engine, and review instructions. */
 export const cloudEngineIdentity = {
-  protocol: 2,
+  protocol: 3,
   engine: packageEngineFormat,
   prompt: reviewPromptVersion,
   instructions: reviewInstructionRevision,
