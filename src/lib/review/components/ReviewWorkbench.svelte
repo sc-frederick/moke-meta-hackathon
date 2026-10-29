@@ -206,6 +206,15 @@
   // until the reader scrolls up.
   let followLatest = true;
 
+  // The position this component last scrolled to; its own scroll events are not reader input.
+  let autoScrollTop = -1;
+
+  function scrollToLatest(viewport: HTMLDivElement) {
+    followLatest = true;
+    viewport.scrollTop = viewport.scrollHeight;
+    autoScrollTop = viewport.scrollTop;
+  }
+
   $effect(() => {
     const viewport = chatViewport;
     const content = viewport?.firstElementChild;
@@ -213,7 +222,7 @@
     if (!viewport || !content) return;
 
     const observer = new ResizeObserver(() => {
-      if (followLatest) viewport.scrollTop = viewport.scrollHeight;
+      if (followLatest) scrollToLatest(viewport);
     });
 
     observer.observe(viewport);
@@ -939,7 +948,7 @@
       selectedProjectId === command.projectId &&
       selectedConversationId === command.conversationId
     )
-      chatViewport.scrollTop = chatViewport.scrollHeight;
+      scrollToLatest(chatViewport);
   }
 
   function importPdf() {
@@ -1349,9 +1358,13 @@
     await tick();
 
     const savedScroll = id === null ? 0 : conversationViews.get(id)?.scroll;
-    followLatest = savedScroll === undefined || savedScroll === null;
 
-    if (chatViewport) chatViewport.scrollTop = savedScroll ?? chatViewport.scrollHeight;
+    if (!chatViewport) followLatest = savedScroll === undefined || savedScroll === null;
+    else if (savedScroll === undefined || savedScroll === null) scrollToLatest(chatViewport);
+    else {
+      followLatest = false;
+      chatViewport.scrollTop = savedScroll;
+    }
   }
 
   function selectReviewFinding(id: string) {
@@ -2093,10 +2106,9 @@
           class="chat-scroll"
           bind:this={chatViewport}
           onscroll={() => {
-            if (chatViewport)
-              followLatest =
-                chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight <=
-                24;
+            if (!chatViewport || Math.abs(chatViewport.scrollTop - autoScrollTop) < 2) return;
+            followLatest =
+              chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight <= 24;
           }}
         >
           <div class="conversation-content">

@@ -423,3 +423,56 @@ function readSheetRows(database: DatabaseSync): Array<Sheet> {
       .all(),
   ).map((row) => Schema.decodeUnknownSync(Schema.fromJsonString(Sheet))(row.payload));
 }
+
+test("a thread keeps following rapid updates until the reader scrolls up", async () => {
+  test.setTimeout(60000);
+  const directory = await mkdtemp(join(tmpdir(), "moke-audit-3-follow-latest-"));
+
+  const app = await electron.launch({
+    args: ["."],
+    env: { PROJECT_KIT_DATA_DIRECTORY: directory },
+  });
+
+  try {
+    const page = await app.firstWindow();
+    await page.setViewportSize({ width: 1200, height: 700 });
+    await page.getByRole("button", { name: "Create a project", exact: true }).click();
+    await page.getByTestId("project-name-input").fill("Follow-latest regression");
+    await page.getByTestId("create-project-button").click();
+    const viewport = page.locator(".chat-scroll");
+    await expect(viewport).toBeVisible();
+
+    // Stand in for streamed review progress: the thread grows in quick successive tasks, so it
+    // can grow again between an automatic scroll and the scroll event that write queues.
+    const grow = (blocks: number) =>
+      viewport.evaluate(async (element, count) => {
+        const content = element.querySelector(".conversation-content");
+
+        if (content === null) throw new Error("Missing conversation content");
+
+        for (let index = 0; index < count; index++) {
+          const block = document.createElement("div");
+          block.style.height = "80px";
+          content.append(block);
+          await new Promise((resolve) => setTimeout(resolve, 3));
+        }
+      }, blocks);
+
+    const distanceFromLatest = () =>
+      viewport.evaluate(
+        (element) => element.scrollHeight - element.scrollTop - element.clientHeight,
+      );
+
+    await grow(60);
+    await expect.poll(distanceFromLatest).toBeLessThan(4);
+
+    await viewport.hover();
+    await page.mouse.wheel(0, -600);
+    await expect.poll(distanceFromLatest).toBeGreaterThan(400);
+    await grow(5);
+    await expect.poll(distanceFromLatest).toBeGreaterThan(400);
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

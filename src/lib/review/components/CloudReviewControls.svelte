@@ -392,11 +392,12 @@
     display: grid;
     gap: 4px;
   }
-  /* Keep the composer reachable in compact windows; long details scroll inside the card. */
+  /* Keep the composer reachable in short windows: about 690px of the viewport belongs to the
+     top bar, card header, a minimal thread and the composer. Long details scroll in the card. */
   .receipt-details {
     display: grid;
     gap: 8px;
-    max-height: 28vh;
+    max-height: clamp(96px, calc(100vh - 690px), 30vh);
     overflow-y: auto;
   }
   progress {
