@@ -301,6 +301,12 @@ export class Application extends Context.Service<
                 : Effect.void,
             ),
           }).pipe(
+            Effect.tapError((error) =>
+              Effect.logWarning("cloud_workspace_estimate_failed", {
+                reason: error.reason,
+                message: error.message,
+              }),
+            ),
             cloudFailure("The workspace size estimate could not be read. Recheck before sending."),
             Effect.flatMap((estimate) =>
               Effect.map(localWorkBlockingCloud, (localReviews) => ({ ...estimate, localReviews })),

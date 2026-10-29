@@ -1,6 +1,7 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { Clock, Duration, Effect, Exit, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
+import { SqlError } from "effect/sql/SqlError";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm } from "node:fs/promises";
@@ -585,7 +586,18 @@ const withSql = <A, E>(
         }),
       ),
     ),
-  ).pipe(Effect.mapError((cause) => asPackageError(cause, message)));
+  ).pipe(
+    Effect.tapError((cause) =>
+      Schema.is(SqlError)(cause)
+        ? Effect.logWarning("review_package_sql_failed", {
+            reason: cause.reason._tag,
+            operation: cause.reason.operation,
+            stage: message,
+          })
+        : Effect.void,
+    ),
+    Effect.mapError((cause) => asPackageError(cause, message)),
+  );
 
 const tableNames = (sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
