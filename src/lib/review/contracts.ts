@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import { ReviewDiscipline } from "./disciplines.ts";
 
 const Identifier = Schema.String.check(Schema.isUUID());
 
@@ -96,6 +97,7 @@ export class Sheet extends Schema.Class<Sheet>("Sheet")({
   pageIndex: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 199 })),
   label: Label,
   confirmed: Schema.Boolean,
+  discipline: Schema.optionalKey(Schema.NullOr(ReviewDiscipline)),
   box: Region,
   rotation: Schema.Literals([0, 90, 180, 270]),
   userUnit: Extent,
@@ -276,6 +278,11 @@ export const ReviewCommand = Schema.Union([
     ...ScopedCommand,
     conversationId: ConversationId,
     text: MessageText,
+  }),
+  Schema.TaggedStruct("AssignSheetDiscipline", {
+    ...ScopedCommand,
+    sheetIds: Schema.NonEmptyArray(SheetId),
+    discipline: Schema.NullOr(ReviewDiscipline),
   }),
   Schema.TaggedStruct("ConfirmSheet", {
     ...ScopedCommand,

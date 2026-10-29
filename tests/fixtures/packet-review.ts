@@ -58,7 +58,12 @@ class FixtureApi extends Context.Service<
 >()("test/PacketReviewFixture") {}
 
 /** Open the real packet service, SQLite store, and PDF worker under one owned runtime. */
-export async function open(directory: string, transport: ProviderTransport, setup = true) {
+export async function open(
+  directory: string,
+  transport: ProviderTransport,
+  setup = true,
+  afterRun?: <A>(value: A) => Promise<void>,
+) {
   let enter: <A, E>(operation: Effect.Effect<A, E>, options?: Effect.RunOptions) => Promise<A> =
     Effect.runPromise;
 
@@ -116,7 +121,12 @@ export async function open(directory: string, transport: ProviderTransport, setu
               owner,
               queries,
               review,
-              runPromise: (operation, options) => enter(operation, options),
+              runPromise: async (operation, options) => {
+                const value = await enter(operation, options);
+                await afterRun?.(value);
+
+                return value;
+              },
               providers: [
                 {
                   provider: "meta",

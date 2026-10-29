@@ -12,6 +12,10 @@ const ChooseReviewPdf = Schema.Struct({
   projectId: ProjectId,
   expectedVersion: Version,
   commandId: CommandId,
+  revisionLabel: Schema.optionalKey(
+    Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  ),
+  dropToken: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
 });
 
 /** Parent implements the file dialog and backend ImportReviewPdf call. */

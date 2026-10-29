@@ -15,7 +15,7 @@
   });
 </script>
 
-<svelte:head><title>Moke review</title></svelte:head>
+<svelte:head><title>MOKE review</title></svelte:head>
 
 {#if client}
   <ReviewWorkbench {client} />

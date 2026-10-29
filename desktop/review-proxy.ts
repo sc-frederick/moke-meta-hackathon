@@ -88,6 +88,7 @@ export const PacketProxy = PacketReviewRpc.toLayer(
     );
 
     return {
+      SteerPacketReview: (request) => api.SteerPacketReview(request).pipe(safe),
       StartPacketReview: (request) => api.StartPacketReview(request).pipe(safe),
       ListPacketReviews: (request) => api.ListPacketReviews(request).pipe(safe),
       GetPacketReview: (request) => api.GetPacketReview(request).pipe(safe),

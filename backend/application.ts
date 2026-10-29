@@ -441,6 +441,7 @@ export class Application extends Context.Service<
           execution: publicExecution,
           packets: {
             ...packets,
+            steer: (request) => executePublic(packets.steer(request)),
             start: (request) => executePublic(packets.start(request)),
             control: (request) => executePublic(packets.control(request)),
             complete: (request) => executePublic(packets.complete(request)),
@@ -526,6 +527,7 @@ export const BackendHandlers = BackendRpc.toLayer(
               () => new DatabaseFileError({ message: "The review report could not be exported." }),
             ),
           ),
+      SteerPacketReview: (request) => application.packets.steer(request),
       StartPacketReview: (request) => application.packets.start(request),
       ListPacketReviews: ({ projectId }) => application.packets.list(projectId),
       GetPacketReview: ({ projectId, reviewId }) => application.packets.get(projectId, reviewId),

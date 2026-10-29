@@ -42,11 +42,13 @@
     if (returnFocus) trigger?.focus();
   }
 
-  function show() {
+  function show(keyboard = true) {
     menu?.showPopover();
     positionMenu();
     const current = menu?.querySelector<HTMLButtonElement>('[aria-selected="true"]:not(:disabled)');
-    (current ?? menu?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
+
+    if (keyboard)
+      (current ?? menu?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
   }
 
   function navigate(event: KeyboardEvent) {
@@ -94,7 +96,7 @@
   onclick={(event) => {
     event.preventDefault();
     if (menu?.matches(":popover-open")) close();
-    else show();
+    else show(event.detail === 0);
   }}
   onkeydown={(event) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -210,7 +212,7 @@
     cursor: default;
   }
   button:focus-visible {
-    outline: 2px solid var(--nd-ink-muted);
+    outline: 1px solid var(--nd-ink-muted);
     outline-offset: 2px;
   }
 </style>

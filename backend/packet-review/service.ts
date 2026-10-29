@@ -33,9 +33,11 @@ import {
   ReviewMessage,
   SheetId,
 } from "#lib/review/contracts.ts";
-import { ExecutionError } from "#lib/review/execution.ts";
+import { ExecutionError, ReviewDiscipline } from "#lib/review/execution.ts";
 import {
   PacketReview,
+  PacketScope,
+  SteerPacketReview,
   PacketCoverage,
   PacketCitation,
   PacketFinding,
@@ -95,7 +97,17 @@ const Id = Schema.String.check(Schema.isUUID());
 const ToolResult = Schema.Struct({ value: Schema.Json });
 const PriorCommentInput = PacketPriorComment.mapFields(Struct.omit(["revisionTargetSheetIds"]));
 
-type Runtime = { harness: Harness; root: Conversation; done: Promise<void> };
+type Runtime = {
+  harness: Harness;
+  root: Conversation;
+  done: Promise<void>;
+  steering: {
+    accepting: boolean;
+    pending: Set<Promise<void>>;
+    unanswered: boolean;
+    admissions: Map<string, { identity: string; result: Promise<PacketReview> }>;
+  };
+};
 
 interface Configuration {
   readonly owner: DataDirectoryOwnership["Service"];
@@ -112,6 +124,9 @@ interface Configuration {
 export class PacketReviews extends Context.Service<
   PacketReviews,
   {
+    readonly steer: (
+      input: typeof SteerPacketReview.Type,
+    ) => Effect.Effect<PacketReview, ExecutionError>;
     readonly start: (
       input: typeof StartPacketReview.Type,
     ) => Effect.Effect<PacketReview, ExecutionError>;
@@ -368,7 +383,7 @@ export class PacketReviews extends Context.Service<
           });
 
           yield* sql`INSERT INTO review_commands(command_id,project_id,fingerprint,receipt) VALUES (${commandId},${row.project_id},${fingerprint},${JSON.stringify(receipt)})`;
-          yield* sql`INSERT INTO review_events(project_id,command_id,kind,message,created_at) VALUES (${row.project_id},${commandId},'packet_review','Moke review response saved.',${message.createdAt})`;
+          yield* sql`INSERT INTO review_events(project_id,command_id,kind,message,created_at) VALUES (${row.project_id},${commandId},'packet_review','MOKE review response saved.',${message.createdAt})`;
         });
 
         const recordTool = async (
@@ -1328,7 +1343,8 @@ export class PacketReviews extends Context.Service<
                       backgroundTokens: 0,
                     },
                     toolExecution: "sequential",
-                    afterFailedRun: "keep",
+                    // Settle queued steering before the host waits for its admission leases.
+                    afterFailedRun: "withdraw",
                   },
                 },
                 BACKGROUND_CONTEXT,
@@ -1346,6 +1362,34 @@ export class PacketReviews extends Context.Service<
               },
             });
 
+            // Explicit resume carries unresolved instructions into its own durable input.
+            // A stopped Pi submission can remain `unanswered` even when its text is in the journal.
+            const resumedInstructions = existing
+              ? (row.payload.steering ?? []).filter((item) => item.status !== "applied")
+              : [];
+
+            const resumedInstructionIds = new Set(
+              resumedInstructions.map((item) => item.commandId),
+            );
+
+            if (resumedInstructionIds.size)
+              await run(
+                mutate(
+                  row.project_id,
+                  row.id,
+                  (review) =>
+                    new PacketReview(
+                      Struct.assign(review, {
+                        steering: (review.steering ?? []).map((item) =>
+                          resumedInstructionIds.has(item.commandId)
+                            ? { ...item, status: "queued" as const }
+                            : item,
+                        ),
+                      }),
+                    ),
+                ),
+              );
+
             const submission = await root.submit(
               {
                 type: "input",
@@ -1360,14 +1404,29 @@ export class PacketReviews extends Context.Service<
                   scope: row.payload.scope,
                   previousFindings: row.payload.findings,
                   previousComments: row.payload.priorComments,
+                  followUpInstructions: resumedInstructions.map(({ commandId, text }) => ({
+                    commandId,
+                    text,
+                  })),
                 }),
               },
               BACKGROUND_CONTEXT,
             );
 
+            const steering: Runtime["steering"] = {
+              accepting: true,
+              pending: new Set(),
+              unanswered: false,
+              admissions: new Map(),
+            };
+
             const done = submission
               .wait(BACKGROUND_CONTEXT)
               .then(async (result) => {
+                steering.accepting = false;
+
+                while (steering.pending.size) await Promise.all(steering.pending);
+
                 const value = await run(
                   query(
                     Effect.gen(function* () {
@@ -1406,7 +1465,13 @@ export class PacketReviews extends Context.Service<
 
                       const state = unresolved.length
                         ? "uncertain"
-                        : result.status === "done"
+                        : result.status === "done" &&
+                            !steering.unanswered &&
+                            (current.payload.steering ?? []).every(
+                              (item) =>
+                                item.status === "applied" ||
+                                resumedInstructionIds.has(item.commandId),
+                            )
                           ? "completed"
                           : "failed";
 
@@ -1416,6 +1481,17 @@ export class PacketReviews extends Context.Service<
                           ...current.payload,
                           state,
                           summary,
+                          steering: (current.payload.steering ?? []).map((item) =>
+                            resumedInstructionIds.has(item.commandId) || item.status !== "applied"
+                              ? {
+                                  ...item,
+                                  status:
+                                    state === "completed"
+                                      ? ("applied" as const)
+                                      : ("unanswered" as const),
+                                }
+                              : item,
+                          ),
                           error:
                             state === "failed"
                               ? "The review stopped before finishing. Saved findings and coverage remain available."
@@ -1442,6 +1518,11 @@ export class PacketReviews extends Context.Service<
                         ? new PacketReview({
                             ...review,
                             state: "failed",
+                            steering: (review.steering ?? []).map((item) =>
+                              resumedInstructionIds.has(item.commandId)
+                                ? { ...item, status: "unanswered" as const }
+                                : item,
+                            ),
                             error:
                               "The review stopped. Its records remain available; unresolved provider work is not retried.",
                           })
@@ -1451,7 +1532,7 @@ export class PacketReviews extends Context.Service<
                 ).catch(() => undefined);
               });
 
-            runtimes.set(row.id, { harness, root, done });
+            runtimes.set(row.id, { harness, root, done, steering });
           } finally {
             starting.delete(row.id);
             launched.resolve();
@@ -1521,13 +1602,59 @@ export class PacketReviews extends Context.Service<
               "Connect the selected model's provider before starting review. Your message is saved.",
             );
 
-          const scope = selectPacketReviewScope(message.text, request.discipline);
+          const selection = request.selection;
+
+          if (
+            selection &&
+            !state.revisions.some((revision) => revision.id === selection.revisionId)
+          )
+            return yield* error("input", "Choose an imported revision for this review.");
+
+          if (selection?.mode === "discipline" && request.discipline === "auto")
+            return yield* error("input", "Choose a discipline for this scope.");
+
+          const scope = Match.value(selection?.mode).pipe(
+            Match.when("whole_set", () => PacketScope.cases.WholeSet.make({})),
+            Match.when("selected_sheets", () => PacketScope.cases.SelectedSheets.make({})),
+            Match.when("discipline", () =>
+              PacketScope.cases.Discipline.make({
+                discipline: Schema.decodeUnknownSync(ReviewDiscipline)(request.discipline),
+              }),
+            ),
+            Match.orElse(() => selectPacketReviewScope(message.text, request.discipline)),
+          );
+
+          const candidates = selection
+            ? state.sheets.filter((sheet) => sheet.revisionId === selection.revisionId)
+            : state.sheets;
+
+          if (
+            selection?.mode === "selected_sheets" &&
+            selection.sheetIds.some((id) => !candidates.some((sheet) => sheet.id === id))
+          )
+            return yield* error("input", "Selected sheets must belong to the chosen revision.");
+
+          const selectedSheets = Match.value(selection?.mode).pipe(
+            Match.when("selected_sheets", () =>
+              candidates.filter((sheet) => selection?.sheetIds.includes(sheet.id)),
+            ),
+            Match.when("discipline", () =>
+              candidates.filter((sheet) => sheet.discipline === request.discipline),
+            ),
+            Match.orElse(() => candidates),
+          );
+
+          if (!selectedSheets.length)
+            return yield* error(
+              "input",
+              "No sheets match this scope. Select sheets or assign their discipline first.",
+            );
 
           const earlier = (yield* list(request.projectId)).find(
             (item) => item.conversationId === request.conversationId,
           );
 
-          const sheets = state.sheets.map((sheet) => {
+          const sheets = selectedSheets.map((sheet) => {
             const revision = state.revisions.find((item) => item.id === sheet.revisionId);
 
             if (!revision) throw error("input", "A packet source revision is missing.");
@@ -1540,6 +1667,7 @@ export class PacketReviews extends Context.Service<
               box: sheet.box,
               sha256: revision.sha256,
               documentName: revision.name,
+              discipline: sheet.discipline ?? null,
             };
           });
 
@@ -1669,6 +1797,196 @@ export class PacketReviews extends Context.Service<
           return yield* get(project.id, review.id);
         });
 
+        const steer = Effect.fn("PacketReviews.steer")(function* (
+          input: typeof SteerPacketReview.Type,
+        ) {
+          const request = yield* Schema.decodeUnknownEffect(SteerPacketReview)(input).pipe(
+            Effect.mapError(() => error("input", "The follow-up instruction is invalid.")),
+          );
+
+          return yield* callback(async () => {
+            await starting.get(request.reviewId);
+            const runtime = runtimes.get(request.reviewId);
+            const identity = JSON.stringify(request);
+            const concurrent = runtime?.steering.admissions.get(request.commandId);
+
+            if (concurrent) {
+              if (concurrent.identity !== identity)
+                throw error("conflict", "This instruction identity already has different input.");
+
+              return concurrent.result;
+            }
+
+            const result = (async () => {
+              const admission = Promise.withResolvers<void>();
+              runtime?.steering.pending.add(admission.promise);
+
+              const update = (status: "queued" | "applied" | "unanswered") =>
+                mutate(
+                  request.projectId,
+                  request.reviewId,
+                  (review) =>
+                    new PacketReview(
+                      Struct.assign(review, {
+                        steering: (review.steering ?? []).map((item) =>
+                          item.commandId === request.commandId
+                            ? {
+                                ...item,
+                                status:
+                                  review.state === "cancelled" && item.status !== "applied"
+                                    ? "unanswered"
+                                    : status,
+                              }
+                            : item,
+                        ),
+                      }),
+                    ),
+                  false,
+                );
+
+              let stagedIntent = false;
+              let submitted: Awaited<ReturnType<Conversation["submit"]>> | undefined;
+
+              const release = () => {
+                admission.resolve();
+                runtime?.steering.pending.delete(admission.promise);
+              };
+
+              try {
+                const staged = await run(
+                  query(
+                    Effect.gen(function* () {
+                      const row = yield* load(request.projectId, request.reviewId);
+
+                      if (row.conversation_id !== request.conversationId)
+                        return yield* error(
+                          "input",
+                          "The instruction belongs to another conversation.",
+                        );
+
+                      const prior = row.payload.steering?.find(
+                        (item) => item.commandId === request.commandId,
+                      );
+
+                      if (prior && prior.text !== request.text)
+                        return yield* error(
+                          "conflict",
+                          "This instruction identity already has different text.",
+                        );
+
+                      if (prior && prior.status !== "pending")
+                        return { review: row.payload, submit: false };
+                      yield* assertActive(row);
+
+                      if (!runtime?.steering.accepting || row.engine !== journalFormat)
+                        return yield* error(
+                          "conflict",
+                          "This review is no longer active here. Your draft was not sent.",
+                        );
+
+                      if (prior) return { review: row.payload, submit: true };
+                      const sql = yield* SqlClient.SqlClient;
+
+                      const entry = new ReviewMessage({
+                        id: request.commandId,
+                        projectId: request.projectId,
+                        conversationId: request.conversationId,
+                        role: "reviewer",
+                        text: request.text,
+                        createdAt: new Date(now(yield* DateTime.now)).toISOString(),
+                      });
+
+                      yield* sql`INSERT INTO review_records(project_id,id,kind,payload) VALUES (${request.projectId},${entry.id},'message',${JSON.stringify(entry)})`;
+                      yield* sql`UPDATE review_projects SET version=version+1,payload=json_set(payload,'$.version',version+1) WHERE id=${request.projectId}`;
+
+                      const review = yield* save(
+                        row,
+                        new PacketReview(
+                          Struct.assign(row.payload, {
+                            summary: "",
+                            finished: false,
+                            steering: [
+                              ...(row.payload.steering ?? []),
+                              {
+                                commandId: request.commandId,
+                                text: request.text,
+                                status: "pending" as const,
+                              },
+                            ],
+                          }),
+                        ),
+                      );
+
+                      return { review, submit: true };
+                    }),
+                  ),
+                );
+
+                stagedIntent = staged.submit;
+
+                await run(publish(staged.review));
+
+                if (!staged.submit || !runtime) {
+                  release();
+
+                  return staged.review;
+                }
+
+                // Pi admits asynchronously and an idle steer starts another run. The pending lease
+                // owns that continuation through settlement; provider admission still enforces this
+                // review's persisted budget/cancellation. Completion must include its outcome.
+                const submission = await runtime.root.submit(
+                  {
+                    type: "input",
+                    requestId: request.commandId,
+                    content: request.text,
+                    whenBusy: "steer",
+                  },
+                  BACKGROUND_CONTEXT,
+                );
+
+                submitted = submission;
+
+                const queued = await run(update("queued"));
+                void submission
+                  .wait(BACKGROUND_CONTEXT)
+                  .then((settled) => {
+                    if (settled.status !== "done") runtime.steering.unanswered = true;
+
+                    return run(update(settled.status === "done" ? "applied" : "unanswered"));
+                  })
+                  .catch(() => {
+                    runtime.steering.unanswered = true;
+
+                    return run(update("unanswered"));
+                  })
+                  .finally(release);
+
+                return queued;
+              } catch (cause) {
+                // A receipt/update failure after Pi admission must still drain the owned run.
+                await submitted?.wait(BACKGROUND_CONTEXT).catch(() => undefined);
+
+                if (stagedIntent && runtime) {
+                  runtime.steering.unanswered = true;
+                  await run(update("unanswered")).catch(() => undefined);
+                }
+
+                release();
+                throw cause;
+              }
+            })();
+
+            runtime?.steering.admissions.set(request.commandId, { identity, result });
+
+            try {
+              return await result;
+            } finally {
+              runtime?.steering.admissions.delete(request.commandId);
+            }
+          });
+        });
+
         const control = Effect.fn("PacketReviews.control")(function* (input: {
           projectId: typeof ProjectId.Type;
           reviewId: string;
@@ -1791,6 +2109,11 @@ export class PacketReviews extends Context.Service<
                     Match.when("pause", () => "paused" as const),
                     Match.when("cancel", () => "cancelled" as const),
                     Match.exhaustive,
+                  ),
+                  steering: (row.payload.steering ?? []).map((item) =>
+                    input.action === "cancel" && item.status !== "applied"
+                      ? { ...item, status: "unanswered" as const }
+                      : item,
                   ),
                   maxCalls:
                     input.action === "resume" && input.maxCalls !== undefined
@@ -2006,6 +2329,7 @@ export class PacketReviews extends Context.Service<
 
         return PacketReviews.of({
           start,
+          steer,
           list,
           get,
           control,

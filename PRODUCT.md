@@ -1,4 +1,4 @@
-# Moke
+# MOKE
 
 <!-- impeccable:product-schema 1 -->
 
@@ -16,7 +16,7 @@ conversation. A review does not require an existing finding or count check.
 Bun and Effect own APIs, SQLite, migrations, PDF processing and Pi Durable
 execution. Electron owns the trusted bridge, file dialogs and credential storage.
 
-The full Moke AGENTS.md, shared review method and applicable discipline files
+The full MOKE AGENTS.md, shared review method and applicable discipline files
 supply Pi's system instructions. Whole-set review includes the general and all
 discipline instructions; a discipline review includes general context and its
 selected instructions. The review inventories the supplied documents, reads
@@ -37,7 +37,9 @@ automatically reconciled. Model findings are review results, not professional
 approval. Sequential discipline passes are supported; the app does not claim to
 launch parallel reviewers.
 
-The report is self-contained HTML with focused evidence, project configuration,
+The conversation presents a short review summary with compact findings. Opening
+a finding shows readable details and source evidence in the central canvas.
+Saved self-contained HTML reports retain focused evidence, project configuration,
 coverage, source status, findings, calculations and prior-comment follow-up.
 Completed checkboxes track user corrections separately from finding status and
 reviewer-verified closure. Unreviewed sheets and unresolved inputs remain visible
@@ -65,12 +67,16 @@ the next action. Keep coordinates, model provenance, record identifiers and toke
 accounting behind disclosures. Use familiar labels and specific explanations.
 
 Both project entry points open the same centered creation dialog. Settings use a
-separate centered dialog. The composer names its model and reviewer; Auto routes
-a request to whole-set or a named discipline review. User requests appear as chat
-bubbles, followed by elapsed progress and Moke's saved response. A note is saved
-without starting inference. Findings open their source evidence beside the
-conversation. Reviewers can select source areas visually and expand technical
-controls when needed.
+separate centered dialog. PDF imports use a centered drop area and native file
+chooser, with a revision label requested for subsequent imports. The composer
+names its model, reviewer, revision and whole-set, selected-sheet or discipline
+scope. Optional sheet discipline assignments persist independently of count
+verification. Explicit scopes take precedence over request wording. User requests appear as chat
+bubbles, followed by elapsed progress and MOKE's saved response. A note is saved
+without starting inference. Active reviews accept durable follow-up instructions
+from the composer and show their delivery state. Findings open their source
+evidence in a central canvas with zoom, pan and a return to the conversation.
+Reviewers can select source areas visually and expand technical controls when needed.
 
 The original desktop UI study established chat as the main work surface.
 Projects group their conversations in navigation, and selecting a conversation

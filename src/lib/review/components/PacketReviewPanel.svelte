@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Match } from "effect";
-  import type { ArtifactId, SheetId, Region } from "#lib/review/contracts.ts";
   import type { PacketReview } from "#lib/review/packet.ts";
   import { packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { formatElapsed } from "./review-format.ts";
@@ -10,19 +9,12 @@
     review,
     busy = false,
     onControl,
-    onComplete,
-    onExport,
-    onEvidence,
+    onFinding,
   }: {
     review: PacketReview;
     busy?: boolean;
     onControl: (action: "pause" | "resume" | "cancel", maxCalls?: number | null) => Promise<void>;
-    onComplete: (findingId: string, completed: boolean) => Promise<void>;
-    onExport: () => Promise<void>;
-    onEvidence: (
-      artifactId: typeof ArtifactId.Type | null,
-      location?: { sheetId: typeof SheetId.Type; region: Region | null; detail: string },
-    ) => Promise<void>;
+    onFinding: (findingId: string) => Promise<void>;
   } = $props();
 
   const passLabels = {
@@ -55,6 +47,7 @@
   const scope = $derived(
     Match.value(review.scope).pipe(
       Match.tagsExhaustive({
+        SelectedSheets: () => "Selected sheets review",
         WholeSet: () => "Whole-set review",
         Discipline: ({ discipline }) => `${discipline.replaceAll("_", " ")} review`,
       }),
@@ -98,7 +91,7 @@
 <section class="packet-review" aria-label={scope} data-testid="packet-review-panel">
   <header>
     <div>
-      <p class="eyebrow">Moke · {scope}</p>
+      <p class="eyebrow">MOKE · {scope}</p>
       <h2>{stateLabel}</h2>
     </div>
     <span class="duration" aria-label="Review elapsed time">{formatElapsed(elapsed)}</span>
@@ -108,7 +101,28 @@
     of
     {coverageProgress.total} review passes recorded
   </p>
-  {#if review.summary}<p class="summary">{review.summary}</p>{/if}
+  {#if review.summary}<p class="summary">
+      {review.summary.length > 500 ? review.summary.slice(0, 500) + "…" : review.summary}
+    </p>
+    {#if review.summary.length > 500}<details class="records">
+        <summary>Full review notes</summary>
+        <p class="summary">{review.summary}</p>
+      </details>{/if}{/if}
+  {#if review.steering?.length}<details class="records">
+      <summary>Follow-up instructions · {review.steering.length}</summary
+      >{#each review.steering as instruction (instruction.commandId)}<p>
+          {instruction.text}
+          <span class="muted"
+            >{instruction.status === "queued"
+              ? "Queued for the next tool boundary"
+              : instruction.status === "applied"
+                ? "Applied"
+                : instruction.status === "pending"
+                  ? "Saved; delivery not confirmed"
+                  : "Not answered — review stopped before it could finish"}</span
+          >
+        </p>{/each}
+    </details>{/if}
   {#if review.error}<p class="attention" role="alert">{review.error}</p>{/if}
   {#if review.missingInputs.length > 0}
     <div class="missing">
@@ -149,7 +163,6 @@
         disabled={busy}
         onclick={() => onControl("cancel")}>Cancel review</button
       >{/if}
-    <button disabled={busy} onclick={onExport}>Export HTML report</button>
   </div>
   {#if review.state === "uncertain"}<p class="muted">
       The last provider request has an uncertain outcome. Its recorded work is preserved; it will
@@ -159,60 +172,15 @@
     <div class="findings">
       <h3>Review findings <span>{review.findings.length}</span></h3>
       {#each review.findings as finding (finding.id)}
-        <details class="finding" data-testid={`packet-finding-${finding.id}`}>
-          <summary
-            ><span class="severity" data-severity={finding.severity}>{finding.severity}</span
-            ><strong>{finding.title}</strong><span class="finding-status">{finding.status}</span
-            ></summary
-          >
-          <div class="finding-body">
-            <p class="muted">
-              {finding.discipline.replaceAll("_", " ")} · {finding.classification}
-            </p>
-            <p>{finding.observed}</p>
-            <h4>Correction</h4>
-            <p>{finding.correction}</p>
-            <div class="evidence-links">
-              {#each finding.evidenceIds as artifactId (artifactId)}<button
-                  disabled={busy}
-                  onclick={() => onEvidence(artifactId, finding.locations[0])}
-                  >Open source evidence</button
-                >{/each}
-              {#each finding.locations as location, index (`${location.sheetId}:${index}`)}<button
-                  disabled={busy}
-                  onclick={() => onEvidence(null, location)}
-                  >{review.sheets.find((sheet) => sheet.id === location.sheetId)?.label ??
-                    "Source sheet"} · {location.detail}</button
-                >{/each}
-            </div>
-            {#if finding.evidenceNote}<p class="muted">{finding.evidenceNote}</p>{/if}
-            {#if finding.citationIds.length > 0}<h4>Sources</h4>
-              <ul>
-                {#each finding.citationIds as citationId (citationId)}{@const citation =
-                    review.citations.find((item) => item.id === citationId)}{#if citation}<li>
-                      {citation.document}
-                      {citation.edition} · {citation.section} — {citation.status}{#if citation.note}:
-                        {citation.note}{/if}
-                    </li>{/if}{/each}
-              </ul>{/if}
-            <label class="completion"
-              ><input
-                type="checkbox"
-                checked={finding.completed}
-                disabled={busy}
-                aria-label={`Completed: ${finding.title}`}
-                onchange={(event) => {
-                  const completed = event.currentTarget.checked;
-                  event.currentTarget.checked = finding.completed;
-                  void onComplete(finding.id, completed);
-                }}
-              />Completed</label
-            >
-            <p class="completion-note">
-              Tracks your correction work. Finding status and verified closure remain separate.
-            </p>
-          </div>
-        </details>
+        <button
+          type="button"
+          class="finding"
+          data-testid={`packet-finding-${finding.id}`}
+          onclick={() => onFinding(finding.id)}
+          ><span class="severity" data-severity={finding.severity}>{finding.severity}</span><strong
+            >{finding.title}</strong
+          ><span class="finding-status">{finding.status}</span></button
+        >
       {/each}
     </div>
   {/if}
@@ -328,7 +296,6 @@
     margin: 7px 0;
   }
   .summary,
-  .finding-body > p,
   li,
   small {
     white-space: pre-wrap;
@@ -337,8 +304,7 @@
   .eyebrow,
   .muted,
   .duration,
-  .progress,
-  .completion-note {
+  .progress {
     color: var(--nd-ink-muted);
     font-size: 12px;
   }
@@ -375,8 +341,7 @@
     flex-basis: 100%;
     margin-top: 0;
   }
-  .actions,
-  .evidence-links {
+  .actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -427,25 +392,23 @@
     font-weight: 400;
   }
   .finding {
-    border-top: 1px solid var(--nd-hairline);
-  }
-  .finding > summary {
     display: flex;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-top: 1px solid var(--nd-hairline);
+    border-radius: 0;
     align-items: baseline;
     flex-wrap: wrap;
     gap: 7px;
     padding: 13px 0;
     cursor: pointer;
-    list-style: none;
   }
-  .finding > summary::before {
+  .finding::before {
     content: "›";
     color: var(--nd-ink-muted);
   }
-  .finding[open] > summary::before {
-    content: "⌄";
-  }
-  summary strong {
+  .finding strong {
     flex: 1;
     min-width: 120px;
     font-size: 13px;
@@ -462,20 +425,6 @@
   }
   .finding-status {
     color: var(--nd-ink-muted);
-  }
-  .finding-body {
-    padding: 0 0 16px 14px;
-    font-size: 13px;
-  }
-  .completion {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    margin-top: 16px;
-  }
-  .completion-note {
-    margin-top: 3px;
-    font-size: 11px;
   }
   .records {
     border-top: 1px solid var(--nd-hairline);

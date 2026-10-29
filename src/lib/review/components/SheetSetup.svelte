@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Option, Schema } from "effect";
   import type { Sheet } from "#lib/review/contracts.ts";
-  import ReviewIcon from "./ReviewIcon.svelte";
+  import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import { sheetCaption } from "./review-format.ts";
 
   let {
@@ -9,12 +9,19 @@
     busy,
     createOpen = $bindable(false),
     onConfirm,
+    onAssign,
+    selectedIds = $bindable([]),
     onPreview,
     onCreate,
   }: {
     sheets: ReadonlyArray<Sheet>;
     busy: boolean;
     createOpen?: boolean;
+    selectedIds?: ReadonlyArray<Sheet["id"]>;
+    onAssign: (
+      ids: ReadonlyArray<Sheet["id"]>,
+      discipline: typeof ReviewDiscipline.Type | null,
+    ) => Promise<void>;
     onConfirm: (sheet: Sheet, label: string, coverage: Sheet["coverage"]) => Promise<void>;
     onPreview: (sheet: Sheet) => void;
     onCreate: (input: {
@@ -39,26 +46,90 @@
   });
 </script>
 
-<section class="sheet-setup" aria-label="Sheet confirmation">
+<section class="sheet-setup" aria-label="Project sheets">
   <div class="section-heading">
     <h2>Project sheets</h2>
-    <span>{confirmed.length}/{sheets.length} confirmed</span>
+    <span>{sheets.length} sheets</span>
   </div>
   <p class="muted">
-    Read the sheet before confirming its label and coverage. Importing a PDF does not review it.
+    Assign disciplines to focus a review, or review the whole set. No sheet confirmation is needed
+    for document review.
   </p>
-  {#if sheets.length === 0}
-    <p>Import a drawing PDF to begin. Originals and earlier revisions are retained.</p>
+  {#if sheets.length === 0}<p>
+      Import a drawing PDF to begin. Earlier revisions stay in the project.
+    </p>
   {:else}
+    <div class="bulk-actions">
+      <label class="checkbox"
+        ><input
+          type="checkbox"
+          aria-label="Select all sheets"
+          checked={sheets.every((sheet) => selectedIds.includes(sheet.id))}
+          onchange={(event) => {
+            selectedIds = event.currentTarget.checked ? sheets.map((sheet) => sheet.id) : [];
+          }}
+        />Select all</label
+      >
+      <span>{selectedIds.length} selected</span>
+      <select
+        aria-label="Assign selected sheets to discipline"
+        disabled={busy || selectedIds.length === 0}
+        value=""
+        onchange={async (event) => {
+          const select = event.currentTarget;
+          const value = select.value;
+          if (value)
+            await onAssign(
+              selectedIds,
+              value === "unassigned" ? null : Schema.decodeUnknownSync(ReviewDiscipline)(value),
+            );
+          select.value = "";
+        }}
+      >
+        <option value="">Assign discipline…</option><option value="unassigned">Unassigned</option>
+        {#each reviewDisciplines as discipline (discipline.id)}<option value={discipline.id}
+            >{discipline.label}</option
+          >{/each}
+      </select>
+    </div>
     <ul class="sheet-list" data-testid="sheet-list">
       {#each sheets as sheet (sheet.id)}
         <li>
-          <details open={!sheet.confirmed}>
-            <summary
-              ><ReviewIcon name="file-text" size={15} /><span>{sheetCaption(sheet)}</span><span
-                class="state">{sheet.confirmed ? "Confirmed" : "Needs review"}</span
-              ></summary
+          <div class="sheet-row">
+            <input
+              type="checkbox"
+              aria-label={`Select ${sheet.label}`}
+              checked={selectedIds.includes(sheet.id)}
+              onchange={(event) => {
+                selectedIds = event.currentTarget.checked
+                  ? [...selectedIds, sheet.id]
+                  : selectedIds.filter((id) => id !== sheet.id);
+              }}
+            />
+            <span title={sheetCaption(sheet)}>{sheet.label}</span>
+            <select
+              aria-label={`Discipline for ${sheet.label}`}
+              value={sheet.discipline ?? ""}
+              disabled={busy}
+              onchange={(event) =>
+                onAssign(
+                  [sheet.id],
+                  event.currentTarget.value
+                    ? Schema.decodeUnknownSync(ReviewDiscipline)(event.currentTarget.value)
+                    : null,
+                )}
             >
+              <option value="">Unassigned</option
+              >{#each reviewDisciplines as discipline (discipline.id)}<option value={discipline.id}
+                  >{discipline.label}</option
+                >{/each}
+            </select>
+            <button type="button" disabled={busy} onclick={() => onPreview(sheet)}
+              >View sheet</button
+            >
+          </div>
+          <details>
+            <summary>Label &amp; count-check verification</summary>
             <form
               onsubmit={async (event) => {
                 event.preventDefault();
@@ -79,20 +150,22 @@
                   maxlength="160"
                 /></label
               >
+              <p class="muted">
+                Only for verified count comparisons. Discipline assignment does not confirm source
+                coverage.
+              </p>
               <label
-                >How much have you checked?<select name="coverage" value={sheet.coverage}>
-                  <option value="unreviewed">Not reviewed yet</option>
-                  <option value="partial">Part of the sheet</option>
-                  <option value="reviewer_complete">The whole sheet</option>
-                </select></label
+                >Count-check coverage<select name="coverage" value={sheet.coverage}
+                  ><option value="unreviewed">Not reviewed yet</option><option value="partial"
+                    >Part of the sheet</option
+                  ><option value="reviewer_complete">The whole sheet</option></select
+                ></label
               >
-              <div class="actions">
-                <button type="button" disabled={busy} onclick={() => onPreview(sheet)}
-                  >View sheet</button
-                ><button type="submit" disabled={busy} data-testid={`confirm-sheet-${sheet.id}`}
-                  >Confirm sheet</button
-                >
-              </div>
+              <button type="submit" disabled={busy} data-testid={`confirm-sheet-${sheet.id}`}
+                >{sheet.confirmed
+                  ? "Update verification"
+                  : "Confirm sheet for count checks"}</button
+              >
             </form>
           </details>
         </li>
@@ -122,7 +195,7 @@
     >
       <h2>New count check</h2>
       <p class="muted">
-        Choose one object type and a bounded room or area. Moke compares its drawn and scheduled
+        Choose one object type and a bounded room or area. MOKE compares its drawn and scheduled
         counts.
       </p>
       <label
@@ -196,36 +269,53 @@
     line-height: 1.6;
   }
   .muted,
-  .section-heading span,
-  .state {
+  .section-heading span {
     color: var(--nd-ink-muted);
+  }
+  .bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .sheet-row {
+    display: grid;
+    grid-template-columns: 18px minmax(90px, 1fr) minmax(130px, 180px) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .sheet-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sheet-row select,
+  .sheet-row button {
+    padding: 6px 8px;
   }
   .sheet-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 8px;
+    gap: 0;
+  }
+  .sheet-list li {
+    border-bottom: 1px solid var(--nd-hairline);
+    padding: 4px 0;
   }
   details {
-    border: 1px solid var(--nd-hairline);
-    border-radius: 8px;
+    color: var(--nd-ink-muted);
   }
   summary {
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    min-height: 44px;
-    padding: 10px;
-  }
-  summary span:first-of-type {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  .state {
-    font-size: 12px;
+    min-height: 26px;
+    padding: 2px 0 6px;
+    font-size: 11px;
   }
   form {
     display: grid;
