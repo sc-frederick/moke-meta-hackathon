@@ -2245,26 +2245,25 @@ export const estimateReviewPackage = Effect.fn("estimateReviewPackage")(
         (handle) => Effect.promise(() => handle.close()),
       );
 
+    // A second connection to a live database failed its first query on macOS CI while the app
+    // held the database open. Sizes on disk need no connection: the database plus its WAL bounds
+    // what an export copies, which is close enough for an estimate.
     const sqliteBytes = (path: string) =>
       Effect.gen(function* () {
-        yield* regularFileBytes(path);
+        const database = yield* regularFileBytes(path);
+        const wal = `${path}-wal`;
 
-        return yield* withSql(
-          path,
-          true,
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
+        const walBytes = existsSync(wal)
+          ? yield* regularFileBytes(wal).pipe(
+              // The last connection can remove its WAL between the check and the read.
+              Effect.catchIf(
+                () => !existsSync(wal),
+                () => Effect.succeed(0),
+              ),
+            )
+          : 0;
 
-            const rows = yield* Schema.decodeUnknownEffect(CountRows)(
-              yield* sql`SELECT page_count * page_size AS n FROM pragma_page_count(), pragma_page_size()`,
-            ).pipe(
-              Effect.mapError(() => fail("unavailable", "SQLite size could not be measured.")),
-            );
-
-            return rows[0]?.n ?? 0;
-          }),
-          "A referenced SQLite database could not be measured.",
-        );
+        return database + walBytes;
       });
 
     let bytes = yield* sqliteBytes(join(dataDirectory, "app.sqlite"));
