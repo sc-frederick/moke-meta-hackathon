@@ -89,13 +89,35 @@ const promptVersion = packetPromptVersion;
  */
 export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten: 4 } } as const;
 
-/** Which conversation made each model request, and which sheet each sheet reviewer owns. */
+/** Which conversation made each model or SAM request, and which sheet each sheet reviewer owns. */
 interface SheetAssignments {
   readonly sheets: Map<number, string>;
   readonly requests: Map<number, number>;
+  /** Model requests on the wire in this process. They stay uncertain in SQL until they settle. */
+  readonly inFlight: Set<string>;
 }
 
 const attemptKey = (taskId: number, attempt: number) => `${taskId}:${attempt}`;
+
+const UnresolvedAttempts = Schema.Array(
+  Schema.Struct({ task_id: Schema.Int, attempt: Schema.Int }),
+);
+
+/**
+ * Each parallel reviewer owns its transcript, so only an unresolved attempt in the same
+ * conversation could be resent. An unknown owner or requester stays blocking.
+ */
+const blocksRequest = (
+  assignments: SheetAssignments,
+  unresolved: typeof UnresolvedAttempts.Type,
+  conversation: number | undefined,
+) =>
+  unresolved.some((attempt) => {
+    if (assignments.inFlight.has(attemptKey(attempt.task_id, attempt.attempt))) return false;
+    const owner = assignments.requests.get(attempt.task_id);
+
+    return owner === undefined || conversation === undefined || owner === conversation;
+  });
 
 type SheetChange = Partial<
   Pick<typeof PacketSheetReview.Type, "conversationId" | "state" | "notes" | "providerFailure">
@@ -1350,15 +1372,22 @@ export class PacketReviews extends Context.Service<
                                 "The optional review call budget was reached before SAM.",
                               );
 
-                            const unresolved =
-                              yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain' LIMIT 1`;
+                            const unresolved = yield* Schema.decodeUnknownEffect(
+                              UnresolvedAttempts,
+                            )(
+                              yield* sql`SELECT task_id,attempt FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain'`,
+                            );
 
-                            if (unresolved.length)
+                            // Peer sheet reviewers' requests do not block this one's SAM call.
+                            if (blocksRequest(assignments, unresolved, api.conversationId))
                               return yield* error(
                                 "uncertain",
                                 "Resolve the earlier provider request before SAM.",
                               );
                             yield* sql`INSERT INTO packet_review_attempts(review_id,task_id,attempt,kind,fingerprint,status,sent) VALUES (${row.id},${api.taskId},1,'sam',${prepared.fingerprint},'uncertain',0)`;
+                            yield* Effect.sync(() =>
+                              assignments.requests.set(api.taskId, api.conversationId),
+                            );
                             yield* save(
                               fresh,
                               new PacketReview({
@@ -1724,12 +1753,13 @@ export class PacketReviews extends Context.Service<
               await sheetState(
                 sheet.id,
                 {
-                  // A sheet without notes when the review pauses or stops waits for resume.
+                  // A sheet without notes when the review pauses or stops waits for resume. One
+                  // that ends without finish_sheet has handed the coordinator nothing to compare.
                   state: stopped
                     ? "failed"
                     : after.state !== "running" && notes === undefined
                       ? "queued"
-                      : settled.status === "done"
+                      : settled.status === "done" && notes !== undefined
                         ? "completed"
                         : "failed",
                 },
@@ -1815,14 +1845,17 @@ export class PacketReviews extends Context.Service<
               throw error("unavailable", "The selected model's provider is not connected.");
 
             const capabilities = reviewModelCapabilities(row.payload.model);
-            const assignments: SheetAssignments = { sheets: new Map(), requests: new Map() };
+
+            const assignments: SheetAssignments = {
+              sheets: new Map(),
+              requests: new Map(),
+              inFlight: new Set(),
+            };
 
             for (const entry of row.payload.parallel?.sheets ?? [])
               if (entry.conversationId !== null)
                 assignments.sheets.set(entry.conversationId, entry.sheetId);
 
-            // Requests on the wire in this process. They stay uncertain in SQL until they settle.
-            const inFlight = new Set<string>();
             const toolRegistry = registryFor(row, assignments);
 
             const admitted = createAdmittedModels(
@@ -1855,28 +1888,16 @@ export class PacketReviews extends Context.Service<
 
                         const sql = yield* SqlClient.SqlClient;
 
-                        const unresolved = yield* Schema.decodeUnknownEffect(
-                          Schema.Array(Schema.Struct({ task_id: Schema.Int, attempt: Schema.Int })),
-                        )(
+                        const unresolved = yield* Schema.decodeUnknownEffect(UnresolvedAttempts)(
                           yield* sql`SELECT task_id,attempt FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain'`,
                         );
 
-                        const conversation = assignments.requests.get(phase["task.id"]);
-
-                        // Each parallel reviewer owns its transcript, so only an unresolved attempt in
-                        // the same conversation could be resent. An unknown owner stays blocking.
                         if (
-                          unresolved.some((attempt) => {
-                            if (inFlight.has(attemptKey(attempt.task_id, attempt.attempt)))
-                              return false;
-                            const owner = assignments.requests.get(attempt.task_id);
-
-                            return (
-                              owner === undefined ||
-                              conversation === undefined ||
-                              owner === conversation
-                            );
-                          })
+                          blocksRequest(
+                            assignments,
+                            unresolved,
+                            assignments.requests.get(phase["task.id"]),
+                          )
                         )
                           return yield* error(
                             "uncertain",
@@ -1895,7 +1916,7 @@ export class PacketReviews extends Context.Service<
 
                         yield* sql`INSERT INTO packet_review_attempts(review_id,task_id,attempt,kind,fingerprint,status,sent) VALUES (${row.id},${phase["task.id"]},${phase.attempt},'model',${fingerprint},'uncertain',0)`;
                         yield* Effect.sync(() =>
-                          inFlight.add(attemptKey(phase["task.id"], phase.attempt)),
+                          assignments.inFlight.add(attemptKey(phase["task.id"], phase.attempt)),
                         );
                         yield* save(
                           current,
@@ -1977,7 +1998,7 @@ export class PacketReviews extends Context.Service<
                   ),
                 end: async (uncertain, diagnostic, phase) => {
                   if (phase !== undefined)
-                    inFlight.delete(attemptKey(phase["task.id"], phase.attempt));
+                    assignments.inFlight.delete(attemptKey(phase["task.id"], phase.attempt));
 
                   const conversation =
                     phase === undefined ? undefined : assignments.requests.get(phase["task.id"]);

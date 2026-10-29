@@ -173,3 +173,20 @@ Reopened behavior/test diff:36files,3573insertions,537deletions, versus34files,
 3520insertions,497deletions entering reopened round1. Nothing was declined;
 R1 is resolved. No push occurred during the review loop. The complete current
 verification passed351smoke tests and10desktop tests with Bun1.4.4.
+
+## Final review of the parallel-review commits
+
+Scope: commits after `0602085` that no earlier round reviewed (parallel sheet review, Meta
+console settings, 429/529 resends, the on-disk workspace estimate and CI timeouts):
+`git diff 0602085 -- backend desktop src scripts migrations tests`. Reviewer: Codex
+`gpt-6.1-sol` on verified `xhigh` through T3 `delegate_task`. Usage was not exposed.
+
+| Round | ID  | Severity | Outcome                                                                                                                                                                                                                                                           |
+| ----- | --- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | P1  | should   | Fixed. A sheet's SAM call was refused while a peer sheet's model request was on the wire, and an in-flight SAM call had no owner, so peers' model requests failed admission. SAM now uses the same conversation-scoped check and records its owning conversation. |
+| 1     | P2  | should   | Declined as a nit. Compaction attempts have no owner, but a sheet conversation compacts only past about 917k of 1,048,576 tokens, and an unowned failure stops the whole review as uncertain without a resend. Follow-up.                                         |
+| 1     | P3  | should   | Fixed. A sheet that settled without `finish_sheet` was marked completed and handed the coordinator no notes. It is now failed, and resume retries it.                                                                                                             |
+
+Two new smoke tests fail on the original service and pass with the fixes; the SAM test also
+fails with only the guard fixed and no owner recorded. Round 2 verdict: APPROVE, P1 and P3
+resolved, no new findings. `bun run check`, 365 smoke tests and `bun run build` pass with Bun 1.4.4.

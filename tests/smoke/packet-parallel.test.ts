@@ -29,7 +29,35 @@ const SheetInput = Schema.Struct({
 const CoordinatorInput = Schema.Struct({ stage: Schema.Literals(["setup", "coordination"]) });
 
 /** A successful render_sheet result names the page it delivered. */
-const Rendered = Schema.Struct({ artifact: Schema.Struct({ sheetId: Schema.String }) });
+const Rendered = Schema.Struct({
+  artifact: Schema.Struct({ id: Schema.String, sheetId: Schema.String }),
+});
+
+/** Every pass and discipline of one sheet, checked. */
+const coverage = (sheetId: string) => ({
+  name: "record_coverage_batch",
+  arguments: {
+    entries: reviewDisciplines.flatMap((discipline) =>
+      ReviewPass.literals.map((pass) => ({
+        sheetId,
+        discipline: discipline.id,
+        pass,
+        status: "checked",
+        note: "",
+      })),
+    ),
+  },
+});
+
+const finishSheet = (sheetId: string) => ({
+  name: "finish_sheet",
+  arguments: {
+    summary: `Sheet ${sheetId} reviewed.`,
+    keyFacts: [`Area on ${sheetId}: 5,005 SF`],
+    crossReferences: [],
+    suspectedGaps: [],
+  },
+});
 
 /** Names of the tool calls already in this conversation's transcript. */
 function calls(input: typeof Schema.Json.Type | undefined) {
@@ -47,7 +75,7 @@ function calls(input: typeof Schema.Json.Type | undefined) {
  * Scripted coordinator and sheet reviewers. Each sheet reviewer's first request is held until both
  * are on the wire, so they must run concurrently and one in-flight attempt cannot block the other.
  */
-function script(failing: "none" | "second-sheet") {
+function script(failing: "none" | "second-sheet" | "second-sheet-without-notes") {
   const arrived = new Set<string>();
   const bothArrived = Promise.withResolvers<void>();
   const observed = { maxInFlight: 0, rejections: 0, stages: new Array<string>() };
@@ -90,36 +118,13 @@ function script(failing: "none" | "second-sheet") {
       if (!outputs(Rendered, request).some((result) => result.artifact.sheetId === own))
         return response([{ name: "render_sheet", arguments: { sheetId: own } }]);
 
-      if (!made.includes("record_coverage_batch"))
-        return response([
-          {
-            name: "record_coverage_batch",
-            arguments: {
-              entries: reviewDisciplines.flatMap((discipline) =>
-                ReviewPass.literals.map((pass) => ({
-                  sheetId: own,
-                  discipline: discipline.id,
-                  pass,
-                  status: "checked",
-                  note: "",
-                })),
-              ),
-            },
-          },
-        ]);
+      if (!made.includes("record_coverage_batch")) return response([coverage(own)]);
 
-      if (!made.includes("finish_sheet"))
-        return response([
-          {
-            name: "finish_sheet",
-            arguments: {
-              summary: `Sheet ${own} reviewed.`,
-              keyFacts: [`Area on ${own}: 5,005 SF`],
-              crossReferences: [],
-              suspectedGaps: [],
-            },
-          },
-        ]);
+      // This reviewer ignores both its instructions and the host's reminder to save notes.
+      if (failing === "second-sheet-without-notes" && !first)
+        return response([], "Sheet reviewed.");
+
+      if (!made.includes("finish_sheet")) return response([finishSheet(own)]);
 
       return response([], "Sheet notes saved.");
     }
@@ -270,6 +275,131 @@ test("a call budget pauses a parallel review mid-sheet and resume finishes the q
       "completed",
     ]);
     expect(packetCoverageProgress(finished).complete).toBe(true);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30000);
+
+test("a sheet reviewer that ends without finish_sheet is not reported to the coordinator as completed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-notes-"));
+  const { transport, observed } = script("second-sheet-without-notes");
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    const finished = await until(session, started.id, "completed");
+    const sheets = finished.parallel?.sheets ?? [];
+
+    expect(observed.stages.at(-1)).toBe("coordination");
+    expect(sheets.map((sheet) => sheet.state).toSorted()).toEqual(["completed", "failed"]);
+    expect(sheets.find((sheet) => sheet.state === "failed")?.notes).toBeUndefined();
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30000);
+
+test("a sheet reviewer's SAM request and its peer's model requests do not block each other", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-sam-"));
+  const peerHeld = Promise.withResolvers<void>();
+  const samArrived = Promise.withResolvers<void>();
+  const peerContinued = Promise.withResolvers<void>();
+  let samSends = 0;
+
+  const transport: ProviderTransport = async (_url, init) => {
+    const request = decodeRequest(init);
+
+    if (request.model === "sam-3.1") {
+      samSends++;
+      samArrived.resolve();
+      // The peer's next model request is admitted while this SAM request is on the wire.
+      await Promise.race([peerContinued.promise, Bun.sleep(5000)]);
+
+      return Response.json({
+        id: "sam-parallel",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "output_text", text: "" }] }],
+      });
+    }
+
+    const prompt = systemPrompt(request);
+    const made = calls(request.input);
+
+    if (prompt.includes("## Parallel review: sheet reviewer")) {
+      const input = outputs(SheetInput, request).at(0);
+
+      if (!input) throw new Error("Sheet reviewer input is missing its sheet");
+      const own = input.sheet.id;
+      const segmenting = own === input.inventory[0]?.id;
+      const rendered = outputs(Rendered, request).find((result) => result.artifact.sheetId === own);
+
+      if (!rendered) return response([{ name: "render_sheet", arguments: { sheetId: own } }]);
+
+      if (segmenting && !made.includes("segment_objects")) {
+        // SAM is admitted while the peer's model request is on the wire.
+        await Promise.race([peerHeld.promise, Bun.sleep(5000)]);
+
+        return response([
+          {
+            name: "segment_objects",
+            arguments: {
+              artifactId: rendered.artifact.id,
+              prompt: { kind: "concept", text: "luminaires" },
+            },
+          },
+        ]);
+      }
+
+      if (!made.includes("record_coverage_batch")) {
+        if (!segmenting) {
+          peerHeld.resolve();
+          await Promise.race([samArrived.promise, Bun.sleep(5000)]);
+        }
+
+        return response([coverage(own)]);
+      }
+
+      if (!made.includes("finish_sheet")) {
+        if (!segmenting) peerContinued.resolve();
+
+        return response([finishSheet(own)]);
+      }
+
+      return response([], "Sheet notes saved.");
+    }
+
+    const stage = outputs(CoordinatorInput, request).at(-1)?.stage;
+
+    if (stage === "setup") return response([], "Project configuration recorded.");
+
+    return made.includes("finish_review")
+      ? response([], "Coordination complete.")
+      : response([
+          {
+            name: "finish_review",
+            arguments: { summary: "Sheets reviewed and compared.", missingInputs: [] },
+          },
+        ]);
+  };
+
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    const finished = await until(session, started.id, "completed");
+
+    expect(samSends).toBe(1);
+    expect(finished.parallel?.sheets.map((sheet) => sheet.state)).toEqual([
+      "completed",
+      "completed",
+    ]);
   } finally {
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
