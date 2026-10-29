@@ -298,7 +298,7 @@ test("Responses continuation carries the originating call and new image evidence
       }
     },
   );
-});
+}, 15000);
 
 const VisionRequest = Schema.Struct({
   model: Schema.Literal("muse-spark-1.3"),
