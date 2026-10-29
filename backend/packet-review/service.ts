@@ -1,10 +1,13 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import {
+  GenerationTask,
   Harness,
   createRegistry,
   defineExtension,
   defineTool,
+  hook,
   type Conversation,
+  type ConversationId,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import {
@@ -42,6 +45,8 @@ import {
   PacketCitation,
   PacketFinding,
   PacketPriorComment,
+  PacketSheetNotes,
+  type PacketSheetReview,
   StartPacketReview,
   selectPacketReviewScope,
   type PacketActivityTool,
@@ -77,6 +82,46 @@ import {
 
 const promptVersion = packetPromptVersion;
 
+/**
+ * Three-sheet reviews finished as one conversation on 2026-10-29; a 29-sheet review recorded
+ * 220 of 1,276 checks in 33 minutes. Run in parallel at 16 sheets, it recorded all 1,276 using
+ * about 1.5M of Meta's 4M tokens a minute, so Meta reviews start every sheet at once.
+ */
+export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten: 4 } } as const;
+
+/** Which conversation made each model request, and which sheet each sheet reviewer owns. */
+interface SheetAssignments {
+  readonly sheets: Map<number, string>;
+  readonly requests: Map<number, number>;
+}
+
+const attemptKey = (taskId: number, attempt: number) => `${taskId}:${attempt}`;
+
+type SheetChange = Partial<
+  Pick<typeof PacketSheetReview.Type, "conversationId" | "state" | "notes" | "providerFailure">
+>;
+
+/** Change one sheet reviewer's record; a review without parallel stages is unchanged. */
+const changeSheet = (review: PacketReview, sheetId: string, change: SheetChange) =>
+  review.parallel === undefined
+    ? review
+    : new PacketReview(
+        Struct.assign(review, {
+          parallel: {
+            ...review.parallel,
+            sheets: review.parallel.sheets.map((entry) =>
+              entry.sheetId === sheetId ? { ...entry, ...change } : entry,
+            ),
+          },
+        }),
+      );
+
+/** Advance a parallel review to its next stage. */
+const changeStage = (review: PacketReview, stage: "sheets" | "coordination") =>
+  review.parallel === undefined
+    ? review
+    : new PacketReview(Struct.assign(review, { parallel: { ...review.parallel, stage } }));
+
 const error = (reason: ExecutionError["reason"], message: string) =>
   new ExecutionError({ reason, message });
 
@@ -110,6 +155,10 @@ const PriorCommentInput = PacketPriorComment.mapFields(Struct.omit(["revisionTar
 type Runtime = {
   harness: Harness;
   root: Conversation;
+  /** Sheet reviewer conversations of a parallel review, keyed by Pi conversation number. */
+  children: Map<number, Conversation>;
+  /** Marked before the harness closes, so a replaced run stops recording sheet progress. */
+  lease: { closed: boolean };
   done: Promise<void>;
   steering: {
     accepting: boolean;
@@ -124,6 +173,11 @@ interface Configuration {
   readonly queries: Semaphore.Semaphore;
   readonly review: ReturnType<typeof createReviewOperations>;
   readonly providers: ReadonlyArray<ProviderConfiguration>;
+  /** Packets with at least minSheets sheets review each sheet in its own conversation. */
+  readonly parallel?: {
+    readonly minSheets: number;
+    readonly concurrency: Readonly<Record<"meta" | "baseten", number>>;
+  };
   readonly runPromise: <A, E>(
     effect: Effect.Effect<A, E>,
     options?: Effect.RunOptions,
@@ -479,9 +533,21 @@ export class PacketReviews extends Context.Service<
           return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
         };
 
-        const registryFor = (row: Row) => {
+        const registryFor = (row: Row, assignments: SheetAssignments) => {
           const registry = createRegistry();
-          let renderedSinceRequest = 0;
+          // Images rendered since each conversation's latest model request.
+          const imageCounts = new Map<number, number>();
+          const nudged = new Set<number>();
+
+          const outsideSheet = (conversationId: number, sheetId: string) => {
+            const assigned = assignments.sheets.get(conversationId);
+
+            if (assigned !== undefined && assigned !== sheetId)
+              throw error(
+                "input",
+                "You review one assigned sheet. Note references to other sheets in finish_sheet; the coordinator checks them across the set.",
+              );
+          };
 
           const stages = {
             inventory_packet: "inventory",
@@ -497,6 +563,7 @@ export class PacketReviews extends Context.Service<
             record_prior_comment: "recording",
             ask_reviewer: "recording",
             finish_review: "recording",
+            finish_sheet: "recording",
             segment_objects: "segmentation",
           } as const satisfies Record<
             typeof PacketActivityTool.Type,
@@ -568,7 +635,11 @@ export class PacketReviews extends Context.Service<
             name: typeof PacketActivityTool.Type,
             description: string,
             schema: S,
-            work: (taskId: number, input: S["Type"]) => Promise<O>,
+            work: (
+              taskId: number,
+              input: S["Type"],
+              api: { readonly conversationId: number },
+            ) => Promise<O>,
           ) =>
             defineTool({
               name,
@@ -581,7 +652,9 @@ export class PacketReviews extends Context.Service<
                   onExcessProperty: "error",
                 })(raw);
 
-                const value = await withActivity(api.taskId, name, () => work(api.taskId, input));
+                const value = await withActivity(api.taskId, name, () =>
+                  work(api.taskId, input, api),
+                );
 
                 return { output: [{ type: "text" as const, text: JSON.stringify(value) }] };
               },
@@ -597,7 +670,25 @@ export class PacketReviews extends Context.Service<
               "inventory_packet",
               "Read the complete frozen document inventory, review scope, prior findings, coverage and reviewer request.",
               Schema.Struct({}),
-              async () => await run(get(row.project_id, row.id)),
+              async (_task, _input, api) => {
+                const review = await run(get(row.project_id, row.id));
+                const assigned = assignments.sheets.get(api.conversationId);
+
+                // A sheet reviewer needs its own rows, not the whole ledger.
+                return assigned === undefined
+                  ? review
+                  : {
+                      request: review.request,
+                      scope: review.scope,
+                      sheets: review.sheets,
+                      projectConfiguration: review.projectConfiguration,
+                      sources: review.sources.map(({ id, url, title }) => ({ id, url, title })),
+                      coverage: review.coverage.filter((entry) => entry.sheetId === assigned),
+                      findings: review.findings.filter((finding) =>
+                        finding.locations.some((location) => location.sheetId === assigned),
+                      ),
+                    };
+              },
             ),
             defineTool({
               name: "render_sheet",
@@ -623,7 +714,12 @@ export class PacketReviews extends Context.Service<
                   ),
                 );
 
-                if (row.payload.provider === "baseten" && renderedSinceRequest >= 8)
+                outsideSheet(api.conversationId, input.sheetId);
+
+                if (
+                  row.payload.provider === "baseten" &&
+                  (imageCounts.get(api.conversationId) ?? 0) >= 8
+                )
                   throw error(
                     "input",
                     "The current source batch already contains eight images. Inspect those results before requesting more pages or details; Muse Spark Open accepts eight images per request.",
@@ -674,7 +770,10 @@ export class PacketReviews extends Context.Service<
                       { artifactId: artifact.id },
                     );
 
-                    renderedSinceRequest++;
+                    imageCounts.set(
+                      api.conversationId,
+                      (imageCounts.get(api.conversationId) ?? 0) + 1,
+                    );
 
                     // Reviews twice called tables clipped or missing at their own crop edge.
                     const cropped =
@@ -768,8 +867,10 @@ export class PacketReviews extends Context.Service<
               "record_coverage",
               "Record each assigned sheet/pass/discipline as checked, issue, not_applicable with reason, or needs_input. This never marks a user's manual count coverage complete.",
               PacketCoverage,
-              async (task, input) =>
-                await recordTool(
+              async (task, input, api) => {
+                outsideSheet(api.conversationId, input.sheetId);
+
+                return await recordTool(
                   row,
                   task,
                   "coverage",
@@ -806,7 +907,8 @@ export class PacketReviews extends Context.Service<
                     });
                   },
                   input,
-                ),
+                );
+              },
             ),
             tool(
               "record_coverage_batch",
@@ -814,8 +916,10 @@ export class PacketReviews extends Context.Service<
               Schema.Struct({
                 entries: Schema.NonEmptyArray(PacketCoverage).check(Schema.isMaxLength(1000)),
               }),
-              async (task, input) =>
-                await recordTool(
+              async (task, input, api) => {
+                for (const entry of input.entries) outsideSheet(api.conversationId, entry.sheetId);
+
+                return await recordTool(
                   row,
                   task,
                   "coverage_batch",
@@ -857,7 +961,8 @@ export class PacketReviews extends Context.Service<
                     return new PacketReview({ ...review, coverage });
                   },
                   input.entries,
-                ),
+                );
+              },
             ),
             tool(
               "record_citation",
@@ -901,7 +1006,12 @@ export class PacketReviews extends Context.Service<
                 id: Schema.optionalKey(Id),
                 completed: Schema.optionalKey(Schema.Boolean),
               }),
-              async (task, input) => {
+              async (task, input, api) => {
+                if (input.absenceCheck && assignments.sheets.has(api.conversationId))
+                  throw error(
+                    "input",
+                    "A sheet reviewer cannot search the whole set. List the suspected missing item under suspectedGaps in finish_sheet; the coordinator checks it.",
+                  );
                 const id = input.id ?? stableId(row.id, task, "finding");
 
                 return await recordTool(
@@ -1076,12 +1186,23 @@ export class PacketReviews extends Context.Service<
               "finish_review",
               "Save the actual reviewed scope and summary for the offline report. Unreviewed sheets/passes and missing sources remain visible; finishing is not professional approval or user completion.",
               Schema.Struct({ summary: Text, missingInputs: Schema.Array(Schema.String) }),
-              async (task, input) =>
-                await recordTool(
+              async (task, input, api) => {
+                if (assignments.sheets.has(api.conversationId))
+                  throw error(
+                    "input",
+                    "Sheet reviewers finish with finish_sheet. The coordinator finishes the review.",
+                  );
+
+                return await recordTool(
                   row,
                   task,
                   "finish",
                   (review) => {
+                    if (review.parallel !== undefined && review.parallel.stage !== "coordination")
+                      throw error(
+                        "input",
+                        "The sheet reviewers have not reported yet. End this turn with a short reply; you finish the review in the coordination stage.",
+                      );
                     const progress = packetCoverageProgress(review);
 
                     const unopened = review.sheets.filter(
@@ -1124,7 +1245,30 @@ export class PacketReviews extends Context.Service<
                     });
                   },
                   input,
-                ),
+                );
+              },
+            ),
+            tool(
+              "finish_sheet",
+              "Sheet reviewers only: after recording your sheet's coverage and findings, save the notes the coordinator compares across sheets.",
+              PacketSheetNotes,
+              async (task, input, api) => {
+                const assigned = assignments.sheets.get(api.conversationId);
+
+                if (assigned === undefined)
+                  throw error(
+                    "input",
+                    "Only sheet reviewers call finish_sheet. The coordinator finishes with finish_review.",
+                  );
+
+                return await recordTool(
+                  row,
+                  task,
+                  "finish_sheet",
+                  (review) => changeSheet(review, assigned, { notes: input }),
+                  input,
+                );
+              },
             ),
           ];
 
@@ -1378,14 +1522,283 @@ export class PacketReviews extends Context.Service<
                 },
               }),
             );
-          registry.install(defineExtension({ name: "moke-packet-review-v1", tools }));
+          registry.install(
+            defineExtension({
+              name: "moke-packet-review-v1",
+              tools,
+              hooks: [
+                hook(GenerationTask, {
+                  // Admission scopes unresolved provider attempts to the conversation that made them.
+                  beforeRequest: (_request, api) => {
+                    assignments.requests.set(api.taskId, api.conversationId);
+
+                    return undefined;
+                  },
+                  // A sheet reviewer that stops without notes is asked once to save them.
+                  onYield: async (_answer, api) => {
+                    const sheetId = assignments.sheets.get(api.conversationId);
+
+                    if (sheetId === undefined || nudged.has(api.conversationId)) return undefined;
+                    const review = await run(get(row.project_id, row.id));
+
+                    if (
+                      review.state !== "running" ||
+                      review.parallel?.sheets.some(
+                        (entry) => entry.sheetId === sheetId && entry.notes !== undefined,
+                      )
+                    )
+                      return undefined;
+                    nudged.add(api.conversationId);
+
+                    return {
+                      continue:
+                        "Record any remaining coverage for your sheet, then call finish_sheet with your notes. The coordinator needs them to compare sheets.",
+                    };
+                  },
+                }),
+              ],
+            }),
+          );
 
           return {
             registry,
-            nextRequest: () => {
-              renderedSinceRequest = 0;
+            nextRequest: (conversationId: number | undefined) => {
+              if (conversationId === undefined) imageCounts.clear();
+              else imageCounts.delete(conversationId);
             },
           };
+        };
+
+        const updateSheet = (row: Row, sheetId: string, change: SheetChange, active = true) =>
+          mutate(row.project_id, row.id, (review) => changeSheet(review, sheetId, change), active);
+
+        /**
+         * Coordinator setup, then one conversation per sheet, `concurrency` at a time, then
+         * cross-sheet coordination. Stable request IDs let a restart rejoin each stage's work.
+         */
+        const reviewInParallel = async (work: {
+          readonly row: Row;
+          readonly harness: Harness;
+          readonly storage: Awaited<ReturnType<typeof openReviewJournal>>;
+          readonly root: Conversation;
+          readonly children: Map<number, Conversation>;
+          readonly assignments: SheetAssignments;
+          readonly agent: {
+            readonly model: ReturnType<typeof createAdmittedModels>["model"];
+            readonly thinkingLevel: "xhigh" | "high";
+          };
+          readonly input: { readonly followUpInstructions: ReadonlyArray<unknown> };
+          readonly requestId: string;
+          readonly lease: { readonly closed: boolean };
+        }): Promise<{ readonly status: string }> => {
+          const { row, root, harness } = work;
+          const replaced = { status: "unanswered" } as const;
+          const requestId = (part: string) => `${work.requestId}:${part}`;
+
+          const stage = (next: "sheets" | "coordination") =>
+            run(mutate(row.project_id, row.id, (review) => changeStage(review, next)));
+
+          // A run replaced by resume or closed for shutdown records nothing further.
+          const sheetState = (sheetId: string, change: SheetChange, active = true) =>
+            work.lease.closed
+              ? Promise.resolve()
+              : run(updateSheet(row, sheetId, change, active)).then(() => undefined);
+
+          let review = await run(get(row.project_id, row.id));
+
+          if (review.parallel?.stage === "setup") {
+            const setup = await (
+              await root.submit(
+                {
+                  type: "input",
+                  requestId: work.requestId,
+                  content: JSON.stringify({ ...work.input, stage: "setup" }),
+                },
+                BACKGROUND_CONTEXT,
+              )
+            ).wait(BACKGROUND_CONTEXT);
+
+            if (setup.status !== "done" || work.lease.closed) return setup;
+            review = await stage("sheets");
+          }
+
+          if (review.parallel?.stage === "sheets") {
+            // Stored conversation numbers resolve to the journal's own conversation IDs.
+            const known = new Map<number, ConversationId>();
+
+            for (const record of (
+              await work.storage.scanConversations({}, 10_000, undefined, BACKGROUND_CONTEXT)
+            ).items)
+              known.set(record.id, record.id);
+
+            const prompt = packetReviewPrompt(review.scope, {
+              provider: review.provider,
+              role: "sheet",
+            });
+
+            const reviewSheet = async (sheetId: string) => {
+              const current = await run(get(row.project_id, row.id));
+              const sheet = current.sheets.find((item) => item.id === sheetId);
+              const entry = current.parallel?.sheets.find((item) => item.sheetId === sheetId);
+
+              if (
+                work.lease.closed ||
+                current.state !== "running" ||
+                sheet === undefined ||
+                entry === undefined
+              )
+                return;
+
+              const stored =
+                entry.conversationId === null ? undefined : known.get(entry.conversationId);
+
+              const conversation =
+                (stored === undefined
+                  ? undefined
+                  : await harness.conversation(stored, BACKGROUND_CONTEXT)) ??
+                (await harness.createConversation(
+                  {
+                    ownership: { kind: "ownerless" },
+                    agent: {
+                      model: work.agent.model,
+                      instructions: prompt,
+                      thinkingLevel: work.agent.thinkingLevel,
+                    },
+                  },
+                  BACKGROUND_CONTEXT,
+                ));
+
+              work.assignments.sheets.set(conversation.id, sheet.id);
+              work.children.set(conversation.id, conversation);
+              await sheetState(sheet.id, { conversationId: conversation.id, state: "running" });
+
+              const settled = await (
+                await conversation.submit(
+                  {
+                    type: "input",
+                    requestId: requestId(`sheet:${sheet.id}`),
+                    content: JSON.stringify({
+                      stage: "sheet",
+                      continuation:
+                        entry.conversationId === null
+                          ? null
+                          : "Continue this sheet from its recorded coverage and findings. Do not repeat completed checks.",
+                      request: current.request,
+                      scope: current.scope,
+                      sheet: {
+                        id: sheet.id,
+                        label: sheet.label,
+                        pageIndex: sheet.pageIndex,
+                        documentName: sheet.documentName,
+                        discipline: sheet.discipline ?? null,
+                      },
+                      requiredChecks: packetCoverageProgress(current)
+                        .gaps.filter((gap) => gap.sheetId === sheet.id)
+                        .map(({ discipline, pass, reason }) => ({ discipline, pass, reason })),
+                      projectConfiguration: current.projectConfiguration,
+                      sources: current.sources.map(({ id, url, title }) => ({ id, url, title })),
+                      inventory: current.sheets.map(({ id, label, pageIndex, documentName }) => ({
+                        id,
+                        label,
+                        pageIndex,
+                        documentName,
+                      })),
+                      previousFindings: current.findings.filter((finding) =>
+                        finding.locations.some((location) => location.sheetId === sheet.id),
+                      ),
+                      previousComments: current.priorComments.filter((comment) =>
+                        (comment.revisionTargetSheetIds ?? []).includes(sheet.id),
+                      ),
+                    }),
+                  },
+                  BACKGROUND_CONTEXT,
+                )
+              ).wait(BACKGROUND_CONTEXT);
+
+              const after = await run(get(row.project_id, row.id));
+
+              const reported = after.parallel?.sheets.find((item) => item.sheetId === sheet.id);
+              const stopped = reported?.state === "failed";
+              const notes = reported?.notes;
+
+              await sheetState(
+                sheet.id,
+                {
+                  // A sheet without notes when the review pauses or stops waits for resume.
+                  state: stopped
+                    ? "failed"
+                    : after.state !== "running" && notes === undefined
+                      ? "queued"
+                      : settled.status === "done"
+                        ? "completed"
+                        : "failed",
+                },
+                false,
+              );
+            };
+
+            const queue = review.parallel.sheets
+              .filter((entry) => entry.state !== "completed")
+              .map((entry) => entry.sheetId);
+
+            const next = async () => {
+              for (let sheetId = queue.shift(); sheetId !== undefined; sheetId = queue.shift())
+                await reviewSheet(sheetId).catch(() =>
+                  sheetState(sheetId, { state: "failed" }, false).catch(() => undefined),
+                );
+            };
+
+            await Promise.all(
+              Array.from({ length: Math.min(review.parallel.concurrency, queue.length) }, next),
+            );
+
+            review = await run(get(row.project_id, row.id));
+
+            if (review.state !== "running" || work.lease.closed) return replaced;
+            review = await stage("coordination");
+          }
+
+          const progress = packetCoverageProgress(review);
+          const gaps = new Map<string, number>();
+
+          for (const gap of progress.gaps) gaps.set(gap.sheetId, (gaps.get(gap.sheetId) ?? 0) + 1);
+
+          return await (
+            await root.submit(
+              {
+                type: "input",
+                requestId: requestId("coordination"),
+                content: JSON.stringify({
+                  stage: "coordination",
+                  request: review.request,
+                  scope: review.scope,
+                  sheetReviews: (review.parallel?.sheets ?? []).map((entry) => ({
+                    sheetId: entry.sheetId,
+                    label: review.sheets.find((sheet) => sheet.id === entry.sheetId)?.label ?? "",
+                    state: entry.state,
+                    unsettledChecks: gaps.get(entry.sheetId) ?? 0,
+                    notes: entry.notes ?? null,
+                  })),
+                  coverage: {
+                    total: progress.total,
+                    recorded: progress.recorded,
+                    settled: progress.settled,
+                  },
+                  findings: review.findings.map(
+                    ({ id, title, severity, discipline, locations }) => ({
+                      id,
+                      title,
+                      severity,
+                      discipline,
+                      sheetIds: locations.map((location) => location.sheetId),
+                    }),
+                  ),
+                  followUpInstructions: work.input.followUpInstructions,
+                }),
+              },
+              BACKGROUND_CONTEXT,
+            )
+          ).wait(BACKGROUND_CONTEXT);
         };
 
         const launch = async (row: Row, existing: boolean, resumeRequestId?: string) => {
@@ -1402,7 +1815,15 @@ export class PacketReviews extends Context.Service<
               throw error("unavailable", "The selected model's provider is not connected.");
 
             const capabilities = reviewModelCapabilities(row.payload.model);
-            const toolRegistry = registryFor(row);
+            const assignments: SheetAssignments = { sheets: new Map(), requests: new Map() };
+
+            for (const entry of row.payload.parallel?.sheets ?? [])
+              if (entry.conversationId !== null)
+                assignments.sheets.set(entry.conversationId, entry.sheetId);
+
+            // Requests on the wire in this process. They stay uncertain in SQL until they settle.
+            const inFlight = new Set<string>();
+            const toolRegistry = registryFor(row, assignments);
 
             const admitted = createAdmittedModels(
               { ...provider, model: row.payload.model },
@@ -1434,10 +1855,29 @@ export class PacketReviews extends Context.Service<
 
                         const sql = yield* SqlClient.SqlClient;
 
-                        const unresolved =
-                          yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain' LIMIT 1`;
+                        const unresolved = yield* Schema.decodeUnknownEffect(
+                          Schema.Array(Schema.Struct({ task_id: Schema.Int, attempt: Schema.Int })),
+                        )(
+                          yield* sql`SELECT task_id,attempt FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain'`,
+                        );
 
-                        if (unresolved.length)
+                        const conversation = assignments.requests.get(phase["task.id"]);
+
+                        // Each parallel reviewer owns its transcript, so only an unresolved attempt in
+                        // the same conversation could be resent. An unknown owner stays blocking.
+                        if (
+                          unresolved.some((attempt) => {
+                            if (inFlight.has(attemptKey(attempt.task_id, attempt.attempt)))
+                              return false;
+                            const owner = assignments.requests.get(attempt.task_id);
+
+                            return (
+                              owner === undefined ||
+                              conversation === undefined ||
+                              owner === conversation
+                            );
+                          })
+                        )
                           return yield* error(
                             "uncertain",
                             "An earlier provider attempt is unresolved.",
@@ -1454,6 +1894,9 @@ export class PacketReviews extends Context.Service<
                         }
 
                         yield* sql`INSERT INTO packet_review_attempts(review_id,task_id,attempt,kind,fingerprint,status,sent) VALUES (${row.id},${phase["task.id"]},${phase.attempt},'model',${fingerprint},'uncertain',0)`;
+                        yield* Effect.sync(() =>
+                          inFlight.add(attemptKey(phase["task.id"], phase.attempt)),
+                        );
                         yield* save(
                           current,
                           new PacketReview({
@@ -1469,7 +1912,7 @@ export class PacketReviews extends Context.Service<
                     .then(async (receipt) => {
                       if (receipt === null)
                         await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
-                      toolRegistry.nextRequest();
+                      toolRegistry.nextRequest(assignments.requests.get(phase["task.id"]));
 
                       return receipt;
                     })
@@ -1532,8 +1975,34 @@ export class PacketReviews extends Context.Service<
                       }),
                     ),
                   ),
-                end: async (uncertain, diagnostic) => {
-                  if (uncertain)
+                end: async (uncertain, diagnostic, phase) => {
+                  if (phase !== undefined)
+                    inFlight.delete(attemptKey(phase["task.id"], phase.attempt));
+
+                  const conversation =
+                    phase === undefined ? undefined : assignments.requests.get(phase["task.id"]);
+
+                  const sheetId =
+                    conversation === undefined ? undefined : assignments.sheets.get(conversation);
+
+                  // An unresolved request stops only the sheet reviewer that sent it.
+                  if (uncertain && sheetId !== undefined)
+                    await run(
+                      mutate(
+                        row.project_id,
+                        row.id,
+                        (review) =>
+                          changeSheet(
+                            review,
+                            sheetId,
+                            diagnostic === undefined
+                              ? { state: "failed" }
+                              : { state: "failed", providerFailure: diagnostic },
+                          ),
+                        false,
+                      ),
+                    );
+                  else if (uncertain)
                     await run(
                       mutate(
                         row.project_id,
@@ -1612,11 +2081,16 @@ export class PacketReviews extends Context.Service<
               throw cause;
             }
 
+            const thinkingLevel = row.payload.provider === "meta" ? "xhigh" : "high";
+
             const root = await harness.root(BACKGROUND_CONTEXT, {
               agent: {
                 model: admitted.model,
-                instructions: packetReviewPrompt(row.payload.scope),
-                thinkingLevel: "high",
+                instructions: packetReviewPrompt(row.payload.scope, {
+                  provider: row.payload.provider,
+                  role: row.payload.parallel === undefined ? "review" : "coordinator",
+                }),
+                thinkingLevel,
               },
             });
 
@@ -1648,28 +2122,21 @@ export class PacketReviews extends Context.Service<
                 ),
               );
 
-            const submission = await root.submit(
-              {
-                type: "input",
-                requestId: resumeRequestId ?? row.id,
-                content: JSON.stringify({
-                  continuation: existing
-                    ? "Continue the saved review from its coverage and findings. Do not repeat completed checks; retain stable issue IDs."
-                    : null,
-                  request: row.payload.request,
-                  conversation: row.payload.conversationContext ?? [],
-                  inventory: row.payload.sheets,
-                  scope: row.payload.scope,
-                  previousFindings: row.payload.findings,
-                  previousComments: row.payload.priorComments,
-                  followUpInstructions: resumedInstructions.map(({ commandId, text }) => ({
-                    commandId,
-                    text,
-                  })),
-                }),
-              },
-              BACKGROUND_CONTEXT,
-            );
+            const input = {
+              continuation: existing
+                ? "Continue the saved review from its coverage and findings. Do not repeat completed checks; retain stable issue IDs."
+                : null,
+              request: row.payload.request,
+              conversation: row.payload.conversationContext ?? [],
+              inventory: row.payload.sheets,
+              scope: row.payload.scope,
+              previousFindings: row.payload.findings,
+              previousComments: row.payload.priorComments,
+              followUpInstructions: resumedInstructions.map(({ commandId, text }) => ({
+                commandId,
+                text,
+              })),
+            };
 
             const steering: Runtime["steering"] = {
               accepting: true,
@@ -1678,8 +2145,35 @@ export class PacketReviews extends Context.Service<
               admissions: new Map(),
             };
 
-            const done = submission
-              .wait(BACKGROUND_CONTEXT)
+            const children = new Map<number, Conversation>();
+            const lease = { closed: false };
+
+            const work: Promise<{ readonly status: string }> =
+              row.payload.parallel === undefined
+                ? (
+                    await root.submit(
+                      {
+                        type: "input",
+                        requestId: resumeRequestId ?? row.id,
+                        content: JSON.stringify(input),
+                      },
+                      BACKGROUND_CONTEXT,
+                    )
+                  ).wait(BACKGROUND_CONTEXT)
+                : reviewInParallel({
+                    row,
+                    harness,
+                    storage,
+                    root,
+                    children,
+                    assignments,
+                    agent: { model: admitted.model, thinkingLevel },
+                    input,
+                    requestId: resumeRequestId ?? row.id,
+                    lease,
+                  });
+
+            const done = work
               .then(async (result) => {
                 steering.accepting = false;
 
@@ -1734,10 +2228,26 @@ export class PacketReviews extends Context.Service<
                           ? "completed"
                           : "failed";
 
+                      const stoppedSheets = (current.payload.parallel?.sheets ?? []).filter(
+                        (entry) => entry.providerFailure !== undefined,
+                      );
+
+                      // A sheet reviewer's provider failure explains an uncertain parallel review.
+                      const inheritedFailure = current.payload.providerFailure
+                        ? undefined
+                        : stoppedSheets[0]?.providerFailure;
+
+                      const payload =
+                        inheritedFailure === undefined
+                          ? current.payload
+                          : new PacketReview(
+                              Struct.assign(current.payload, { providerFailure: inheritedFailure }),
+                            );
+
                       const review = yield* save(
                         current,
                         new PacketReview({
-                          ...current.payload,
+                          ...payload,
                           state,
                           summary,
                           steering: (current.payload.steering ?? []).map((item) =>
@@ -1756,7 +2266,9 @@ export class PacketReviews extends Context.Service<
                               ? current.payload.finished
                                 ? "The review stopped before finishing. Saved findings and coverage remain available."
                                 : "The reviewer stopped without recording a completed source review. Saved findings, coverage and the partial summary remain available."
-                              : current.payload.error,
+                              : state === "uncertain" && stoppedSheets.length > 0
+                                ? `${stoppedSheets.length} of ${current.payload.parallel?.sheets.length ?? 0} sheet reviewers stopped on an unresolved provider request. Their sheets keep their gaps; those requests may have been charged and will not be sent again.`
+                                : current.payload.error,
                         }),
                       );
 
@@ -1793,7 +2305,7 @@ export class PacketReviews extends Context.Service<
                 ).catch(() => undefined);
               });
 
-            runtimes.set(row.id, { harness, root, done, steering });
+            runtimes.set(row.id, { harness, root, children, lease, done, steering });
           } finally {
             starting.delete(row.id);
             launched.resolve();
@@ -1942,7 +2454,7 @@ export class PacketReviews extends Context.Service<
             .filter((sheet) => !unchanged.some((previous) => previous.id === sheet.id))
             .map((sheet) => sheet.id);
 
-          const review = new PacketReview({
+          const planned = new PacketReview({
             id: randomUUID(),
             projectId: project.id,
             projectName: project.name,
@@ -1995,6 +2507,29 @@ export class PacketReviews extends Context.Service<
             error: null,
             finished: false,
           });
+
+          const parallel = config.parallel ?? defaultParallel;
+          const unsettled = new Set(packetCoverageProgress(planned).gaps.map((gap) => gap.sheetId));
+
+          // Large packets review each sheet that still has unsettled checks in its own conversation.
+          const review =
+            sheets.length < parallel.minSheets
+              ? planned
+              : new PacketReview(
+                  Struct.assign(planned, {
+                    parallel: {
+                      stage: "setup" as const,
+                      concurrency: parallel.concurrency[model.provider],
+                      sheets: sheets.map((sheet) => ({
+                        sheetId: sheet.id,
+                        conversationId: null,
+                        state: unsettled.has(sheet.id)
+                          ? ("queued" as const)
+                          : ("completed" as const),
+                      })),
+                    },
+                  }),
+                );
 
           const started = yield* query(
             Effect.gen(function* () {
@@ -2285,6 +2820,7 @@ export class PacketReviews extends Context.Service<
                 }),
               );
               yield* callback(async () => {
+                runtime.lease.closed = true;
                 await runtime.harness.close(BACKGROUND_CONTEXT);
                 await runtime.done;
                 runtimes.delete(input.reviewId);
@@ -2417,11 +2953,13 @@ export class PacketReviews extends Context.Service<
           const runtime = runtimes.get(input.reviewId);
 
           if (input.action === "cancel" && runtime)
-            void runtime.root.abort(BACKGROUND_CONTEXT).catch(() => undefined);
+            for (const conversation of [runtime.root, ...runtime.children.values()])
+              void conversation.abort(BACKGROUND_CONTEXT).catch(() => undefined);
 
           if (input.action === "resume") {
             if (runtime) {
               yield* callback(async () => {
+                runtime.lease.closed = true;
                 await runtime.harness.close(BACKGROUND_CONTEXT);
                 runtimes.delete(input.reviewId);
               });
@@ -2544,6 +3082,7 @@ export class PacketReviews extends Context.Service<
               .then(() =>
                 Promise.all(
                   [...runtimes.values()].map(async (runtime) => {
+                    runtime.lease.closed = true;
                     await runtime.harness.close(BACKGROUND_CONTEXT);
                     await runtime.done;
                   }),

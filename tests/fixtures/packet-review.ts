@@ -21,7 +21,7 @@ import { migrateDatabase } from "../../backend/database-files.ts";
 import { Documents } from "../../backend/documents/documents.ts";
 import { createReviewOperations } from "../../backend/review/operations.ts";
 import { ReviewStore } from "../../backend/review/store.ts";
-import { PacketReviews } from "../../backend/packet-review/service.ts";
+import { PacketReviews, defaultParallel } from "../../backend/packet-review/service.ts";
 import { exportReviewPackage } from "../../backend/review/packages.ts";
 import { PackageError, PackageLimits } from "#lib/review/packages.ts";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
@@ -107,6 +107,11 @@ export async function open(
   setup = true,
   afterRun?: <A>(value: A) => Promise<void>,
   gate: "accept" | "observe" = "accept",
+  // Scripted reviews here are single conversations; parallel review tests opt in.
+  parallel: NonNullable<Parameters<typeof PacketReviews.layer>[0]["parallel"]> = {
+    ...defaultParallel,
+    minSheets: Number.POSITIVE_INFINITY,
+  },
 ) {
   const transport = gate === "accept" ? acceptCoverageGate(rawTransport) : rawTransport;
 
@@ -167,6 +172,7 @@ export async function open(
               owner,
               queries,
               review,
+              parallel,
               runPromise: async (operation, options) => {
                 const value = await enter(operation, options);
                 await afterRun?.(value);

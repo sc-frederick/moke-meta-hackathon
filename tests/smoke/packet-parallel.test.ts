@@ -1,0 +1,277 @@
+import { expect, test } from "bun:test";
+import { Schema } from "effect";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ProviderTransport } from "../../backend/inference/provider.ts";
+import { reviewDisciplines } from "#lib/review/execution.ts";
+import { ReviewPass } from "#lib/review/packet.ts";
+import { packetCoverageProgress } from "#lib/review/packet-coverage.ts";
+import {
+  decodeRequest,
+  id,
+  open,
+  outputs,
+  response,
+  strings,
+  systemPrompt,
+  until,
+} from "../fixtures/packet-review.ts";
+
+const parallel = { minSheets: 2, concurrency: { meta: 4, baseten: 2 } } as const;
+
+const SheetInput = Schema.Struct({
+  stage: Schema.Literal("sheet"),
+  sheet: Schema.Struct({ id: Schema.String }),
+  inventory: Schema.Array(Schema.Struct({ id: Schema.String })),
+});
+
+const CoordinatorInput = Schema.Struct({ stage: Schema.Literals(["setup", "coordination"]) });
+
+/** A successful render_sheet result names the page it delivered. */
+const Rendered = Schema.Struct({ artifact: Schema.Struct({ sheetId: Schema.String }) });
+
+/** Names of the tool calls already in this conversation's transcript. */
+function calls(input: typeof Schema.Json.Type | undefined) {
+  return Schema.decodeUnknownSync(
+    Schema.Array(
+      Schema.Struct({
+        type: Schema.optionalKey(Schema.String),
+        name: Schema.optionalKey(Schema.String),
+      }),
+    ),
+  )(input ?? []).flatMap((item) => (item.type === "function_call" && item.name ? [item.name] : []));
+}
+
+/**
+ * Scripted coordinator and sheet reviewers. Each sheet reviewer's first request is held until both
+ * are on the wire, so they must run concurrently and one in-flight attempt cannot block the other.
+ */
+function script(failing: "none" | "second-sheet") {
+  const arrived = new Set<string>();
+  const bothArrived = Promise.withResolvers<void>();
+  const observed = { maxInFlight: 0, rejections: 0, stages: new Array<string>() };
+  let inFlight = 0;
+
+  const transport: ProviderTransport = async (_url, init) => {
+    const request = decodeRequest(init);
+    const prompt = systemPrompt(request);
+    const made = calls(request.input);
+
+    if (prompt.includes("## Parallel review: sheet reviewer")) {
+      const input = outputs(SheetInput, request).at(0);
+
+      if (!input) throw new Error("Sheet reviewer input is missing its sheet");
+      const own = input.sheet.id;
+      const other = input.inventory.find((sheet) => sheet.id !== own)?.id ?? own;
+      const first = own < other;
+
+      observed.rejections += strings(request.input ?? null).filter((text) =>
+        text.includes("You review one assigned sheet"),
+      ).length;
+
+      if (made.length === 0) {
+        arrived.add(own);
+
+        if (arrived.size === 2) bothArrived.resolve();
+        inFlight++;
+        observed.maxInFlight = Math.max(observed.maxInFlight, inFlight);
+        await Promise.race([bothArrived.promise, Bun.sleep(5000)]);
+        inFlight--;
+
+        if (failing === "second-sheet" && !first)
+          return Response.json({ error: { message: "Internal error" } }, { status: 500 });
+
+        // The first sheet reviewer also tries to open the other sheet, which the host refuses.
+        return response([{ name: "render_sheet", arguments: { sheetId: first ? other : own } }]);
+      }
+
+      // A render refused because the review paused is retried after resume, as a model would.
+      if (!outputs(Rendered, request).some((result) => result.artifact.sheetId === own))
+        return response([{ name: "render_sheet", arguments: { sheetId: own } }]);
+
+      if (!made.includes("record_coverage_batch"))
+        return response([
+          {
+            name: "record_coverage_batch",
+            arguments: {
+              entries: reviewDisciplines.flatMap((discipline) =>
+                ReviewPass.literals.map((pass) => ({
+                  sheetId: own,
+                  discipline: discipline.id,
+                  pass,
+                  status: "checked",
+                  note: "",
+                })),
+              ),
+            },
+          },
+        ]);
+
+      if (!made.includes("finish_sheet"))
+        return response([
+          {
+            name: "finish_sheet",
+            arguments: {
+              summary: `Sheet ${own} reviewed.`,
+              keyFacts: [`Area on ${own}: 5,005 SF`],
+              crossReferences: [],
+              suspectedGaps: [],
+            },
+          },
+        ]);
+
+      return response([], "Sheet notes saved.");
+    }
+
+    if (!prompt.includes("## Parallel review: coordinator"))
+      throw new Error("A large packet must not run as a single reviewer");
+
+    const stage = outputs(CoordinatorInput, request).at(-1)?.stage;
+
+    if (!stage) throw new Error("Coordinator input is missing its stage");
+    observed.stages.push(stage);
+
+    if (stage === "setup")
+      return made.includes("record_project")
+        ? response([], "Project configuration recorded.")
+        : response([
+            { name: "record_project", arguments: { values: { jurisdiction: "Needs input" } } },
+          ]);
+
+    return made.includes("finish_review")
+      ? response([], "Coordination complete.")
+      : response([
+          {
+            name: "finish_review",
+            arguments: { summary: "Sheets reviewed and compared.", missingInputs: [] },
+          },
+        ]);
+  };
+
+  return { transport, observed };
+}
+
+test("a large packet reviews its sheets in concurrent conversations between coordinator setup and coordination", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-"));
+  const { transport, observed } = script("none");
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    expect(started.parallel?.stage).toBe("setup");
+    expect(started.parallel?.sheets).toHaveLength(2);
+
+    const finished = await until(session, started.id, "completed");
+
+    expect(observed.maxInFlight).toBe(2);
+    expect(observed.rejections).toBeGreaterThan(0);
+    expect(observed.stages[0]).toBe("setup");
+    expect(observed.stages.at(-1)).toBe("coordination");
+    expect(finished.parallel?.stage).toBe("coordination");
+    expect(finished.parallel?.sheets.map((sheet) => sheet.state)).toEqual([
+      "completed",
+      "completed",
+    ]);
+    expect(finished.parallel?.sheets.every((sheet) => sheet.notes?.keyFacts.length === 1)).toBe(
+      true,
+    );
+    expect(new Set(finished.parallel?.sheets.map((sheet) => sheet.conversationId)).size).toBe(2);
+    expect(packetCoverageProgress(finished).complete).toBe(true);
+    expect(finished.projectConfiguration.jurisdiction).toBe("Needs input");
+    expect(finished.finished).toBe(true);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("one sheet reviewer's unresolved provider request stops only that sheet", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-failure-"));
+  const { transport, observed } = script("second-sheet");
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    const finished = await until(session, started.id, "uncertain");
+    const sheets = finished.parallel?.sheets ?? [];
+    const stopped = sheets.find((sheet) => sheet.state === "failed");
+
+    expect(sheets.map((sheet) => sheet.state).toSorted()).toEqual(["completed", "failed"]);
+    expect(stopped?.providerFailure?.httpStatus).toBe(500);
+    expect(stopped?.notes).toBeUndefined();
+    expect(sheets.find((sheet) => sheet.state === "completed")?.notes?.summary).toContain(
+      "reviewed",
+    );
+    // The coordinator still compared the sheets that reported.
+    expect(observed.stages.at(-1)).toBe("coordination");
+    expect(finished.error).toContain("1 of 2 sheet reviewers stopped");
+    expect(finished.providerFailure?.httpStatus).toBe(500);
+    expect(packetCoverageProgress(finished).complete).toBe(false);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a call budget pauses a parallel review mid-sheet and resume finishes the queued sheets", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-resume-"));
+  const { transport, observed } = script("none");
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    // Setup uses two calls and each sheet reviewer's first request one more.
+    const started = await session.run(
+      session.packets.start(
+        await session.request("Review the whole drawing set.", { maxCalls: 4 }),
+      ),
+    );
+
+    await until(session, started.id, "paused");
+    let paused = await session.run(session.packets.get(session.projectId, started.id));
+
+    // Sheet reviewers settle after the budget pauses the review.
+    for (let wait = 0; paused.parallel?.sheets.some((sheet) => sheet.state === "running"); wait++) {
+      if (wait > 500) throw new Error("Sheet reviewers did not settle after the pause");
+      await Bun.sleep(10);
+      paused = await session.run(session.packets.get(session.projectId, started.id));
+    }
+
+    expect(paused.parallel?.stage).toBe("sheets");
+    expect(paused.parallel?.sheets.map((sheet) => sheet.state)).toEqual(["queued", "queued"]);
+    expect(paused.parallel?.sheets.every((sheet) => sheet.conversationId !== null)).toBe(true);
+
+    await session.run(
+      session.packets.control({
+        projectId: session.projectId,
+        reviewId: started.id,
+        expectedVersion: paused.version,
+        action: "resume",
+        maxCalls: 40,
+        commandId: id(),
+      }),
+    );
+
+    const finished = await until(session, started.id, "completed");
+
+    // Resume continues the same sheet conversations; setup does not run again.
+    expect(observed.stages.filter((stage) => stage === "setup")).toHaveLength(2);
+    expect(finished.parallel?.sheets.map((sheet) => sheet.conversationId)).toEqual(
+      paused.parallel?.sheets.map((sheet) => sheet.conversationId),
+    );
+    expect(finished.parallel?.sheets.map((sheet) => sheet.state)).toEqual([
+      "completed",
+      "completed",
+    ]);
+    expect(packetCoverageProgress(finished).complete).toBe(true);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

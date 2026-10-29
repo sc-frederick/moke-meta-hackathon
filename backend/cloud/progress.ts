@@ -11,7 +11,7 @@ const PriorPacketCloudWorkerProgress = Schema.Struct({
   ...CloudWorkerProgress.fields,
   identity: Schema.Struct({
     ...CloudEngineIdentity.fields,
-    packetPrompt: Schema.Literal("moke-packet-review-v1"),
+    packetPrompt: Schema.Literals(["moke-packet-review-v1", "moke-packet-review-v2"]),
   }),
 });
 

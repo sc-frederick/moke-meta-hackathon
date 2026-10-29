@@ -173,6 +173,7 @@ export const PacketActivityTool = Schema.Literals([
   "record_prior_comment",
   "ask_reviewer",
   "finish_review",
+  "finish_sheet",
   "segment_objects",
 ]);
 
@@ -206,6 +207,31 @@ export const PacketActivity = Schema.Struct({
   status: Schema.Literals(["active", "finished"]),
   startedAt: Schema.Finite,
   finishedAt: Schema.NullOr(Schema.Finite),
+});
+
+/** What one sheet reviewer hands the coordinator for cross-sheet comparison. */
+export const PacketSheetNotes = Schema.Struct({
+  summary: Required,
+  keyFacts: Schema.Array(Required).check(Schema.isMaxLength(100)),
+  crossReferences: Schema.Array(Required).check(Schema.isMaxLength(100)),
+  suspectedGaps: Schema.Array(Required).check(Schema.isMaxLength(100)),
+});
+
+/** One sheet reviewer in a parallel review; notes carry its facts to the cross-sheet coordinator. */
+export const PacketSheetReview = Schema.Struct({
+  sheetId: SheetId,
+  /** Pi conversation number inside this review's journal; null until the reviewer starts. */
+  conversationId: Schema.NullOr(Schema.Int),
+  state: Schema.Literals(["queued", "running", "completed", "failed"]),
+  notes: Schema.optionalKey(PacketSheetNotes),
+  providerFailure: Schema.optionalKey(ProviderFailure),
+});
+
+/** Large reviews split into coordinator setup, concurrent sheet reviewers and cross-sheet coordination. */
+export const PacketParallelReview = Schema.Struct({
+  stage: Schema.Literals(["setup", "sheets", "coordination"]),
+  concurrency: Schema.Int.check(Schema.isGreaterThan(0)),
+  sheets: Schema.Array(PacketSheetReview),
 });
 
 /** Durable packet progress and report data sent to the trusted workbench. */
@@ -261,6 +287,7 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   missingInputs: Schema.Array(Schema.String),
   error: Schema.NullOr(Schema.String),
   finished: Schema.Boolean,
+  parallel: Schema.optionalKey(PacketParallelReview),
 }) {}
 
 /** Operational limits are optional; model context and output capabilities come from its catalog. */
