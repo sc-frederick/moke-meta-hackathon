@@ -426,46 +426,12 @@ test("a drawing-set review uses the selected provider and returns its real packe
         );
 
         if (localApplication === undefined) throw new Error("Missing local application");
-        const packet = remote;
         await remote.run(
           runCloudReview(
             {
               execution: localApplication.execution,
               packets: remote.packets,
-              exportPackage: (destination, limits) =>
-                packet.exportPackage(destination, limits).pipe(
-                  Effect.tapError(() =>
-                    Effect.promise(async () => {
-                      const journals = join(packet.directory, "execution-journals");
-
-                      for (const name of await readdir(journals)) {
-                        if (!name.endsWith(".sqlite")) continue;
-                        const database = new DatabaseSync(join(journals, name), { readOnly: true });
-
-                        try {
-                          console.error("packet_journal_diagnostic", {
-                            file: name,
-                            tables: database
-                              .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-                              .all(),
-                            identity: database
-                              .prepare(
-                                "SELECT journal_id,format FROM review_journal_identity WHERE id=1",
-                              )
-                              .get(),
-                          });
-                        } catch (cause) {
-                          console.error("packet_journal_diagnostic", {
-                            file: name,
-                            error: String(cause),
-                          });
-                        } finally {
-                          database.close();
-                        }
-                      }
-                    }),
-                  ),
-                ),
+              exportPackage: remote.exportPackage,
             },
             record.request,
             60_000,
@@ -477,6 +443,26 @@ test("a drawing-set review uses the selected provider and returns its real packe
           ),
         );
         expect(latest.phase).toBe("ready");
+        const journals = join(remote.directory, "execution-journals");
+        const files = (await readdir(journals)).filter((name) => name.endsWith(".sqlite"));
+        expect(files).toHaveLength(1);
+
+        for (const name of files) {
+          const database = new DatabaseSync(join(journals, name), { readOnly: true });
+
+          try {
+            expect(database.prepare("PRAGMA journal_mode").get()).toEqual({
+              journal_mode: "delete",
+            });
+            expect(
+              database
+                .prepare("SELECT count(*) AS n FROM review_journal_identity WHERE id=1")
+                .get(),
+            ).toEqual({ n: 1 });
+          } finally {
+            database.close();
+          }
+        }
       }),
     progress: (record) =>
       Effect.succeed({

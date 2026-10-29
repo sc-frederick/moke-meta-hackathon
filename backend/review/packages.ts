@@ -1340,6 +1340,17 @@ const writeApplicationPackage = (
 
             const livePath = liveJournalName(run.journalId);
 
+            const closed = yield* referencedFile(
+              dataDirectory,
+              livePath,
+              undefined,
+              limits.maxBytes,
+            );
+
+            // Maintenance has closed writers. Let SQLite settle WAL before read-only
+            // inspection (Bun/macOS #45171), then measure the checkpointed file again.
+            yield* finalizeDelete(closed.path);
+
             const stored = yield* referencedFile(
               dataDirectory,
               livePath,

@@ -96,6 +96,13 @@ The manifest verifies hashes, migration prefixes, engine format, paths and limit
 Credentials, logs, `.env`, and the ownership lock are excluded. Database-only
 restore refuses review-bearing data in either the current or incoming database.
 
+After maintenance closes journal writers, export lets SQLite checkpoint each Pi
+journal and leave WAL mode before read-only inspection. This avoids the closed-WAL
+read failure tracked in [Bun #45171](https://github.com/oven-sh/bun/issues/45171)
+on macOS. SQLite owns sidecar cleanup; export rechecks the resulting file size and
+identity before backup. A later local resume opens WAL mode again through the
+normal journal adapter.
+
 Restore validates the entire package before replacement, retains a complete
 pre-restore snapshot, and journals replacement phases. Startup rolls an
 interrupted replacement back before opening databases. Restored runs have a
