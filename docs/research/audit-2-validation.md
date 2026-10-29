@@ -347,4 +347,13 @@ with the prepared private Xvfb. No inherited/user desktop, Windows/Helium browse
 development app, live provider/Modal request, image build/publish, external write,
 credential change, push, PR or merge is part of this repair. Protocol-3 image
 deployment for new reviews and live/Windows/macOS/package validation remain
-separate work. Parent round 4 review remains pending.
+separate work.
+
+Sol round 4 approved the recovery delta with S4 resolved and no new scoped
+findings. Its independent non-GUI validation passed 29 tests with 386 assertions.
+The complete review used four rounds with GPT-6.1 Sol on xhigh and priority
+service; usage was not exposed. All accepted Grok, Sol and parent findings are
+resolved. The final behavior diff against the integrated cloud base spans 56
+files with 4,565 insertions and 740 deletions before this approval note. Growth
+from the initial 43-file audit includes regression evidence, desktop isolation,
+cloud scope integration and recovery of existing cloud work.
