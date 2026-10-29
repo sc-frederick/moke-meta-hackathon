@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { Effect, Layer, ManagedRuntime, PubSub, Redacted, Schema, Stream } from "effect";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Application, type ApplicationEntry } from "../../backend/application.ts";
@@ -424,12 +425,46 @@ test("a drawing-set review uses the selected provider and returns its real packe
         );
 
         if (localApplication === undefined) throw new Error("Missing local application");
+        const packet = remote;
         await remote.run(
           runCloudReview(
             {
               execution: localApplication.execution,
               packets: remote.packets,
-              exportPackage: remote.exportPackage,
+              exportPackage: (destination, limits) =>
+                packet.exportPackage(destination, limits).pipe(
+                  Effect.tapError(() =>
+                    Effect.promise(async () => {
+                      const journals = join(packet.directory, "execution-journals");
+
+                      for (const name of await readdir(journals)) {
+                        if (!name.endsWith(".sqlite")) continue;
+                        const database = new DatabaseSync(join(journals, name), { readOnly: true });
+
+                        try {
+                          console.error("packet_journal_diagnostic", {
+                            file: name,
+                            tables: database
+                              .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+                              .all(),
+                            identity: database
+                              .prepare(
+                                "SELECT journal_id,format FROM review_journal_identity WHERE id=1",
+                              )
+                              .get(),
+                          });
+                        } catch (cause) {
+                          console.error("packet_journal_diagnostic", {
+                            file: name,
+                            error: String(cause),
+                          });
+                        } finally {
+                          database.close();
+                        }
+                      }
+                    }),
+                  ),
+                ),
             },
             record.request,
             60_000,
