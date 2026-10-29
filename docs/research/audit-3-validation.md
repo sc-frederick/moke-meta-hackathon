@@ -81,7 +81,7 @@ still requires review of the cited source regions.
 
 Exact Bun 1.4.4. `bun run verify` passes 343 smoke tests in 36 files and nine
 isolated Electron desktop tests, including a delayed snapshot/menu regression and
-paused-history admission. Sol approved the final behavior in four rounds;
+paused-history admission. Sol approved application behavior in four rounds and the test follow-up in the authorized sixth round;
 [the review ledger](audit-3-sol-loop.md) records findings and fixes.
 
 The Windows audit ran through Cua Driver 0.38.0 with fresh accessibility snapshots,
@@ -132,3 +132,29 @@ survived closing and reopening the Revision panel. Windows accessibility
 snapshots briefly retained an old checkbox name after selection changed; direct
 screenshot inspection showed the correct visible label, and actions used the
 original-page row plus a fresh element token. No DOM scripting was used.
+
+## PR Windows render-readiness regression
+
+The first PR run passed Linux and the Windows check/smoke/build stages. Windows
+then failed the polish test's five-second assertion for selection help. That
+assertion ran before waiting for asynchronous source rasterization to finish. The test now waits for the prior image before
+starting each selection, holds that selection's real RenderSource response,
+checks the rendering state, and releases it before asserting the ready image
+and selection help. The render readiness bound is 15 seconds. The pointer drag,
+expected PDF coordinates and coverage-reset assertions are retained. Application
+code is unchanged. The isolated focused flow passed before the final readiness
+refinement; the full verification suite covers the submitted test.
+
+The fifth Sol review caught one test-ordering issue: the old image remained
+visible while acceptance was pending, so the next render hold could capture
+acceptance's refresh. The test now waits for the Select area control to be
+enabled before awaiting the prior image and arming the hold. A strict probe
+delaying scheduled acceptance by 500 ms fails without that enabled-control
+wait and passes with it; all three held responses then belong to selection.
+The probe uses the existing private Linux desktop boundary and unmodified
+application handlers. Only the test response delivery is delayed.
+
+After the S5 ordering fix, full Bun 1.4.4 verification passes 343 smoke tests
+and all nine isolated desktop tests (polish 9.9 seconds). Linux and macOS CI
+passed on the initial PR head. Its Windows render-readiness test follow-up is
+approved in the explicitly authorized sixth Sol round; no application code changed. See PR #13 for current CI.

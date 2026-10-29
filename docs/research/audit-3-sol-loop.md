@@ -61,3 +61,45 @@ in-scope concurrency or recovery issues. The reviewer independently passed
 and 347 deletions). All four rounds used gpt-6.1-sol on verified xhigh. Usage
 was not exposed; no findings were declined. Push is authorized after this
 approval by the user's full-send request.
+
+Round 5 scope: the first PR Windows run failed a five-second source-selection
+help assertion before asynchronous rendering had finished. Only the polish
+desktop test changes: wait for the prior image before starting selection, hold
+and release its real RenderSource response, assert rendering and readiness,
+then retain the pointer-drag/PDF-coordinate/coverage checks. Readiness uses a
+15-second bound. Application behavior remains exactly as approved in round 4.
+This final focused recheck covers asynchronous test-state ordering.
+
+Round 5 verdict: CHANGES. S5 (should) found that the prior image could still be
+visible while scheduled acceptance was pending. A 500 ms delayed acceptance
+response caused the render hold to capture acceptance's refresh instead of
+selection. The smallest suggested fix is implemented: wait for the Select area
+button to be enabled before checking the prior image and arming the hold.
+A strict private probe fails the old ordering on the misidentified response and
+passes the fix, with all three held responses belonging to Select area.
+Application behavior is unchanged from round 4. The five-round budget is
+exhausted; final recheck or a user-authorized waiver remains pending. Usage
+was not exposed; nothing was declined and this follow-up has not been pushed.
+
+Post-S5 proof: full `bun run verify` passes 343 smoke tests and nine desktop
+tests, with polish in 9.9 seconds. The strict delayed-acceptance probe fails
+without the enabled-control wait and passes with it. The application diff is
+unchanged. This test follow-up remains local pending the user's review-budget
+choice; the PR still points to the round-4 approved application commit.
+
+The user explicitly authorized one additional focused Sol recheck after the
+five-round budget was exhausted. Round 6 checks only the S5 enabled-control
+ordering fix and confirms that prior application approvals remain applicable.
+The test follow-up stays unpushed until this recheck returns.
+
+Round 6 verdict: APPROVE. S5 resolved: the side-specific Select area button
+must be enabled before the prior image check and render hold; the same locator
+is clicked afterward. The reviewer confirmed the strict red/green probe
+evidence and preservation of readiness, coordinates and coverage assertions.
+No new blocker or should finding. No tests were rerun by this reviewer.
+
+Final result: S1–S5 resolved, no declined findings. Six rounds used
+gpt-6.1-sol on verified xhigh; usage was not exposed. Final behavior/test diff
+is 54 files, 3,106 insertions and 398 deletions, compared with 52 files,
+2,817 insertions and 347 deletions entering round 1. The user authorized the
+sixth round. The CI follow-up is approved for push after this agreement.
