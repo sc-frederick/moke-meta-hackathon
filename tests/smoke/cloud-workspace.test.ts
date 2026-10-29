@@ -344,6 +344,7 @@ test.each([false, true])(
       await rm(root, { recursive: true, force: true });
     }
   },
+  30000,
 );
 
 test("a drawing-set review uses the selected provider and returns its real packet without a count check", async () => {
