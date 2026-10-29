@@ -469,6 +469,13 @@ test("a thread keeps following rapid updates until the reader scrolls up", async
     await viewport.hover();
     await page.mouse.wheel(0, -600);
     await expect.poll(distanceFromLatest).toBeGreaterThan(400);
+    // Returning to the same bottom position by hand resumes following.
+    await page.mouse.wheel(0, 3000);
+    await expect.poll(distanceFromLatest).toBeLessThan(4);
+    await grow(5);
+    await expect.poll(distanceFromLatest).toBeLessThan(4);
+    await page.mouse.wheel(0, -600);
+    await expect.poll(distanceFromLatest).toBeGreaterThan(400);
     await grow(5);
     await expect.poll(distanceFromLatest).toBeGreaterThan(400);
   } finally {

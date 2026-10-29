@@ -2107,6 +2107,8 @@
           bind:this={chatViewport}
           onscroll={() => {
             if (!chatViewport || Math.abs(chatViewport.scrollTop - autoScrollTop) < 2) return;
+            // The reader moved; a later return to the same position is theirs too.
+            autoScrollTop = -1;
             followLatest =
               chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight <= 24;
           }}
