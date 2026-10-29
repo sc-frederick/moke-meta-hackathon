@@ -37,6 +37,28 @@ export interface ProviderConfiguration {
   readonly timeoutMs?: number;
 }
 
+/** Meta serves Muse Spark 1.3 with a larger output ceiling than Pi's catalog records (checked 2026-10-29). */
+const metaOutputCeilings = new Map([["muse-spark-1.3", 256_000]]);
+
+/** Meta packet reviews reason at the extra-high level Meta's console uses for Muse Spark 1.3. */
+const packetReasoning = (provider: string) => (provider === "meta" ? "xhigh" : "high");
+
+/** Meta runs this search server-side and returns cited text; read_source still records evidence. */
+const metaWebSearch = { type: "web_search", search_context_size: "high" } as const;
+
+/** Provider refusals before generation: rate limits and missing serving capacity. */
+const retryableStatuses = new Set([429, 529]);
+
+/** Wait before resending a refused request, honouring the provider's Retry-After seconds. */
+function refusalDelay(response: Response, retry: number) {
+  const requested = Number(response.headers.get("retry-after"));
+  const backoff = Math.min(60_000, 2_000 * 2 ** retry);
+
+  return Number.isFinite(requested) && requested > 0
+    ? Math.min(60_000, requested * 1000)
+    : backoff / 2 + Math.random() * (backoff / 2);
+}
+
 /** Catalog capability for a pinned review model; Open's separate serving output maximum is unpublished. */
 export function reviewModelCapabilities(modelId: string) {
   if (modelId === "meta-models/muse-spark-open-1026")
@@ -49,7 +71,10 @@ export function reviewModelCapabilities(modelId: string) {
   if (!model || !reviewModels.some((entry) => entry.id === modelId && entry.provider === "meta"))
     throw new Error("Pinned model catalog is incompatible");
 
-  return { contextWindow: model.contextWindow, maxOutputTokens: model.maxTokens };
+  return {
+    contextWindow: model.contextWindow,
+    maxOutputTokens: metaOutputCeilings.get(modelId) ?? model.maxTokens,
+  };
 }
 
 /** Durable admission callbacks are implemented with short application SQL operations. */
@@ -60,7 +85,11 @@ interface ProviderAdmission {
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
   readonly complete: (phase: RequestPhase, receipt: string) => Promise<void>;
-  readonly end: (uncertain: boolean, diagnostic?: typeof ProviderFailure.Type) => Promise<void>;
+  readonly end: (
+    uncertain: boolean,
+    diagnostic?: typeof ProviderFailure.Type,
+    phase?: RequestPhase,
+  ) => Promise<void>;
 }
 
 const ImageUrl = Schema.String.check(
@@ -263,19 +292,21 @@ export function createAdmittedModels(
 
   // The alternative route is organizer-provided and absent from Pi's catalog. Its rates are unknown.
   // SDK-required zero rates are an internal sentinel only; application cost remains null for both routes.
-  const selected: Model<Api> = catalog ?? {
-    id: modelId,
-    name: "Muse Spark Open",
-    api: "openai-completions",
-    provider: "baseten",
-    baseUrl: "https://inference.baseten.co/v1",
-    input: ["text", "image"],
-    reasoning: true,
-    contextWindow: 1048576,
-    // Open serving does not publish a separate output ceiling; the context is the upper bound.
-    maxTokens: 1048576,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  };
+  const selected: Model<Api> = catalog
+    ? { ...catalog, maxTokens: metaOutputCeilings.get(catalog.id) ?? catalog.maxTokens }
+    : {
+        id: modelId,
+        name: "Muse Spark Open",
+        api: "openai-completions",
+        provider: "baseten",
+        baseUrl: "https://inference.baseten.co/v1",
+        input: ["text", "image"],
+        reasoning: true,
+        contextWindow: 1048576,
+        // Open serving does not publish a separate output ceiling; the context is the upper bound.
+        maxTokens: 1048576,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      };
 
   const guarded = (
     model: Model<Api>,
@@ -297,9 +328,10 @@ export function createAdmittedModels(
       let transportFailure: (typeof ProviderFailure.Type)["category"] | undefined;
       let admitted = false;
       let completed = false;
+      let phase: RequestPhase | undefined;
 
       try {
-        const phase = identity.phase(options?.telemetry);
+        phase = identity.phase(options?.telemetry);
 
         if (
           phase === undefined ||
@@ -338,7 +370,7 @@ export function createAdmittedModels(
         if (cached !== null) {
           const message = parseResponseReceipt(JSON.parse(cached));
           completed = true;
-          await admission.end(false);
+          await admission.end(false, undefined, phase);
           admitted = false;
           output.push({ type: "done", reason: message.stopReason, message });
 
@@ -346,6 +378,7 @@ export function createAdmittedModels(
         }
 
         let dispatched = false;
+        const dispatchPhase = phase;
 
         const transport: FetchFunction = Object.assign(
           async (input: Parameters<FetchFunction>[0], init?: Parameters<FetchFunction>[1]) => {
@@ -364,12 +397,23 @@ export function createAdmittedModels(
             )
               throw new Error("Transport admission denied");
             dispatched = true;
-            await admission.send(phase);
+            await admission.send(dispatchPhase);
 
             failurePhase = "dispatch";
 
             try {
-              const response = await (configuration.transport ?? globalThis.fetch)(input, init);
+              const dispatch = configuration.transport ?? globalThis.fetch;
+              let response = await dispatch(input, init);
+
+              // A rate-limit or capacity refusal happens before generation, so resending it
+              // cannot duplicate paid work. Parallel sheet reviewers rely on this backoff.
+              for (let retry = 0; retryableStatuses.has(response.status) && retry < 6; retry++) {
+                await response.body?.cancel();
+                await Bun.sleep(refusalDelay(response, retry));
+                init?.signal?.throwIfAborted();
+                response = await dispatch(input, init);
+              }
+
               httpStatus = response.status;
               failurePhase = "response";
 
@@ -432,22 +476,26 @@ export function createAdmittedModels(
           throw new Error("Provider response exceeded its reservation");
         await admission.complete(phase, receipt);
         completed = true;
-        await admission.end(false);
+        await admission.end(false, undefined, phase);
         admitted = false;
         output.push({ type: "done", reason: message.stopReason, message });
       } catch {
         if (admitted)
           await admission
-            .end(!completed, {
-              category:
-                transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
-              phase: failurePhase,
-              elapsedMs: Math.max(0, performance.now() - started),
-              httpStatus,
-              detail: rejectionDetail ?? "unclassified",
-              requestImages,
-              requestBytes,
-            })
+            .end(
+              !completed,
+              {
+                category:
+                  transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
+                phase: failurePhase,
+                elapsedMs: Math.max(0, performance.now() - started),
+                httpStatus,
+                detail: rejectionDetail ?? "unclassified",
+                requestImages,
+                requestBytes,
+              },
+              phase,
+            )
             .catch(() => undefined);
 
         const message: AssistantMessage = {
@@ -480,16 +528,27 @@ export function createAdmittedModels(
     options: ProviderRequestOptions | undefined,
     fetch: FetchFunction,
   ): SimpleStreamOptions => {
-    const result: SimpleStreamOptions & { reasoningEffort?: "high" } = {
+    const effort = packetReasoning(selected.provider);
+
+    const result: SimpleStreamOptions & { reasoningEffort?: "high" | "xhigh" } = {
       apiKey: Redacted.value(configuration.apiKey),
       fetch,
       transport: "sse",
       maxRetries: 0,
       timeoutMs: configuration.timeoutMs ?? (admission.packetReview ? 300_000 : 60_000),
-      reasoning: admission.packetReview ? "high" : "low",
+      reasoning: admission.packetReview ? effort : "low",
     };
 
-    if (admission.packetReview) result.reasoningEffort = "high";
+    if (admission.packetReview) result.reasoningEffort = effort;
+
+    if (admission.packetReview && selected.provider === "meta")
+      result.onPayload = (payload) =>
+        Predicate.isObject(payload)
+          ? {
+              ...payload,
+              tools: [...(Array.isArray(payload.tools) ? payload.tools : []), metaWebSearch],
+            }
+          : payload;
 
     if (!admission.packetReview || selected.provider !== "baseten")
       result.maxTokens = admission.maxOutputTokens;

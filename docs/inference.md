@@ -40,10 +40,26 @@ Pi system instructions. See the [prompt documentation](../backend/review/prompts
 
 ## Model capabilities and operational budgets
 
-Packet review uses high reasoning and automatic Pi compaction for long
-conversations. The installed Meta catalog gives Spark 1.3 and Wonder a
-1,048,576-token context and a 131,072-token output limit. Meta documents the full
-context window in its [model catalog](https://dev.meta.ai/docs/models). Baseten
+Packet review uses automatic Pi compaction for long conversations. On Meta it
+matches the settings Meta's console uses for Muse Spark 1.3: `xhigh` reasoning, a
+256,000-token output limit, and Meta's built-in `web_search` tool with high search
+context. Web search runs on Meta's side and returns cited text. Reviewers still
+record governing sources with `read_source`. Baseten packet requests use high
+reasoning. The installed Meta catalog gives Spark 1.3 and Wonder a 1,048,576-token
+context and records a 131,072-token output limit; Meta accepted 256,000 for Spark
+1.3 on 2026-10-29. Meta documents the full context window in its
+[model catalog](https://dev.meta.ai/docs/models).
+
+Meta's [rate limits](https://dev.meta.ai/docs/pricing-rate-limits) for Spark 1.3
+are 3,000 requests and 4,000,000 tokens a minute, shared by every key on a team;
+response headers confirmed them for the configured key. Meta reads images returned
+in tool results, and accepted 300 small tool-result images in one request.
+HTTP 429 and 529 mean the provider refused the request before generating, so the
+adapter resends it up to six times, honouring `Retry-After` (otherwise backing off
+from 2 seconds up to 60). Other failures are not resent. Large packets review each sheet in its own
+conversation; see [parallel packet reviews](review-runtime.md#parallel-packet-reviews).
+
+Baseten
 advertises a [1M-token context for Spark Open](https://www.baseten.co/blog/muse-spark-open-launch/)
 but does not publish a separate serving output ceiling there. The desktop leaves
 Baseten's output parameter at its API default by using the ordinary stream path;

@@ -63,12 +63,12 @@ function response(provider: "meta" | "baseten", outputTokens = 6000) {
   });
 }
 
-function fixture(provider: "meta" | "baseten" = "meta", packetReview = true) {
+function fixture(provider: "meta" | "baseten" = "meta", packetReview = true, refusals = 0) {
   const requests: Array<{ url: string; authorization: string | null; body: string }> = [];
   const receipts: string[] = [];
   const phases: RequestPhase[] = [];
   const endings: boolean[] = [];
-  const maxOutputTokens = provider === "meta" ? 131072 : 1048576;
+  const maxOutputTokens = provider === "meta" ? 256000 : 1048576;
 
   const admitted = createAdmittedModels(
     {
@@ -82,6 +82,12 @@ function fixture(provider: "meta" | "baseten" = "meta", packetReview = true) {
           authorization: new Headers(init?.headers).get("authorization"),
           body: Schema.decodeUnknownSync(Schema.String)(init?.body),
         });
+
+        if (requests.length <= refusals)
+          return Response.json(
+            { error: { message: "Rate limit reached" } },
+            { status: 429, headers: { "retry-after": "1" } },
+          );
 
         return response(provider);
       },
@@ -126,6 +132,7 @@ const MetaRequest = Schema.fromJsonString(
     model: Schema.String,
     max_output_tokens: Schema.Int,
     reasoning: Schema.Struct({ effort: Schema.String }),
+    tools: Schema.optionalKey(Schema.Array(Schema.Struct({ type: Schema.String }))),
   }),
 );
 
@@ -173,14 +180,17 @@ test("packet requests retain more than 64k text and all eight images and accept 
   expect(captured.body.split("data:image/png;base64,").length - 1).toBe(8);
   expect(captured.body.includes("Earlier image omitted")).toBe(false);
   const wire = Schema.decodeUnknownSync(MetaRequest)(captured.body);
-  expect(wire.max_output_tokens).toBe(131072);
-  expect(wire.reasoning.effort).toBe("high");
+  expect(wire.max_output_tokens).toBe(256000);
+  expect(wire.reasoning.effort).toBe("xhigh");
+  expect(wire.tools?.some((tool) => tool.type === "web_search")).toBe(true);
 
   const catalog = metaProvider()
     .getModels()
     .find((model) => model.id === "muse-spark-1.3");
 
-  expect(session.admitted.capabilities.maxTokens).toBe(catalog?.maxTokens ?? 0);
+  // Meta serves Muse Spark 1.3 with a 256k output ceiling above the catalog record.
+  expect(catalog?.maxTokens).toBe(131072);
+  expect(session.admitted.capabilities.maxTokens).toBe(256000);
   expect(session.receipts).toHaveLength(1);
   expect(session.endings).toEqual([false]);
 });
@@ -194,8 +204,9 @@ test("the generic SDK completion entrypoint uses the same native output and reas
 
   expect(answer.stopReason).toBe("stop");
   const wire = Schema.decodeUnknownSync(MetaRequest)(session.requests[0]?.body);
-  expect(wire.max_output_tokens).toBe(131072);
-  expect(wire.reasoning.effort).toBe("high");
+  expect(wire.max_output_tokens).toBe(256000);
+  expect(wire.reasoning.effort).toBe("xhigh");
+  expect(wire.tools?.some((tool) => tool.type === "web_search")).toBe(true);
   expect(answer.usage.output).toBeGreaterThan(4096);
   expect(session.receipts).toHaveLength(1);
 });
@@ -318,4 +329,19 @@ test("Spark Open retains the latest eight image bytes and all source metadata wi
   for (let index = 0; index < images.length; index++) expect(body).toContain(`artifact-${index}`);
   expect(body).toContain("Earlier image omitted");
   expect(JSON.stringify(context)).toBe(original);
+});
+
+test("a rate-limit refusal is resent after the provider delay within one admitted attempt", async () => {
+  const session = fixture("meta", true, 1);
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("stop");
+  expect(session.requests).toHaveLength(2);
+  expect(session.requests[1]?.body).toBe(session.requests[0]?.body);
+  expect(session.phases).toHaveLength(1);
+  expect(session.receipts).toHaveLength(1);
+  expect(session.endings).toEqual([false]);
 });
