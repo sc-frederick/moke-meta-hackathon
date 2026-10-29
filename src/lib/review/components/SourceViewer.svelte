@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Affine, Region } from "#lib/review/contracts.ts";
-  import { transformRegion } from "#lib/review/geometry.ts";
+  import { ReviewInputError, type Affine, type Region } from "#lib/review/contracts.ts";
+  import { invertTransform, transformRegion } from "#lib/review/geometry.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
 
   let {
@@ -8,11 +8,15 @@
     pdfToPixels,
     overlays = [],
     label = "Source view",
+    selecting = $bindable(false),
+    onSelectRegion,
   }: {
     imageUrl: string;
     pdfToPixels: typeof Affine.Type;
     overlays?: ReadonlyArray<{ region: Region; title: string }>;
     label?: string;
+    selecting?: boolean;
+    onSelectRegion?: (region: Region) => void;
   } = $props();
 
   let scale = $state(1);
@@ -26,6 +30,33 @@
   let viewportHeight = $state(0);
   let imageWidth = $state(1);
   let imageHeight = $state(1);
+  let selection = $state<{ x: number; y: number; width: number; height: number } | null>(null);
+  let selectionStart = { x: 0, y: 0 };
+
+  function imagePoint(event: PointerEvent & { currentTarget: HTMLDivElement }) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    const x =
+      (event.clientX - bounds.left - event.currentTarget.clientLeft - viewportWidth / 2 - panX) /
+      scale;
+
+    const y =
+      (event.clientY - bounds.top - event.currentTarget.clientTop - viewportHeight / 2 - panY) /
+      scale;
+
+    const angle = (rotation * Math.PI) / 180;
+
+    return {
+      x: Math.max(
+        0,
+        Math.min(imageWidth, x * Math.cos(angle) + y * Math.sin(angle) + imageWidth / 2),
+      ),
+      y: Math.max(
+        0,
+        Math.min(imageHeight, -x * Math.sin(angle) + y * Math.cos(angle) + imageHeight / 2),
+      ),
+    };
+  }
 
   const transformStyle = $derived(
     `translate(${viewportWidth / 2 + panX}px, ${viewportHeight / 2 + panY}px) rotate(${rotation}deg) scale(${scale}) translate(${-imageWidth / 2}px, ${-imageHeight / 2}px)`,
@@ -54,10 +85,28 @@
     lastX = event.clientX;
     lastY = event.clientY;
     event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (selecting) {
+      selectionStart = imagePoint(event);
+      selection = { ...selectionStart, width: 0, height: 0 };
+    }
   }
 
-  function onPointerMove(event: PointerEvent) {
+  function onPointerMove(event: PointerEvent & { currentTarget: HTMLDivElement }) {
     if (!dragging) return;
+
+    if (selecting) {
+      const point = imagePoint(event);
+      selection = {
+        x: Math.min(selectionStart.x, point.x),
+        y: Math.min(selectionStart.y, point.y),
+        width: Math.abs(point.x - selectionStart.x),
+        height: Math.abs(point.y - selectionStart.y),
+      };
+
+      return;
+    }
+
     panX += event.clientX - lastX;
     panY += event.clientY - lastY;
     lastX = event.clientX;
@@ -69,6 +118,22 @@
     const element = event.currentTarget;
 
     if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+
+    if (
+      event.type !== "pointercancel" &&
+      selecting &&
+      selection &&
+      selection.width * scale > 3 &&
+      selection.height * scale > 3
+    ) {
+      const inverse = invertTransform(pdfToPixels);
+
+      if (!(inverse instanceof ReviewInputError))
+        onSelectRegion?.(transformRegion(inverse, selection));
+      selecting = false;
+    }
+
+    selection = null;
   }
 </script>
 
@@ -92,9 +157,19 @@
       ><ReviewIcon name="refresh" size={16} /></button
     >
   </div>
+  {#if selecting}<p class="selection-help" role="status">
+      Drag a box around the area to count. <button
+        type="button"
+        onclick={() => {
+          selecting = false;
+          selection = null;
+        }}>Cancel</button
+      >
+    </p>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (The image canvas supports focusable keyboard pan and zoom.) -->
   <div
     class="viewport"
+    class:selecting
     role="application"
     aria-label="Pan and zoom source canvas"
     tabindex="0"
@@ -134,6 +209,10 @@
           title={overlay.title}
         ></div>
       {/each}
+      {#if selection}<div
+          class="overlay"
+          style={`left:${selection.x}px;top:${selection.y}px;width:${selection.width}px;height:${selection.height}px`}
+        ></div>{/if}
     </div>
   </div>
 </section>
@@ -146,6 +225,22 @@
     min-height: 0;
     flex: 0 0 300px;
     height: 300px;
+  }
+  .selection-help {
+    font-size: 12px;
+    margin: 0;
+    line-height: 1.5;
+    color: var(--nd-ink-muted);
+  }
+  .selection-help button {
+    color: inherit;
+    background: transparent;
+    border: 0;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .viewport.selecting {
+    cursor: crosshair;
   }
   .viewer-toolbar {
     display: flex;

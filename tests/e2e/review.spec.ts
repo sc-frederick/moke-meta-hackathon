@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Schema } from "effect";
 import { ResponseReceipt } from "../../backend/inference/response.ts";
+import { PacketReview } from "#lib/review/packet.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 
 test("desktop proves supported, corrected, unchanged-control, revision, media, and reopen outcomes", async () => {
@@ -41,9 +42,11 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
   if (process.env.PROJECT_KIT_EXECUTABLE !== undefined) {
     options.executablePath = process.env.PROJECT_KIT_EXECUTABLE;
     options.args = [`--user-data-dir=${join(directory, "profile")}`];
+    options.cwd = directory;
   }
 
   let app = await electron.launch(options);
+  let liveObservedState: PacketReview["state"] | null = null;
 
   try {
     let page = await app.firstWindow();
@@ -88,20 +91,21 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
     }, fixtureA);
     await expect(page.getByTestId("review-workbench")).toBeVisible();
+    await page.getByRole("button", { name: "Create a project", exact: true }).click();
     await page.getByTestId("project-name-input").fill("Lighting coordination");
     await page.getByTestId("create-project-button").click();
     await expect(page.getByTestId("import-pdf")).toBeEnabled();
 
     await page.getByRole("button", { name: "Review settings" }).click();
-    const callLimit = page.getByLabel("Maximum calls per inspection");
+    await page.getByText("Optional call budget", { exact: true }).click();
+    const callLimit = page.getByLabel("Maximum provider calls", { exact: true });
+    await expect(callLimit).toHaveValue("");
+    await callLimit.fill("12");
     await expect(callLimit).toHaveValue("12");
 
-    for (const limit of ["4", "8", "12"]) {
-      await callLimit.selectOption(limit);
-      await expect(callLimit).toHaveValue(limit);
-    }
+    if (!live) await callLimit.fill("");
 
-    await page.getByRole("button", { name: "Close source panel" }).click();
+    await page.getByRole("button", { name: "Close review settings" }).click();
     await page.getByTestId("import-pdf").click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
 
@@ -153,7 +157,12 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       await page
         .getByTestId(`${side}-statement-input`)
         .fill(`${count} fixtures in this source scope.`);
+      const details = page.getByTestId(`${side}-advanced`);
+
+      if ((await details.getAttribute("open")) === null)
+        await details.locator("summary").first().click();
       await page.getByTestId(`${side}-rationale-input`).fill(rationale);
+      await details.locator("summary").first().click();
       await page.getByTestId(`${side}-coverage-checkbox`).check();
       await page.getByTestId(`accept-${side}-count`).click();
       await expect(page.getByTestId("evaluate-finding")).toBeEnabled();
@@ -167,7 +176,9 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     };
 
     const saveNote = async (text: string) => {
-      await page.getByLabel("Message action").selectOption("note");
+      const note = page.getByRole("button", { name: "Save as note", exact: true });
+
+      if ((await note.getAttribute("aria-pressed")) !== "true") await note.click();
       await page.getByLabel("Message", { exact: true }).fill(text);
       await page.getByRole("button", { name: "Send message" }).click();
       await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(
@@ -193,25 +204,61 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(page.locator(".source-provenance")).toContainText("page 1");
 
     if (live) {
-      await page.getByTestId("start-inspection").click();
-      await expect(page.getByTestId("execution-status")).toHaveText(
-        /· (completed|failed|uncertain|incompatible) ·/,
-        { timeout: 240000 },
+      await page
+        .getByLabel("Message", { exact: true })
+        .fill(
+          "Run an electrical QA pass on the two supplied drawing sheets. Open both pages and render a focused original-PDF detail to read the Room 101 label or schedule quantity. Record actual findings, coverage, and missing inputs, then finish with what the evidence supports. Do not accept count facts or claim a completed permit review.",
+        );
+      await page.getByRole("button", { name: "Send message" }).click();
+      const reviewPanel = page.getByTestId("packet-review-panel");
+      await expect(reviewPanel).toBeVisible();
+      await expect(reviewPanel.getByLabel("Review elapsed time", { exact: true })).not.toHaveText(
+        "0:00",
+        { timeout: 15000 },
       );
-      await expect(page.getByTestId("execution-status")).toContainText("completed");
-      await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "drawn: 2",
+      await page.screenshot({ path: test.info().outputPath("packaged-live-running.png") });
+      await expect(reviewPanel.getByRole("heading", { level: 2 })).not.toHaveText(
+        "Review in progress",
+        { timeout: 300000 },
       );
-      await expect(page.getByRole("region", { name: "Proposed observations" })).toContainText(
-        "scheduled: 3",
+      const database = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
+
+      const review = Schema.decodeUnknownSync(Schema.fromJsonString(PacketReview))(
+        database.prepare("SELECT payload FROM packet_reviews ORDER BY rowid DESC LIMIT 1").get()
+          ?.payload,
       );
-      await page.screenshot({ path: test.info().outputPath("packaged-live-muse.png") });
+
+      const accepted = database
+        .prepare(
+          "SELECT id FROM review_records WHERE kind='fact' AND json_extract(payload,'$.state')='accepted'",
+        )
+        .all();
+
+      database.close();
+      liveObservedState = review.state;
+      expect(["completed", "paused"]).toContain(review.state);
+      expect(review.maxCalls).toBe(12);
+      expect(review.admittedCalls).toBeGreaterThan(0);
+      expect(review.admittedCalls).toBeLessThanOrEqual(12);
+      expect(review.inspectedSheetIds.length).toBeGreaterThan(0);
+      expect(accepted).toHaveLength(0);
+
+      if (review.state === "completed") {
+        await expect(page.locator(".application-message").first()).toBeVisible();
+        expect(review.summary.trim().length).toBeGreaterThan(0);
+      } else {
+        await expect(reviewPanel).toContainText("Review paused");
+        await reviewPanel.getByRole("button", { name: "Cancel review", exact: true }).click();
+        await expect(reviewPanel).toContainText("Review cancelled");
+      }
+
+      await page.screenshot({ path: test.info().outputPath("packaged-live-moke.png") });
     }
 
     await accept("drawn", 2, "Counted the two type A symbols within Room 101 on L-101.");
     await accept("scheduled", 3, "Read the Room 101 row on L-601.");
     await expect(page.getByRole("region", { name: "Proposed observations" })).toHaveCount(0);
-    await evaluate("Supported issue");
+    await evaluate("Count mismatch");
     await expect(page.getByTestId("check-history")).toContainText("2 drawn");
     await expect(page.getByTestId("check-history")).toContainText("3 scheduled");
 
@@ -223,12 +270,12 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await createFinding("Room 102 type B");
     await accept("drawn", 1, "Deliberate initial misread for the correction acceptance case.");
     await accept("scheduled", 2, "Read the Room 102 row on L-601.");
-    await evaluate("Supported issue");
+    await evaluate("Count mismatch");
 
     await createFinding("Independent type C detail", true);
     await accept("drawn", 2, "Reviewed the two C symbols in the independent L-601 control detail.");
     await accept("scheduled", 2, "Read the independent control quantity on the same sheet.");
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
 
     const controlId = await page
       .getByTestId("check-history")
@@ -238,10 +285,10 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await openFinding("Room 102 type B");
     await accept("drawn", 2, "Corrected the initial misread after inspecting both B symbols.");
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
     await expect(page.getByTestId("check-history").locator("li")).toHaveCount(2);
     await expect(page.getByTestId("check-history").locator("li").first()).toContainText(
-      "Supported issue",
+      "Count mismatch",
     );
 
     if (screenshots)
@@ -299,7 +346,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
       3,
       "Accepted fresh Revision B source showing the added third type A fixture.",
     );
-    await evaluate("Checked, no issue");
+    await evaluate("Counts match");
     await expect(page.getByTestId("check-history")).toContainText("3 drawn");
 
     if (screenshots)
@@ -364,46 +411,59 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     if (live) {
       const db = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
 
+      const review = Schema.decodeUnknownSync(Schema.fromJsonString(PacketReview))(
+        db.prepare("SELECT payload FROM packet_reviews ORDER BY rowid DESC LIMIT 1").get()?.payload,
+      );
+
       const receipts = Schema.decodeUnknownSync(
         Schema.Array(Schema.Struct({ response_json: Schema.String })),
       )(
         db
           .prepare(
-            "SELECT response_json FROM review_execution_attempts WHERE status='completed' ORDER BY task_id",
+            "SELECT response_json FROM packet_review_attempts WHERE kind='model' AND status='completed' ORDER BY task_id",
           )
           .all(),
       ).map((row) =>
         Schema.decodeUnknownSync(Schema.fromJsonString(ResponseReceipt))(row.response_json),
       );
 
-      const sam = Schema.decodeUnknownSync(
+      const attempts = Schema.decodeUnknownSync(
         Schema.Array(
-          Schema.Struct({
-            status: Schema.String,
-            response_id: Schema.NullOr(Schema.String),
-            result_json: Schema.NullOr(Schema.String),
-          }),
+          Schema.Struct({ kind: Schema.String, status: Schema.String, sent: Schema.Int }),
         ),
-      )(db.prepare("SELECT status,response_id,result_json FROM review_sam_attempts").all());
+      )(
+        db
+          .prepare("SELECT kind,status,sent FROM packet_review_attempts ORDER BY task_id,attempt")
+          .all(),
+      );
 
       db.close();
 
       const tools = receipts.flatMap((receipt) =>
-        receipt.content.flatMap((part) => (part.type === "toolCall" ? [part.name] : [])),
+        receipt.content.flatMap((part) => (part.type === "toolCall" ? [part] : [])),
       );
 
-      expect(tools).toContain("render_missing_detail");
-      expect(tools).toContain("segment_source_region");
-      expect(sam.some((attempt) => attempt.status === "completed")).toBe(true);
+      expect(tools.some((tool) => tool.name === "render_sheet")).toBe(true);
+      expect(
+        tools.some((tool) => tool.name === "render_sheet" && tool.arguments.region !== undefined),
+      ).toBe(true);
+      expect(review.admittedCalls).toBeLessThanOrEqual(12);
       await writeFile(
         test.info().outputPath("packaged-live-evidence.json"),
         JSON.stringify(
           {
-            tools,
-            sam: sam.map((attempt) => ({
-              status: attempt.status,
-              responseId: attempt.response_id,
-            })),
+            observedState: liveObservedState,
+            persistedState: review.state,
+            finished: review.finished,
+            admittedCalls: review.admittedCalls,
+            maxCalls: review.maxCalls,
+            scope: review.scope,
+            inspectedSheetIds: review.inspectedSheetIds,
+            coverage: review.coverage,
+            missingInputs: review.missingInputs,
+            summary: review.summary,
+            tools: tools.map((tool) => tool.name),
+            attempts,
             receipts: receipts.map((receipt) => ({
               responseId: receipt.responseId,
               provider: receipt.provider,
@@ -411,8 +471,6 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
               usage: {
                 input: receipt.usage.input,
                 output: receipt.usage.output,
-                cacheRead: receipt.usage.cacheRead,
-                cacheWrite: receipt.usage.cacheWrite,
                 totalTokens: receipt.usage.totalTokens,
               },
               stopReason: receipt.stopReason,
@@ -433,7 +491,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await openFinding("Room 101 type A");
     await expect(page.getByTestId("check-history").locator("li")).toHaveCount(3);
     await expect(page.getByTestId("check-history").locator("li").last()).toContainText(
-      "Checked, no issue",
+      "Counts match",
     );
     expect(rendererErrors).toEqual([]);
   } finally {

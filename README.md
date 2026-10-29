@@ -1,35 +1,49 @@
 # Moke
 
-Moke is a desktop workbench for reviewing engineering drawings, built for the
-Meta AI Developer Hackathon. Import a PDF, inspect a finding against its source,
-and correct the evidence when a model misreads it. When a drawing changes, recheck
-the affected findings while keeping the earlier results.
+Moke is a desktop workbench for reviewing engineering drawing packets, built for
+the Meta AI Developer Hackathon. Import the drawings and ask for a whole-set QA
+pass or a discipline review. Moke reads source images, follows its review
+instructions, records findings and coverage, and produces an offline HTML report.
+Follow-up requests can deepen the review while retaining earlier issue IDs.
 
-![Moke's desktop workbench with source evidence, accepted counts, and findings navigation](docs/screenshots/workbench.png)
+![Moke's desktop workbench with source evidence and findings navigation](docs/screenshots/workbench.png)
 
 ## The review workflow
 
-1. **Import and confirm sheets.** Original PDFs stay in the local project. Confirm
-   sheet identities before using them as evidence.
-2. **Choose a coordination check.** Select the drawn and scheduled sources, the
-   object type and scope, and the discipline. Ask Moke to inspect that check with
-   an explicit model-call limit.
-3. **Inspect the evidence.** Meta Muse can request detailed crops from the original
-   PDF. SAM can propose object boundaries. Every observation remains a proposal
-   until the reviewer accepts it.
-4. **Accept or correct counts.** Compare reviewer-accepted quantities with
-   `schedule-count-v1`. Missing evidence leaves the check unresolved. Corrections
-   retain the original finding and its calculation history.
-5. **Recheck a revision.** Associate replacement sheets, confirm what changed,
-   and review fresh evidence. Unrelated results retain their history.
+1. **Import the packet.** Create a project and import its PDFs. Start a review
+   without creating a count check or manually confirming every sheet first.
+2. **Ask for the review.** For example, ask "Please run a quick QA pass on this
+   drawing set" or "Review the electrical design and supporting calculations."
+   Choose a model and reviewer, or let Auto route the request. A saved note does
+   not start inference.
+3. **Follow the inspection.** Moke inventories the supplied sheets, opens source
+   images and detail crops, and records the four review passes: document
+   completeness, code and agency requirements, coordination, and prior comments.
+   Public-source lookup, repeatable arithmetic and optional SAM segmentation
+   support the inspection.
+4. **Review the findings and gaps.** Each issue identifies its location, evidence,
+   correction and supporting sources or calculations. Unreviewed sheets,
+   inaccessible governing text and missing project inputs remain visible. Ask
+   follow-up questions in the same conversation.
+5. **Export the report.** The self-contained HTML includes findings, embedded
+   evidence, coverage, citation status, calculations and prior-comment tracking.
+   Its Completed checkboxes track the user's corrections separately from finding
+   status and reviewer-verified closure. Export a complete package to preserve
+   the source files and execution history as well.
 
-![A revised drawing resolves the original count mismatch while retaining earlier checks](docs/screenshots/revision.png)
+Drawn-to-schedule count comparisons remain available as specialized checks.
+Reviewers accept their count inputs and coverage before deterministic comparison;
+corrections and revision rechecks retain their history. The
+[two-sheet count demonstration](docs/fixtures/hero-case.md) exercises a supported
+issue, corrected false alarm, unchanged control and revision recheck.
 
-The current beta supports drawn-to-schedule quantity coordination. It does not
-verify governing codes or produce a complete permit review. Model proposals and
-SAM masks do not establish engineering completeness or physical dimensions.
-The [two-sheet demonstration](docs/fixtures/hero-case.md) includes a supported
-issue, a corrected false alarm, an unchanged control, and a revision recheck.
+![A count-check revision recheck retains its earlier results](docs/screenshots/revision.png)
+
+A review report states what was actually inspected. Model findings are review
+results, and a finished execution does not provide professional approval.
+Regulatory findings need applicable governing sources; unavailable sources and
+unknown editions remain Needs input. SAM geometry does not establish physical
+dimensions.
 
 ## How it works
 
@@ -44,11 +58,12 @@ over authorized Electron MessagePorts; Electron forwards application requests to
 Bun over authenticated loopback HTTP. Database access and provider credentials
 stay outside the renderer.
 
-Pi Durable journals review execution. A separate pre-send ledger records model
-requests, so interrupted requests with unknown outcomes require acknowledgement
-before a new run. Reviews have bounded budgets and pause/cancel controls.
-Complete packages export and restore databases, original PDFs, rendered evidence,
-and execution journals together.
+Pi Durable journals the review and runs the full Moke system instructions. A
+separate ledger records model and SAM intent before dispatch, preserving unknown
+outcomes without automatic resends. Reviews have pause and cancel controls and an
+optional call budget. The default packet review has no application call ceiling;
+long conversations use Pi compaction. Complete packages export and restore the
+database, original PDFs, rendered evidence and execution journals together.
 
 Projects run locally, but inference uses hosted Meta or Baseten APIs and sends
 selected drawing evidence to the provider. Modal checkpoint handoff remains
@@ -64,11 +79,12 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-You can import drawings, accept counts, and evaluate checks without provider keys.
-For model inspections, copy [.env.example](.env.example) to `.env` and set
-`MODEL_API_KEY`. Set `MOKE_PROVIDER=baseten` and `BASETEN_API_KEY` to use Baseten.
-Restart the app after changing configuration. See [inference setup](docs/inference.md)
-for credentials and the limits of each route.
+You can import drawings and use manual count checks without provider keys.
+For model review, copy [.env.example](.env.example) to `.env` and set
+`MODEL_API_KEY`, `BASETEN_API_KEY`, or both. Development loads both configured
+providers; choose Muse Spark, Muse Wonder or Baseten Muse Spark Open in the app.
+Restart after changing credentials. See [inference setup](docs/inference.md) for
+packaged-app credentials, model capabilities and optional review budgets.
 
 Bun runs tools and the application backend. The packaged app includes the Bun
 executable, PDF renderer, and native assets; users do not install Bun or Node.

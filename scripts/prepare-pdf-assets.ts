@@ -1,7 +1,7 @@
 /**
  * Stage pdfjs-dist assets and the platform @napi-rs/canvas native library beside the backend build.
  */
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +43,25 @@ function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url))
 
   mkdirSync(join(outputRoot, "native"), { recursive: true });
   mkdirSync(join(outputRoot, "pdfjs"), { recursive: true });
+  const canvasSource = join(root, "node_modules/@napi-rs/canvas");
+  const canvasModule = join(outputRoot, "modules/@napi-rs/canvas");
+  mkdirSync(canvasModule, { recursive: true });
+
+  // PDF.js calls createRequire at runtime for its globals and auxiliary canvases.
+  for (const file of [
+    "index.js",
+    "js-binding.js",
+    "geometry.js",
+    "load-image.js",
+    "node-canvas.js",
+    "package.json",
+  ]) {
+    cpSync(join(canvasSource, file), join(canvasModule, file));
+  }
+
+  if (existsSync(join(nativeSourceDir, "icudtl.dat"))) {
+    cpSync(join(nativeSourceDir, "icudtl.dat"), join(outputRoot, "native/icudtl.dat"));
+  }
 
   for (const segment of ["cmaps", "standard_fonts", "wasm", "legacy"]) {
     cpSync(join(pdfjsSource, segment), join(outputRoot, "pdfjs", segment), { recursive: true });

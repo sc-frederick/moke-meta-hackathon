@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { CommandId, ConversationId, FindingId, ProjectId } from "./contracts.ts";
+import { ReviewModelId, ReviewModelOption } from "./models.ts";
 
 /** Discipline routing preserves the four distinct fire responsibilities from Moke. */
 export const ReviewDiscipline = Schema.Literals([
@@ -32,11 +33,48 @@ export const reviewDisciplines = [
   { id: "fire_protection", label: "Fire protection" },
 ] as const;
 
+/** Auto chooses a discipline from the request and selected drawing scope before admission. */
+export const ReviewDisciplineSelection = Schema.Union([Schema.Literal("auto"), ReviewDiscipline]);
+
+/** Resolve request, object scope, and sheet hints in order; ambiguous matches stay general. */
+export function routeReviewDiscipline(
+  text: string,
+  fallbackScopes: ReadonlyArray<string> = [],
+): typeof ReviewDiscipline.Type {
+  const scopes: ReadonlyArray<readonly [typeof ReviewDiscipline.Type, RegExp]> = [
+    ["fire_alarm", /\b(?:fire alarms?|smoke detectors?)\b|\bfa[-\d]/i],
+    ["fire_sprinkler", /\bsprinklers?\b|\bfp[-\d]/i],
+    ["fire_protection", /\b(?:fire protection|fire pumps?|standpipes?)\b/i],
+    ["life_safety", /\b(?:egress|life safety|exit widths?|occupant loads?)\b/i],
+    ["structural", /\b(?:structural|foundations?|rebar|beams?|columns?)\b|\bs[-\d]/i],
+    ["mechanical", /\b(?:mechanical|hvac|ducts?|ductwork|air handling)\b|\bm[-\d]/i],
+    ["plumbing", /\b(?:plumbing|sanitary|domestic water|lavatory|lavatories)\b|\bp[-\d]/i],
+    [
+      "electrical",
+      /\b(?:electrical|lighting|lights?|luminaires?|voltage|circuits?|conductors?)\b|\b[el][-\d]/i,
+    ],
+    ["civil", /\b(?:civil|grading|stormwater|site drainage)\b|\bc[-\d]/i],
+    [
+      "building_design",
+      /\b(?:architecture|architectural|building design|floor plans?)\b|\ba[-\d]/i,
+    ],
+  ];
+
+  for (const candidate of [text, ...fallbackScopes]) {
+    const matches = scopes.filter(([, pattern]) => pattern.test(candidate));
+
+    if (matches.length > 0)
+      return matches.length === 1 ? (matches[0]?.[0] ?? "general") : "general";
+  }
+
+  return "general";
+}
+
 /** A review send names an already persisted reviewer message. */
 export const ReviewRequest = Schema.Struct({
   conversationId: ConversationId,
   messageId: Schema.String.check(Schema.isUUID()),
-  discipline: ReviewDiscipline,
+  discipline: ReviewDisciplineSelection,
 });
 
 /** Frozen request content survives pause/reopen without consulting newer messages. */
@@ -53,7 +91,9 @@ export class ExecutionSetup extends Schema.Class<ExecutionSetup>("ExecutionSetup
   model: Schema.NullOr(Schema.String),
   segmentation: Schema.Boolean,
   promptVersion: Schema.String,
+  packetPromptVersion: Schema.optionalKey(Schema.String),
   instructionRevision: Schema.String,
+  models: Schema.optionalKey(Schema.Array(ReviewModelOption)),
 }) {}
 
 /** Public execution identifiers reveal neither journal locations nor provider sessions. */
@@ -98,6 +138,9 @@ export class ExecutionStatus extends Schema.Class<ExecutionStatus>("ExecutionSta
   uncertaintyAcknowledged: Schema.Boolean,
   costUsd: Schema.NullOr(Schema.Finite),
   imageInputTokens: Schema.Null,
+  startedAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  stateChangedAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  conversationId: Schema.optionalKey(Schema.NullOr(ConversationId)),
 }) {}
 
 /** Event cursors survive renderer disconnects and backend restarts. */
@@ -129,6 +172,7 @@ export const StartExecution = Schema.Struct({
   projectId: ProjectId,
   findingId: FindingId,
   budget: ExecutionBudget,
+  model: Schema.optionalKey(ReviewModelId),
   reviewRequest: Schema.optionalKey(ReviewRequest),
 });
 

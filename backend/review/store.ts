@@ -993,6 +993,21 @@ export class ReviewStore extends Context.Service<
                 if (conversation === undefined)
                   return yield* failure("This project has no review conversation.");
 
+                const elapsed =
+                  run.started_at == null
+                    ? null
+                    : Math.max(0, Date.parse(createdAt) - run.started_at);
+
+                const origin = {
+                  runId: fence.runId,
+                  findingId: finding.id,
+                  promptVersion: run.prompt_version ?? "selected-finding-review-v1",
+                  instructionRevision:
+                    context?.instructionRevision ??
+                    (run.prompt_version === reviewPromptVersion ? reviewInstructionRevision : null),
+                  discipline: context?.request.discipline ?? null,
+                };
+
                 const entry = new ReviewMessage({
                   id: randomUUID(),
                   projectId: project.id,
@@ -1000,17 +1015,7 @@ export class ReviewStore extends Context.Service<
                   role: "application",
                   text: mutation.text,
                   createdAt,
-                  origin: {
-                    runId: fence.runId,
-                    findingId: finding.id,
-                    promptVersion: run.prompt_version ?? "selected-finding-review-v1",
-                    instructionRevision:
-                      context?.instructionRevision ??
-                      (run.prompt_version === reviewPromptVersion
-                        ? reviewInstructionRevision
-                        : null),
-                    discipline: context?.request.discipline ?? null,
-                  },
+                  origin: elapsed === null ? origin : { ...origin, elapsedMs: elapsed },
                 });
 
                 yield* save("message", entry);

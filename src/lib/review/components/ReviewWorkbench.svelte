@@ -8,23 +8,30 @@
     ReviewSnapshot,
     Sheet,
   } from "#lib/review/contracts.ts";
-  import { Schema } from "effect";
+  import { Option, Schema } from "effect";
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
   import { newCommandId, reviewCommand, type ReviewClient } from "#lib/review/client.ts";
   import ExecutionControls from "./ExecutionControls.svelte";
   import SheetSetup from "./SheetSetup.svelte";
-  import { sendReviewMessage } from "#lib/review/conversation.ts";
   import {
-    ExecutionBudget,
-    ReviewDiscipline,
+    ReviewDisciplineSelection,
     reviewDisciplines,
     type ExecutionSetup,
     type ExecutionStatus,
   } from "#lib/review/execution.ts";
   import FindingInspector from "./FindingInspector.svelte";
+  import PacketReviewPanel from "./PacketReviewPanel.svelte";
+  import type { PacketReview } from "#lib/review/packet.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import SourceViewer from "./SourceViewer.svelte";
-  import { findingSubtitle, formatOutcome, projectMonogram } from "./review-format.ts";
+  import ReviewSelect from "./ReviewSelect.svelte";
+  import { ReviewModelId, reviewModels } from "#lib/review/models.ts";
+  import {
+    findingSubtitle,
+    formatOutcome,
+    projectMonogram,
+    formatElapsed,
+  } from "./review-format.ts";
 
   let { client }: { client: ReviewClient } = $props();
 
@@ -44,14 +51,20 @@
   let selectedProjectId = $state<Project["id"] | null>(null);
   let selectedConversationId = $state<string | null>(null);
   let selectedFindingId = $state<string | null>(null);
-  let sourceTab = $state<"evidence" | "sheets" | "revision" | "settings">("evidence");
+  let sourceTab = $state<"evidence" | "sheets" | "revision">("evidence");
   let panelOpen = $state(false);
   let reviewFindingId = $state<string | null>(null);
   let reviewMode = $state<"review" | "note">("review");
-  let discipline = $state<typeof ReviewDiscipline.Type>("general");
+  let discipline = $state<typeof ReviewDisciplineSelection.Type>("auto");
+  let selectedModel = $state<typeof ReviewModelId.Type>("muse-spark-1.3");
   let setup = $state.raw<ExecutionSetup | null>(null);
   let executionStatus = $state.raw<ExecutionStatus | null>(null);
-  let callLimit = $state(12);
+  let callLimit = $state<number | undefined>(undefined);
+  let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
+  let packetBusy = $state(false);
+  let packetConnectionLost = $state(false);
+  let packetProjectId: Project["id"] | null = null;
+  let packetSubscription: AbortController | null = null;
   let notice = $state("");
   let sourceLoading = $state(false);
   let previewedSheet = $state.raw<Sheet | null>(null);
@@ -65,8 +78,14 @@
   let expandedProjects = $state.raw<ReadonlyArray<string>>([]);
 
   let createFindingOpen = $state(false);
-  let newProjectOpen = $state(false);
+  let projectDialog: HTMLDialogElement | undefined = $state();
+  let settingsDialog: HTMLDialogElement | undefined = $state();
+  let projectNameInput: HTMLInputElement | undefined = $state();
   let sourceSide = $state<"drawn" | "scheduled">("drawn");
+  let selectingRegion = $state(false);
+
+  let applySelectedRegion: ((region: import("#lib/review/contracts.ts").Region) => void) | null =
+    null;
 
   let revisionChoices = $state<
     Array<{
@@ -127,14 +146,44 @@
   const selectedFinding = $derived(findings.find((item) => item.id === selectedFindingId) ?? null);
   const reviewFinding = $derived(findings.find((item) => item.id === reviewFindingId) ?? null);
 
-  const budget = $derived(
-    new ExecutionBudget({ maxCalls: callLimit, maxInputTokens: 64000, maxOutputTokens: 4096 }),
+  const conversationReviews = $derived(
+    packetReviews
+      .filter((review) => review.conversationId === activeConversation?.id)
+      .toSorted((left, right) => left.startedAt - right.startedAt),
+  );
+
+  const activePacketReview = $derived(conversationReviews.at(-1) ?? null);
+  const packetFindings = $derived(activePacketReview?.findings ?? []);
+
+  const validCallLimit = $derived(
+    callLimit === undefined || (Number.isInteger(callLimit) && callLimit > 0),
+  );
+
+  const modelOptions = $derived(
+    (
+      setup?.models ??
+      reviewModels.map((model) => ({
+        ...model,
+        available: setup?.configured && setup.provider === model.provider,
+      }))
+    ).map((model) => ({
+      value: model.id,
+      label: model.label,
+      description: `${model.provider === "meta" ? "Meta" : "Baseten"}${model.available ? "" : " · add a connection in settings"}`,
+      disabled: !model.available,
+    })),
+  );
+
+  const selectedModelAvailable = $derived(
+    modelOptions.some((model) => model.value === selectedModel && !model.disabled),
   );
 
   const executionBlocked = $derived(
-    executionStatus !== null &&
-      (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
-        (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged)),
+    (activePacketReview !== null &&
+      ["running", "paused", "uncertain"].includes(activePacketReview.state)) ||
+      (executionStatus !== null &&
+        (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
+          (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged))),
   );
 
   const visibleFindings = $derived(
@@ -145,11 +194,179 @@
     ),
   );
 
+  const visiblePacketFindings = $derived(
+    packetFindings.filter((finding) =>
+      `${finding.title} ${finding.observed} ${finding.correction} ${finding.discipline}`
+        .toLowerCase()
+        .includes(findQuery.toLowerCase()),
+    ),
+  );
+
   const conversationMessages = $derived(
     activeConversation === null
       ? []
       : messages.filter((message) => message.conversationId === activeConversation.id),
   );
+
+  function receivePacketReview(review: PacketReview) {
+    if (review.projectId !== selectedProjectId) return;
+    const previous = packetReviews.find((item) => item.id === review.id);
+
+    if (previous && previous.version > review.version) return;
+    packetReviews = [...packetReviews.filter((item) => item.id !== review.id), review];
+  }
+
+  async function trackPacketReviews(projectId: Project["id"]) {
+    if (packetProjectId === projectId && packetSubscription !== null) return;
+    packetSubscription?.abort();
+    const controller = new AbortController();
+    packetSubscription = controller;
+    packetProjectId = projectId;
+    packetReviews = [];
+    packetConnectionLost = false;
+    void client
+      .observePacketReviews(
+        projectId,
+        async (review) => {
+          if (controller.signal.aborted || projectId !== selectedProjectId) return;
+          receivePacketReview(review);
+          await refresh(projectId);
+        },
+        controller.signal,
+      )
+      .then(() => {
+        if (!controller.signal.aborted && projectId === selectedProjectId) {
+          packetSubscription = null;
+          packetConnectionLost = true;
+        }
+      });
+    const result = await client.listPacketReviews(projectId);
+
+    if (controller.signal.aborted || projectId !== selectedProjectId) return;
+
+    if (result.ok) result.value.forEach(receivePacketReview);
+    else error = result.error.message;
+  }
+
+  async function showPacketFinding(findingId: string) {
+    searchOpen = false;
+    closeFindings();
+    await tick();
+    const finding = document.querySelector(`[data-testid="packet-finding-${findingId}"]`);
+
+    if (finding instanceof HTMLDetailsElement) {
+      finding.open = true;
+      finding.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  async function controlPacketReview(
+    review: PacketReview,
+    action: "pause" | "resume" | "cancel",
+    maxCalls?: number | null,
+  ) {
+    packetBusy = true;
+
+    const result = await client.controlPacketReview(
+      review.projectId,
+      review.id,
+      review.version,
+      action,
+      maxCalls,
+    );
+
+    packetBusy = false;
+
+    if (result.ok) receivePacketReview(result.value);
+    else error = result.error.message;
+  }
+
+  async function completePacketFinding(
+    review: PacketReview,
+    findingId: string,
+    completed: boolean,
+  ) {
+    packetBusy = true;
+
+    const result = await client.completePacketFinding(
+      review.projectId,
+      review.id,
+      findingId,
+      completed,
+      review.version,
+    );
+
+    packetBusy = false;
+
+    if (result.ok) receivePacketReview(result.value);
+    else error = result.error.message;
+  }
+
+  async function exportPacketReport(review: PacketReview) {
+    packetBusy = true;
+    const result = await client.choosePacketReport(review.projectId, review.id);
+    packetBusy = false;
+
+    if (!result.ok) error = result.error.message;
+    else if (result.value) notice = "HTML review report exported.";
+  }
+
+  async function openPacketEvidence(
+    artifactId: import("#lib/review/contracts.ts").Artifact["id"] | null,
+    location?: {
+      sheetId: Sheet["id"];
+      region: import("#lib/review/contracts.ts").Region | null;
+      detail: string;
+    },
+  ) {
+    if (project === null) return;
+    const projectId = project.id;
+    await refresh(projectId);
+
+    if (projectId !== selectedProjectId) return;
+    const artifact = snapshot?.artifacts.find((item) => item.id === artifactId);
+
+    const sheet = snapshot?.sheets.find(
+      (item) => item.id === (artifact?.sheetId ?? location?.sheetId),
+    );
+
+    if (!sheet) {
+      error = "This source sheet is unavailable in the current project.";
+
+      return;
+    }
+
+    selectedFindingId = null;
+    panelOpen = true;
+    sourceTab = "evidence";
+    closeFindings();
+
+    if (artifact) {
+      const request = ++sourceRequest;
+      sourceLoading = true;
+      previewedSheet = sheet;
+      sourceOverlays = [];
+      const blob = await client.loadArtifactBlobUrl(artifact.projectId, artifact);
+
+      if (request !== sourceRequest) {
+        if (blob.ok) URL.revokeObjectURL(blob.value);
+
+        return;
+      }
+
+      sourceLoading = false;
+
+      if (!blob.ok) {
+        error = blob.error.message;
+
+        return;
+      }
+
+      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+      sourceImageUrl = blob.value;
+      sourceArtifact = artifact;
+    } else await loadSheetSource(sheet, 150, location?.region ?? undefined);
+  }
 
   async function refresh(projectId: typeof selectedProjectId = selectedProjectId) {
     const request = ++refreshRequest;
@@ -202,6 +419,8 @@
     if (selectedProjectId !== null && !expandedProjects.includes(selectedProjectId)) {
       expandedProjects = [...expandedProjects, selectedProjectId];
     }
+
+    if (selectedProjectId !== null) void trackPacketReviews(selectedProjectId);
   }
 
   async function runCommand(command: Parameters<ReviewClient["command"]>[0]) {
@@ -236,13 +455,21 @@
 
     if (!ok) return;
     newProjectName = "";
-    newProjectOpen = false;
+    projectDialog?.close();
     selectedFindingId = null;
     selectedConversationId = snapshot?.conversations[0]?.id ?? null;
     reviewFindingId = null;
     executionStatus = null;
     draft = "";
     closeSource();
+  }
+
+  async function openProjectDialog() {
+    closeFindings();
+    mobileNavigationOpen = false;
+    projectDialog?.showModal();
+    await tick();
+    projectNameInput?.focus();
   }
 
   function rememberConversation() {
@@ -306,22 +533,36 @@
     });
 
     if (reviewMode === "review") {
-      if (reviewFinding === null || !setup?.configured || executionBlocked) return;
+      if (sheets.length === 0 || !selectedModelAvailable || !validCallLimit || executionBlocked)
+        return;
       busy = true;
+      const selection = { model: selectedModel, discipline, maxCalls: callLimit ?? null };
+      const saved = await client.command(command);
 
-      const result = await sendReviewMessage(client, {
-        command,
-        executionCommandId: newCommandId(),
-        findingId: reviewFinding.id,
-        discipline,
-        budget,
+      if (!saved.ok) {
+        error = saved.error.message;
+        busy = false;
+
+        return;
+      }
+
+      draft = "";
+      await refresh(saved.value.projectId);
+
+      const result = await client.startPacketReview({
+        commandId: newCommandId(),
+        projectId: command.projectId,
+        conversationId: command.conversationId,
+        messageId: saved.value.entityId,
+        ...selection,
       });
 
-      if (result.saved) draft = "";
-      await refresh();
-
-      if (result.saved) executionStatus = result.execution;
-      error = result.error ?? "";
+      if (result.ok) {
+        receivePacketReview(result.value);
+        error = "";
+        notice = "Review started.";
+      } else error = `Your message was saved. ${result.error.message}`;
+      await refresh(saved.value.projectId);
       busy = false;
     } else if (await runCommand(command)) {
       draft = "";
@@ -369,7 +610,7 @@
     panelOpen = true;
     sourceTab = "sheets";
     previewedSheet = null;
-    notice = "PDF imported. Review and confirm its sheets, then create a coordination check.";
+    notice = "PDF imported. Ask Moke for a whole-set QA pass or choose a discipline reviewer.";
     busy = false;
     importing = false;
   }
@@ -533,6 +774,8 @@
   }
 
   function openFinding(finding: Finding) {
+    selectingRegion = false;
+    applySelectedRegion = null;
     selectedFindingId = finding.id;
     selectReviewFinding(finding.id);
     panelOpen = true;
@@ -544,6 +787,8 @@
   }
 
   function closeSource() {
+    selectingRegion = false;
+    applySelectedRegion = null;
     sourceRequest++;
     sourceLoading = false;
     panelOpen = false;
@@ -596,6 +841,11 @@
 
   async function chooseConversation(id: string | null, remember = true) {
     if (remember) rememberConversation();
+
+    if (id !== selectedConversationId) {
+      executionStatus = null;
+    }
+
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
     mobileNavigationOpen = false;
@@ -613,6 +863,20 @@
   }
 
   function openSetup(tab: "sheets" | "settings" | "revision", create = false) {
+    if (tab === "settings") {
+      closeFindings();
+      mobileNavigationOpen = false;
+      settingsDialog?.showModal();
+
+      return;
+    }
+
+    if (panelOpen && sourceTab === tab && !create) {
+      closeSource();
+
+      return;
+    }
+
     panelOpen = true;
     sourceTab = tab;
     createFindingOpen = create;
@@ -629,6 +893,8 @@
   }
 
   function handleKey(event: KeyboardEvent) {
+    if (event.defaultPrevented || projectDialog?.open || settingsDialog?.open) return;
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       closeFindings();
@@ -787,6 +1053,7 @@
           selectedConversationId = result.value.conversations[0]?.id ?? null;
           projectConversations = { [result.value.project.id]: result.value.conversations };
           expandedProjects = [result.value.project.id];
+          void trackPacketReviews(result.value.project.id);
         }
       } else {
         error = result.error.message;
@@ -797,12 +1064,17 @@
     void client.executionSetup().then((result) => {
       if (controller.signal.aborted) return;
 
-      if (result.ok) setup = result.value;
-      else error = result.error.message;
+      if (result.ok) {
+        setup = result.value;
+        const configuredModel = Schema.decodeUnknownOption(ReviewModelId)(result.value.model);
+
+        if (Option.isSome(configuredModel)) selectedModel = configuredModel.value;
+      } else error = result.error.message;
     });
 
     return () => {
       controller.abort();
+      packetSubscription?.abort();
       sourceRequest++;
 
       if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
@@ -868,7 +1140,10 @@
               >{importing ? "Importing PDF…" : "Import PDF"}</span
             ></button
           >
-          <button class="ghost sheets-trigger" onclick={() => openSetup("sheets")}
+          <button
+            class="ghost sheets-trigger"
+            aria-expanded={panelOpen && sourceTab === "sheets"}
+            onclick={() => openSetup("sheets")}
             ><ReviewIcon name="file-text" size={15} /><span>Sheets</span><span class="finding-count"
               >{sheets.length}</span
             ></button
@@ -882,52 +1157,148 @@
             popovertarget="review-findings"
             onclick={positionFindings}
             ><ReviewIcon name="layout-grid" size={15} /><span>Findings</span><span
-              class="finding-count">{findings.length}</span
+              class="finding-count">{findings.length + packetFindings.length}</span
             ><ReviewIcon name="chevron-down" size={13} /></button
           >
         {/if}
       </div>
     </header>
+    <dialog
+      class="workspace-dialog"
+      bind:this={projectDialog}
+      aria-labelledby="project-dialog-title"
+    >
+      <form class="project-form" data-testid="create-project-form" onsubmit={createProject}>
+        <header>
+          <h2 id="project-dialog-title">New project</h2>
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Close new project"
+            disabled={busy}
+            onclick={() => projectDialog?.close()}><ReviewIcon name="x" size={17} /></button
+          >
+        </header>
+        <p>Keep drawings, conversations, and findings together.</p>
+        <label
+          >Project name<input
+            bind:this={projectNameInput}
+            data-testid="project-name-input"
+            bind:value={newProjectName}
+            required
+            maxlength="160"
+            placeholder="For example, Oak Street renovation"
+          /></label
+        >
+        {#if error}<p class="dialog-error" role="alert">{error}</p>{/if}
+        <footer>
+          <button type="button" class="ghost" disabled={busy} onclick={() => projectDialog?.close()}
+            >Cancel</button
+          ><button
+            class="primary"
+            type="submit"
+            disabled={busy || !newProjectName.trim()}
+            data-testid="create-project-button">{busy ? "Creating…" : "Create project"}</button
+          >
+        </footer>
+      </form>
+    </dialog>
+    <dialog
+      class="workspace-dialog settings-dialog"
+      bind:this={settingsDialog}
+      aria-labelledby="settings-dialog-title"
+    >
+      <header>
+        <h2 id="settings-dialog-title">Review settings</h2>
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="Close review settings"
+          onclick={() => settingsDialog?.close()}><ReviewIcon name="x" size={17} /></button
+        >
+      </header>
+      <section class="settings-section">
+        <h3>Review scope</h3>
+        <p class="muted">
+          Ask for a whole-set QA pass, a discipline review, or follow-up scrutiny. Moke follows the
+          project instructions and records the sources, coverage, findings, and missing inputs.
+        </p>
+        <details>
+          <summary>Optional call budget</summary>
+          <label
+            >Maximum provider calls<input
+              type="number"
+              min="1"
+              step="1"
+              bind:value={callLimit}
+              placeholder="No application call limit"
+            /></label
+          >
+          <p class="muted">
+            Leave blank to let the review continue without an application call ceiling. A budget
+            applies to the next review; recorded work remains available if it is reached.
+          </p>
+        </details>
+      </section>
+      <section class="settings-section">
+        <h3>Model connections</h3>
+        <p>
+          Meta <span class="connection-state"
+            >{setup?.models?.some((model) => model.provider === "meta" && model.available)
+              ? "Connected"
+              : "Not connected"}</span
+          >
+        </p>
+        <p>
+          Baseten <span class="connection-state"
+            >{setup?.models?.some((model) => model.provider === "baseten" && model.available)
+              ? "Connected"
+              : "Not connected"}</span
+          >
+        </p>
+        <p class="muted">Add a connection from File → Import provider credential configuration.</p>
+      </section>
+      <section class="settings-section">
+        <h3>You make the final call</h3>
+        <p class="muted">
+          Review the findings, evidence, governing sources, and any missing inputs before using a
+          report. Completion checkboxes track your correction work; they do not change the review's
+          evidence or source status.
+        </p>
+        <details>
+          <summary>Technical details</summary>
+          <p class="muted">
+            Moke uses the selected model's configured capabilities and durable review history.
+            Context management preserves source records and completed work. Image-token usage and
+            cost may be unavailable.
+          </p>
+          <p class="muted">
+            {setup?.packetPromptVersion ?? setup?.promptVersion} · {setup?.instructionRevision.slice(
+              0,
+              12,
+            )}
+          </p>
+        </details>
+      </section>
+      <footer><button class="ghost" onclick={() => settingsDialog?.close()}>Done</button></footer>
+    </dialog>
     <div class="app-body">
       {#if sidebarOpen}
         <aside class="sidebar" aria-label="Conversation navigation">
           <button
             class="new-chat"
             data-testid="new-conversation"
-            onclick={createConversation}
-            disabled={!project || busy}
-            ><ReviewIcon name="plus" size={16} /><span>New conversation</span></button
+            onclick={project ? createConversation : openProjectDialog}
+            disabled={busy}
+            ><ReviewIcon name="plus" size={16} /><span
+              >{project ? "New conversation" : "New project"}</span
+            ></button
           >
           <button class="nav-action" onclick={openSearch}
             ><ReviewIcon name="search" size={16} /><span>Search findings</span><kbd>⌘ K</kbd
             ></button
           >
           {#if !ready}<p role="status">Loading projects…</p>{/if}
-          {#if ready && (projects.length === 0 || newProjectOpen)}
-            <form class="create-project" data-testid="create-project-form" onsubmit={createProject}>
-              <h2>Create a project</h2>
-              <label
-                >Project name<input
-                  data-testid="project-name-input"
-                  bind:value={newProjectName}
-                  required
-                  maxlength="160"
-                  placeholder="Project name"
-                /></label
-              >
-              <div class="actions">
-                {#if projects.length > 0}<button
-                    type="button"
-                    onclick={() => (newProjectOpen = false)}>Cancel</button
-                  >{/if}<button
-                  class="primary"
-                  type="submit"
-                  disabled={busy}
-                  data-testid="create-project-button">Create project</button
-                >
-              </div>
-            </form>
-          {/if}
           <nav class="projects" aria-label="Projects">
             {#each projects as entry (entry.id)}
               <section class="project-group" aria-label={entry.name}>
@@ -966,10 +1337,15 @@
             {/each}
           </nav>
           <div class="sidebar-footer">
-            <button class="nav-action" onclick={() => (newProjectOpen = true)} disabled={busy}
-              ><ReviewIcon name="folder" size={16} /><span>New project</span></button
-            >
-            <button class="nav-action" onclick={() => openSetup("settings")}
+            {#if project}
+              <button class="nav-action" onclick={openProjectDialog} disabled={busy}
+                ><ReviewIcon name="folder" size={16} /><span>New project</span></button
+              >
+            {/if}
+            <button
+              class="nav-action"
+              aria-label="Review settings"
+              onclick={() => openSetup("settings")}
               ><ReviewIcon name="settings" size={16} /><span>Review settings</span><span
                 class={["connection-dot", { connected: setup?.configured }]}
                 title={setup?.configured ? "Provider configured" : "Provider not configured"}
@@ -1006,6 +1382,14 @@
               onclick={() => (error = "")}><ReviewIcon name="x" size={16} /></button
             >
           </div>{/if}
+        {#if packetConnectionLost}<div class="notice" role="status">
+            <span>Live review progress disconnected. Recorded work is preserved.</span><button
+              class="text-button"
+              onclick={() => {
+                if (selectedProjectId) void trackPacketReviews(selectedProjectId);
+              }}>Reconnect</button
+            >
+          </div>{/if}
         {#if notice}<div class="notice" role="status">
             <span>{notice}</span><button
               class="icon-button"
@@ -1019,20 +1403,13 @@
             {:else if project === null}<div class="chat-empty">
                 {@render mark(28)}
                 <h1>Start a drawing review</h1>
-                <p>Create a project, import its drawings, and choose a coordination check.</p>
-                <button
-                  class="ghost"
-                  onclick={() => {
-                    sidebarOpen = true;
-                    mobileNavigationOpen = true;
-                    newProjectOpen = true;
-                  }}>Create a project</button
-                >
+                <p>Create a project, import its drawings, and ask Moke to review them.</p>
+                <button class="ghost" onclick={openProjectDialog}>Create a project</button>
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
                 {@render mark(28)}
-                <h1>What are we checking?</h1>
+                <h1>What should Moke review?</h1>
                 {#if sheets.length === 0}<p>
                     Import a drawing PDF to begin. Your source sheets and review history stay with
                     this project.
@@ -1040,23 +1417,27 @@
                   <button class="ghost" disabled={busy} onclick={importPdf}
                     ><ReviewIcon name="upload" size={15} />Import drawings</button
                   >
-                {:else if findings.length === 0}<p>
-                    Confirm the source sheets and define a drawn-to-schedule count check. Then ask
-                    Moke to inspect it.
-                  </p>
-                  <button class="ghost" onclick={() => openSetup("sheets", true)}
-                    >Set up a coordination check</button
-                  >
                 {:else}<p>
-                    Select a check below and ask Moke to inspect its drawing evidence. You decide
-                    which observations to accept.
-                  </p>{/if}
+                    Ask for a whole-set QA pass or select a discipline reviewer. Moke reads the
+                    supplied sheets, checks sources and coordination, and prepares findings with
+                    evidence and an HTML report.
+                  </p>
+                  <p class="muted">For example: “Run a quick QA pass on this drawing set.”</p>{/if}
               </div>
             {/if}
             {#each conversationMessages as message (message.id)}
               <article
-                class={["message", { "application-message": message.role === "application" }]}
+                class={[
+                  "message",
+                  {
+                    "application-message": message.role === "application",
+                    "reviewer-message": message.role === "reviewer",
+                  },
+                ]}
               >
+                {#if message.origin?.elapsedMs !== undefined}<p class="work-duration">
+                    Worked for {formatElapsed(message.origin.elapsedMs)}
+                  </p>{/if}
                 <div class="byline">
                   {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
                       class="moke-mark">{@render mark(16)}</span
@@ -1078,181 +1459,190 @@
                   >{/if}
               </article>
             {/each}
-          </div>
-        </div>
-        <div class="composer-region">
-          {#if project}
-            <div class="scope-bar">
-              <label class="scope-select"
-                ><span class="sr-only">Review finding</span><select
-                  aria-label="Review finding"
-                  value={reviewFindingId ?? ""}
-                  onchange={(event) => selectReviewFinding(event.currentTarget.value)}
-                  ><option value="">Choose a coordination check…</option
-                  >{#each findings as finding (finding.id)}<option value={finding.id}
-                      >{finding.title}</option
-                    >{/each}</select
-                ></label
-              >
-              <button
-                class="text-button"
-                data-testid="open-create-finding"
-                onclick={() => openSetup("sheets", true)}
-                ><ReviewIcon name="plus" size={14} />New check</button
-              >
-            </div>
+            {#if activePacketReview}
+              {#key activePacketReview.id}<PacketReviewPanel
+                  review={activePacketReview}
+                  busy={packetBusy || busy}
+                  onControl={(action, maxCalls) =>
+                    controlPacketReview(activePacketReview, action, maxCalls)}
+                  onComplete={(findingId, completed) =>
+                    completePacketFinding(activePacketReview, findingId, completed)}
+                  onExport={() => exportPacketReport(activePacketReview)}
+                  onEvidence={openPacketEvidence}
+                />{/key}
+              {#if conversationReviews.length > 1}<details class="previous-reviews">
+                  <summary>Previous reviews in this conversation</summary>{#each conversationReviews
+                    .slice(0, -1)
+                    .toReversed() as review (review.id)}<div>
+                      <span
+                        >{review.scope._tag === "WholeSet"
+                          ? "Whole set"
+                          : review.scope.discipline.replaceAll("_", " ")} · {new Date(
+                          review.startedAt,
+                        ).toLocaleString()} · {review.state}</span
+                      ><button
+                        class="text-button"
+                        disabled={packetBusy || busy}
+                        onclick={() => exportPacketReport(review)}>Export report</button
+                      >
+                    </div>{/each}
+                </details>{/if}
+            {/if}
             {#if reviewFinding}
-              {#key reviewFinding.id}<ExecutionControls
+              {#key reviewFinding.id + (activeConversation?.id ?? "")}<ExecutionControls
                   {client}
                   finding={reviewFinding}
-                  {setup}
-                  {budget}
-                  {discipline}
                   conversation={activeConversation}
-                  projectVersion={project.version}
+                  hasReply={conversationMessages.some(
+                    (message) => message.origin?.runId === executionStatus?.runId,
+                  )}
                   bind:status={executionStatus}
                   onProgress={() => refresh()}
                 />{/key}
             {/if}
-          {/if}
-          <form class="composer" onsubmit={postMessage}>
-            <label class="sr-only" for="chat-message">Message</label><textarea
-              id="chat-message"
-              bind:this={composerInput}
-              bind:value={draft}
-              rows="2"
-              maxlength="2000"
-              placeholder={reviewMode === "review"
-                ? "Ask Moke to inspect the selected check…"
-                : "Add a project note…"}
-              disabled={project === null || activeConversation === null}></textarea>
-            <div class="composer-tools">
-              <div class="composer-options">
-                <select aria-label="Message action" bind:value={reviewMode}
-                  ><option value="review">Review with Moke</option><option value="note"
-                    >Save note</option
-                  ></select
-                >{#if reviewMode === "review"}<select
-                    aria-label="Review discipline"
-                    bind:value={discipline}
-                    >{#each reviewDisciplines as scope (scope.id)}<option value={scope.id}
-                        >{scope.label}</option
-                      >{/each}</select
-                  >{/if}
-              </div>
-              <button
-                type="submit"
-                class="send"
-                disabled={!draft.trim() ||
-                  busy ||
-                  !project ||
-                  (reviewMode === "review" &&
-                    (!reviewFinding || !setup?.configured || executionBlocked))}
-                aria-label="Send message"
-                title={reviewMode === "review" ? "Send and start bounded inspection" : "Save note"}
-                ><ReviewIcon name="arrow-up" size={17} /></button
-              >
-            </div>
-          </form>
-          <div class="composer-help">
-            {#if reviewMode === "note"}Notes are saved without starting an inspection.{:else if !reviewFinding}Choose
-              a check or create one to review drawing evidence.{:else if !setup?.configured}Provider
-              not configured. <button class="text-button" onclick={() => openSetup("settings")}
-                >Open review settings</button
-              >{:else if executionBlocked}Resolve the current inspection before sending another
-              request.{:else}Up to {callLimit} calls · proposed evidence · governing code unverified{/if}
           </div>
         </div>
+        {#if project}
+          <div class="composer-region">
+            {#if project}
+              <div class="scope-bar">
+                {#if findings.length > 0}<div class="scope-select">
+                    <ReviewSelect
+                      label="Check"
+                      value={reviewFindingId ?? ""}
+                      options={[
+                        { value: "", label: "Optional count comparison" },
+                        ...findings.map((finding) => ({ value: finding.id, label: finding.title })),
+                      ]}
+                      disabled={busy || executionBlocked}
+                      onChange={selectReviewFinding}
+                    />
+                  </div>{:else}<span class="muted review-scope"
+                    >Whole set or selected discipline</span
+                  >{/if}
+                <button
+                  class="text-button"
+                  data-testid="open-create-finding"
+                  onclick={() => openSetup("sheets", true)}
+                  ><ReviewIcon name="plus" size={14} />New count check</button
+                >
+              </div>
+            {/if}
+            <form class="composer" onsubmit={postMessage}>
+              <label class="sr-only" for="chat-message">Message</label><textarea
+                id="chat-message"
+                bind:this={composerInput}
+                bind:value={draft}
+                rows="2"
+                maxlength="32000"
+                placeholder={reviewMode === "review"
+                  ? "Ask for a whole-set QA pass, a discipline review, or follow-up…"
+                  : "Add a project note…"}
+                disabled={project === null || activeConversation === null}></textarea>
+              <div class="composer-tools">
+                <div class="composer-options">
+                  <ReviewSelect
+                    label="Model"
+                    value={selectedModel}
+                    options={modelOptions}
+                    disabled={busy || executionBlocked}
+                    onChange={(value) => {
+                      selectedModel = Schema.decodeUnknownSync(ReviewModelId)(value);
+                    }}
+                  />
+                  <ReviewSelect
+                    label="Reviewer"
+                    value={discipline}
+                    options={[
+                      {
+                        value: "auto",
+                        label: "Auto",
+                        description: "Whole set unless your request selects a discipline",
+                      },
+                      ...reviewDisciplines.map((scope) => ({
+                        value: scope.id,
+                        label: scope.label,
+                      })),
+                    ]}
+                    disabled={busy || executionBlocked}
+                    onChange={(value) => {
+                      discipline = Schema.decodeUnknownSync(ReviewDisciplineSelection)(value);
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="note-toggle"
+                  aria-label="Save as note"
+                  aria-pressed={reviewMode === "note"}
+                  disabled={busy || executionBlocked}
+                  onclick={() => {
+                    reviewMode = reviewMode === "note" ? "review" : "note";
+                  }}>Note</button
+                >
+                <button
+                  type="submit"
+                  class="send"
+                  disabled={!draft.trim() ||
+                    busy ||
+                    !project ||
+                    (reviewMode === "review" &&
+                      (sheets.length === 0 ||
+                        !selectedModelAvailable ||
+                        !validCallLimit ||
+                        executionBlocked))}
+                  aria-label="Send message"
+                  title={reviewMode === "review" ? "Send and start document review" : "Save note"}
+                  ><ReviewIcon name="arrow-up" size={17} /></button
+                >
+              </div>
+            </form>
+            <div class="composer-help">
+              {#if reviewMode === "note"}Notes are saved without starting a review.{:else if sheets.length === 0}Import
+                the drawing set to start a review.{:else if !setup?.configured}Provider not
+                configured. <button class="text-button" onclick={() => openSetup("settings")}
+                  >Open review settings</button
+                >{:else if !selectedModelAvailable}Choose a connected model or add a connection in
+                review settings.{:else if !validCallLimit}Enter a positive whole-number call budget
+                or leave it blank.{:else if executionBlocked}Resolve the current review before
+                sending another request.{:else}Review the findings, source status, and coverage
+                before using the results.{/if}
+            </div>
+          </div>
+        {/if}
       </section>
       {#if panelOpen}
         <aside class="source-panel" aria-label="Finding source" data-testid="source-panel">
           <header class="source-header">
-            <ReviewIcon
-              name={sourceTab === "settings" ? "settings" : "file-text"}
-              size={16}
-            /><strong
-              >{sourceTab === "settings"
-                ? "Review settings"
-                : sourceTab === "evidence"
-                  ? (selectedFinding?.title ?? "Evidence")
-                  : (project?.name ?? "Project")}</strong
+            <ReviewIcon name="file-text" size={16} /><strong
+              >{sourceTab === "evidence"
+                ? (selectedFinding?.title ?? "Evidence")
+                : (project?.name ?? "Project")}</strong
             ><button class="icon-button" aria-label="Close source panel" onclick={closeSource}
               ><ReviewIcon name="x" size={17} /></button
             >
           </header>
-          {#if sourceTab !== "settings"}<div class="source-tabs">
-              <button
-                class={{ current: sourceTab === "evidence" }}
-                disabled={busy || !selectedFinding}
-                onclick={() => {
-                  if (selectedFinding === null) return;
-                  sourceTab = "evidence";
+          <div class="source-tabs">
+            <button
+              class={{ current: sourceTab === "evidence" }}
+              disabled={busy || (!selectedFinding && !previewedSheet)}
+              onclick={() => {
+                sourceTab = "evidence";
+                if (selectedFinding)
                   void loadSourceForFinding(selectedFinding, 96, undefined, sourceSide);
-                }}>Evidence</button
-              ><button
-                disabled={busy}
-                class={{ current: sourceTab === "sheets" }}
-                onclick={() => (sourceTab = "sheets")}>Sheets</button
-              ><button
-                class={{ current: sourceTab === "revision" }}
-                disabled={busy}
-                onclick={() => (sourceTab = "revision")}>Revision</button
-              >
-            </div>{/if}
+              }}>Evidence</button
+            ><button
+              disabled={busy}
+              class={{ current: sourceTab === "sheets" }}
+              onclick={() => (sourceTab = "sheets")}>Sheets</button
+            ><button
+              class={{ current: sourceTab === "revision" }}
+              disabled={busy}
+              onclick={() => (sourceTab = "revision")}>Revision</button
+            >
+          </div>
           <div class="source-scroll">
-            {#if sourceTab === "settings"}
-              <section class="settings-section">
-                <h2>Model connection</h2>
-                {#if setup}<p>
-                    {setup.configured
-                      ? setup.provider + " · " + setup.model
-                      : "No provider configured"}
-                  </p>
-                  <p class="muted">
-                    Use File → Import provider credential configuration… to select your
-                    configuration and restart. Credentials stay in the trusted desktop and backend.
-                  </p>{:else}<p role="status">Loading configuration…</p>{/if}
-              </section>
-              <section class="settings-section">
-                <h2>Inspection limit</h2>
-                <label
-                  >Maximum calls per inspection<select bind:value={callLimit}
-                    ><option value={4}>4 calls</option><option value={8}>8 calls</option><option
-                      value={12}>12 calls</option
-                    ></select
-                  ></label
-                >
-                <p class="muted">
-                  The selection resets to 12 on restart. Includes at most 2 SAM requests when
-                  available. Each model request reserves up to 64,000 text-input tokens and 4,096
-                  output tokens. Billing and image-token usage are unknown. Nothing starts
-                  automatically on reopen.
-                </p>
-              </section>
-              <section class="settings-section">
-                <h2>Review boundary</h2>
-                <p>
-                  This beta inspects one drawn-to-schedule count check at a time using its selected
-                  PDF sheets. It does not complete a permit or discipline review.
-                </p>
-                <p class="muted">
-                  Governing code is unverified: there is no browser or verified code library in this
-                  runtime. Jurisdiction, adopted editions, permit stage, supporting calculations and
-                  prior comments remain Needs input where relevant. Confirm them independently.
-                </p>
-                <p class="muted">
-                  {setup?.segmentation
-                    ? "SAM is available for proposed object locations."
-                    : "SAM is unavailable for this provider route."} Only you accept facts, confirm coverage
-                  and close findings.
-                </p>
-              </section>
-              {#if setup}<section class="settings-section provenance">
-                  <h2>Moke instructions</h2>
-                  <p>{setup.promptVersion}</p>
-                  <p>skills revision {setup.instructionRevision}</p>
-                </section>{/if}
-            {:else if sourceTab === "sheets"}
+            {#if sourceTab === "sheets"}
               {#if sourceLoading}<p class="muted" role="status">
                   Rendering source…
                 </p>{:else if sourceImageUrl && previewedSheet}<SourceViewer
@@ -1278,16 +1668,34 @@
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
                   label="Original source render"
+                  bind:selecting={selectingRegion}
+                  onSelectRegion={(region) => {
+                    if (!previewedSheet) return;
+                    const box = previewedSheet.box;
+                    const x = Math.max(box.x, region.x);
+                    const y = Math.max(box.y, region.y);
+                    const width = Math.min(box.x + box.width, region.x + region.width) - x;
+                    const height = Math.min(box.y + box.height, region.y + region.height) - y;
+                    if (width <= 0 || height <= 0) return;
+                    applySelectedRegion?.({ x, y, width, height });
+                    sourceOverlays = [
+                      { region: { x, y, width, height }, title: "Selected review area" },
+                    ];
+                    notice = "Review area selected. Confirm its count below.";
+                  }}
                 />{/if}
               {#if previewedSheet && sourceArtifact}<div class="source-provenance">
                   <strong>{previewedSheet.label}</strong><span
                     >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page
                     {previewedSheet.pageIndex + 1} · {sourceArtifact.dpi} DPI</span
-                  ><span
-                    >Source SHA {revisions
-                      .find((item) => item.id === previewedSheet?.revisionId)
-                      ?.sha256.slice(0, 16)}</span
                   >
+                  <details>
+                    <summary>Source details</summary><span
+                      >Source SHA {revisions
+                        .find((item) => item.id === previewedSheet?.revisionId)
+                        ?.sha256.slice(0, 16)}</span
+                    >
+                  </details>
                 </div>{/if}
               {#key selectedFinding.id}<FindingInspector
                   finding={selectedFinding}
@@ -1299,7 +1707,30 @@
                   onEvaluate={evaluateFinding}
                   onStatus={setFindingStatus}
                   onRequestDetail={requestDetail}
+                  onChooseRegion={async (side, apply) => {
+                    if (!selectedFinding) return;
+                    applySelectedRegion = apply;
+                    selectingRegion = true;
+                    await loadSourceForFinding(selectedFinding, 96, undefined, side);
+                    document
+                      .querySelector('[aria-label="Pan and zoom source canvas"]')
+                      ?.scrollIntoView({ block: "nearest" });
+                  }}
                 />{/key}
+            {:else if sourceTab === "evidence" && previewedSheet}
+              {#if sourceLoading}<p class="muted" role="status">
+                  Rendering source…
+                </p>{:else if sourceImageUrl}<SourceViewer
+                  imageUrl={sourceImageUrl}
+                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
+                  label="Original source render"
+                />{/if}
+              <div class="source-provenance">
+                <strong>{previewedSheet.label}</strong><span
+                  >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
+                    1}</span
+                >
+              </div>
             {:else if sourceTab === "revision"}
               {#if revisions.length >= 2}
                 {@const latest = revisions.at(-1)}
@@ -1404,6 +1835,14 @@
           <ReviewIcon name="folder" size={17} /><strong>{project.name}</strong>
         </div>
         <div class="bubble-results">
+          {#each packetFindings as finding (finding.id)}<button
+              class="finding-row"
+              onclick={() => showPacketFinding(finding.id)}
+              ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
+                >{finding.title}</span
+              ><span class="outcome">{finding.severity}</span></button
+            >{/each}
+          {#if findings.length > 0}<p class="menu-section-label">Count comparisons</p>{/if}
           {#each findings as finding (finding.id)}<button
               class={["finding-row", { selected: selectedFindingId === finding.id }]}
               data-testid={"finding-row-" + finding.id}
@@ -1415,9 +1854,10 @@
                 name="chevron-right"
                 size={14}
               /></button
-            >{:else}<p class="menu-empty">
-              No findings yet. Define a coordination check to begin.
-            </p>{/each}
+            >{/each}
+          {#if packetFindings.length === 0 && findings.length === 0}<p class="menu-empty">
+              No findings yet. Ask Moke to review the supplied drawing set.
+            </p>{/if}
         </div>{/if}
     </section>
     {#if searchOpen}<section class="search-panel" aria-label="Search findings">
@@ -1433,13 +1873,24 @@
           >
         </div>
         <div class="search-results">
+          {#each visiblePacketFindings as finding (finding.id)}<button
+              class="finding-row"
+              onclick={() => showPacketFinding(finding.id)}
+              >{finding.title}<span class="outcome">{finding.severity} · {finding.status}</span
+              ></button
+            >{/each}
           {#each visibleFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => openFinding(finding)}
               >{finding.title}<span class="outcome">{formatOutcome(finding.outcome)}</span></button
-            >{:else}<p class="menu-empty">
-              {findQuery ? "No matching findings." : "No findings in this project."}
-            </p>{/each}
+            >{/each}
+          {#if visiblePacketFindings.length === 0 && visibleFindings.length === 0}<p
+              class="menu-empty"
+            >
+              {findQuery
+                ? "No matching findings."
+                : "No findings in this conversation or count comparisons."}
+            </p>{/if}
         </div>
       </section>{/if}
   </div>
@@ -1649,6 +2100,29 @@
     background: var(--nd-panel);
     font-size: 13px;
   }
+  .previous-reviews {
+    color: var(--nd-ink-muted);
+    font-size: 12px;
+    margin: 16px 0 28px;
+  }
+  .previous-reviews summary {
+    cursor: pointer;
+  }
+  .previous-reviews > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .menu-section-label {
+    color: var(--nd-ink-muted);
+    font-size: 11px;
+    padding: 8px 12px 0;
+  }
+  .review-scope {
+    font-size: 12px;
+  }
   .finding-count {
     background: var(--nd-raised);
     padding: 1px 6px;
@@ -1791,6 +2265,26 @@
     font-size: 15px;
     line-height: 1.75;
   }
+  .reviewer-message {
+    width: fit-content;
+    max-width: 88%;
+    margin-left: auto;
+    padding: 12px 16px;
+    background: var(--nd-raised);
+    border-radius: 16px 16px 4px 16px;
+  }
+  .reviewer-message .byline {
+    display: none;
+  }
+  .reviewer-message p {
+    margin: 0;
+  }
+  .work-duration {
+    color: var(--nd-ink-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 12px;
+  }
   .message p {
     margin: 8px 0 0;
     white-space: pre-wrap;
@@ -1850,16 +2344,6 @@
     min-width: 0;
     flex: 1;
   }
-  .scope-select select {
-    max-width: 100%;
-    width: 100%;
-    border: 0;
-    background: var(--nd-shell);
-    color: var(--nd-ink-muted);
-    padding: 4px 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .text-button {
     display: inline-flex;
     align-items: center;
@@ -1867,6 +2351,19 @@
     white-space: nowrap;
     color: var(--nd-ink-muted);
     padding: 4px 0;
+  }
+  .note-toggle {
+    border: 0;
+    background: transparent;
+    color: var(--nd-ink-muted);
+    padding: 7px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .note-toggle[aria-pressed="true"] {
+    color: var(--nd-ink);
+    background: var(--nd-raised);
   }
   .composer {
     border: 1px solid var(--nd-hairline-strong);
@@ -1900,16 +2397,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-  }
-  .composer-options select {
-    min-width: 0;
-    max-width: 180px;
-    border: 0;
-    border-radius: 5px;
-    padding: 5px 3px;
-    background: var(--nd-panel);
-    color: var(--nd-ink-muted);
-    font-size: 12px;
   }
   .send {
     flex-shrink: 0;
@@ -2040,11 +2527,6 @@
     padding-bottom: 20px;
     border-bottom: 1px solid var(--nd-hairline);
   }
-  .settings-section h2 {
-    font-size: 16px;
-    font-weight: 550;
-    margin: 0;
-  }
   .settings-section p {
     font-size: 13px;
     line-height: 1.65;
@@ -2052,9 +2534,6 @@
   }
   .muted {
     color: var(--nd-ink-muted);
-  }
-  .provenance {
-    overflow-wrap: anywhere;
   }
   .findings-bubble {
     margin: 0;
@@ -2119,28 +2598,21 @@
     line-height: 1.6;
     color: var(--nd-ink-muted);
   }
-  .create-project {
+  .project-form {
     display: grid;
     gap: 12px;
     padding: 12px 2px;
   }
-  .create-project h2 {
+  .project-form h2 {
     margin: 0;
     font-size: 15px;
   }
-  .actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-  .create-project label,
-  .settings-section label,
+  .project-form label,
   .sheet-list label {
     display: grid;
     gap: 6px;
   }
-  .create-project input,
-  .settings-section select,
+  .project-form input,
   .sheet-list select {
     width: 100%;
     min-width: 0;
@@ -2149,9 +2621,8 @@
     background: var(--nd-shell);
     padding: 8px;
   }
-  .actions button,
   .source-scroll > button,
-  .create-project button {
+  .project-form button {
     border: 1px solid var(--nd-hairline-strong);
     border-radius: 6px;
     padding: 8px 10px;
@@ -2174,6 +2645,82 @@
     border: 1px solid var(--nd-hairline);
     border-radius: 8px;
     padding: 12px;
+  }
+  .workspace-dialog {
+    color: var(--nd-ink);
+    background: var(--nd-panel);
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 14px;
+    padding: 24px;
+    width: min(480px, calc(100vw - 32px));
+    max-height: calc(100dvh - 48px);
+    overflow: auto;
+    box-shadow: 0 20px 64px rgb(0 0 0 / 0.28);
+  }
+  .workspace-dialog::backdrop {
+    background: rgb(0 0 0 / 0.48);
+  }
+  .workspace-dialog header {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .workspace-dialog h2 {
+    font-size: 20px;
+    margin: 0;
+  }
+  .workspace-dialog h3 {
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+  .workspace-dialog p {
+    line-height: 1.6;
+    font-size: 13px;
+  }
+  .workspace-dialog footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+  }
+  .workspace-dialog footer button {
+    border-radius: 7px;
+    padding: 8px 14px;
+    border: 1px solid var(--nd-hairline-strong);
+  }
+  .project-form {
+    display: grid;
+    gap: 18px;
+  }
+  .project-form p {
+    color: var(--nd-ink-muted);
+    margin: 0;
+  }
+  .project-form .dialog-error {
+    color: var(--nd-warning);
+  }
+  .settings-dialog {
+    width: min(520px, calc(100vw - 32px));
+  }
+  .settings-dialog .settings-section {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--nd-hairline);
+  }
+  .settings-dialog .settings-section p {
+    margin: 6px 0;
+  }
+  .connection-state {
+    float: right;
+    color: var(--nd-ink-muted);
+  }
+  .workspace-dialog details {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+  }
+  .workspace-dialog summary {
+    cursor: pointer;
   }
   .sr-only {
     position: absolute;

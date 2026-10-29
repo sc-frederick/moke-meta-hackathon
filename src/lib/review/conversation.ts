@@ -1,13 +1,15 @@
 import type { CommandId, FindingId, ReviewCommand } from "./contracts.ts";
 import type { ReviewClient } from "./client.ts";
-import type { ExecutionBudget, ExecutionStatus, ReviewDiscipline } from "./execution.ts";
+import type { ExecutionBudget, ExecutionStatus, ReviewDisciplineSelection } from "./execution.ts";
+import type { ReviewModelId } from "./models.ts";
 
 /** A reviewer send is saved once, then explicitly admitted for the selected check. */
 interface ReviewMessageSubmission {
   readonly command: typeof ReviewCommand.cases.PostMessage.Type;
   readonly executionCommandId: typeof CommandId.Type;
   readonly findingId: typeof FindingId.Type;
-  readonly discipline: typeof ReviewDiscipline.Type;
+  readonly discipline: typeof ReviewDisciplineSelection.Type;
+  readonly model?: typeof ReviewModelId.Type;
   readonly budget: ExecutionBudget;
 }
 
@@ -29,7 +31,7 @@ export async function sendReviewMessage(
 
   if (!saved.ok) return { saved: false, error: saved.error.message };
 
-  const started = await client.startExecution({
+  const execution = {
     commandId: submission.executionCommandId,
     projectId: submission.command.projectId,
     findingId: submission.findingId,
@@ -39,7 +41,11 @@ export async function sendReviewMessage(
       messageId: saved.value.entityId,
       discipline: submission.discipline,
     },
-  });
+  };
+
+  const started = await client.startExecution(
+    submission.model === undefined ? execution : { ...execution, model: submission.model },
+  );
 
   return started.ok
     ? { saved: true, execution: started.value, error: null }

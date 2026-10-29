@@ -19,16 +19,30 @@ processing and hosted inference run outside it, allowing reviewer corrections
 during an inspection. Maintenance stops admission, drains work, and closes Pi
 journals before taking SQL exclusion.
 
-The renderer receives project-scoped review commands, bounded artifact reads,
-and execution controls. Absolute import/export/restore paths and credentials
-remain shell capabilities. Facts and calculations are append-only; current
-finding pointers change only with matching source/fact versions. Model tools
-propose facts and cannot accept them. Command receipts precede freshness checks.
+The renderer receives project-scoped review commands, artifact reads and execution
+controls. Absolute import, report export and restore paths remain shell
+capabilities, and provider credentials stay outside renderer RPC.
 
-Provider and SAM intent is saved before dispatch. Unknown outcomes remain
-uncertain across crashes and never resend automatically. An explicit recorded
-acknowledgement of a possible prior charge permits a separate new run with its
-own budget. It does not resolve or remove the old provider evidence.
+Packet reviews freeze the supplied sheet inventory, original hashes, request,
+conversation, model and scope at start. Their structured records retain project
+configuration, sheet/pass coverage, general findings, sources, citations,
+calculations and prior comments. Follow-up reviews can retain stable issue IDs.
+User completion changes a finding's task-tracking state with an optimistic
+version check; it does not change the finding's evidence status or prior-comment
+closure. Original source changes stop further work against a stale packet.
+
+Selected-count facts and calculation history remain append-only. Their current
+finding pointers change only with matching source/fact versions. Model tools
+propose count inputs and cannot accept them. Command receipts are checked before
+freshness checks, preserving replay of an already committed operation.
+
+Model and SAM intent is saved before dispatch, including the provider request
+identity and whether a send began. Unknown outcomes stay uncertain across
+restarts and never resend automatically. A compatible paused packet review
+resumes only on an explicit request; an exhausted optional call budget can be
+extended without resetting admitted-call history. Unresolved provider attempts
+block resume. The selected-count protocol's separate possible-charge
+acknowledgement does not resolve or remove its old provider evidence.
 
 Add migration files named 0001_name.sql, 0002_name.sql, and so on. Files may contain
 multiple SQL statements. The runner owns transactions; migrations must not contain
@@ -36,6 +50,30 @@ transaction control statements. It verifies hashes of previously applied files,
 backs up the database using SQLite's consistent backup API, then applies pending
 files and history records in one transaction. Failures preserve existing data.
 The five most recent automatic pre-migration backups are retained.
+
+Migration 0008 adds nullable execution timestamps for elapsed review time. Older
+runs keep unknown timing instead of an estimated duration. Complete packages
+accept the original, prompt-context, and timed execution layouts, retaining the
+timestamps when exporting and restoring historical reviews.
+
+Migration 0009 adds packet review roots, model/SAM attempts and durable tool
+receipts. A packet review belongs to a project and conversation and can begin
+before any count finding exists. SQLite records and Pi journals preserve its
+progress independently of the workbench connection. Reopening the app does not
+start a saved review or issue new model requests automatically.
+
+Follow-ups retain coverage and inspection history only for the same sheet,
+revision, source hash, page and page box. Optional payload metadata separately
+records baseline sheets and inspections made in the current review, so retained
+baseline evidence cannot close a newly revised comment. Whole-set coverage
+requires every discipline and pass, including reasons for Not applicable entries.
+Shutdown and startup classify a review as uncertain while any admitted attempt
+has no completed receipt; reopening never retries that request automatically.
+
+Each unresolved prior comment also retains its required revision sheet targets.
+New source revisions advance that target; follow-ups without new sources preserve
+it. The model cannot rewrite this host-owned metadata to close a comment against
+an older baseline. Closure requires current inspection evidence from the target.
 
 The partial database export creates a consistent backup, including committed WAL data,
 then finalizes it in DELETE journal mode so it can be opened as a standalone,
@@ -62,9 +100,26 @@ Restore validates the entire package before replacement, retains a complete
 pre-restore snapshot, and journals replacement phases. Startup rolls an
 interrupted replacement back before opening databases. Restored runs have a
 persistent historical engine marker and cannot resume their copied Pi journals;
-no model or SAM work starts on reopen. Uncertain model and SAM counts are retained.
+no model or SAM work starts on reopen. This applies to packet reviews and
+selected-count runs. Uncertain model and SAM attempts and their accounting are
+retained.
 See [package recovery](research/review-packages.md) and
 [execution safety](research/pi-runtime.md) for exact contracts and limitations.
+
+## Offline review reports
+
+HTML report export reads the saved packet review and embeds its focused evidence.
+It includes the frozen inventory, actual coverage, findings, source access and
+citation status, calculations, prior comments and unresolved inputs. Missing
+images or unreviewed passes remain explicit. The report is a portable result,
+while the complete package preserves the source files and durable execution.
+
+Completed checkboxes in an exported HTML report synchronize repeated issue IDs
+and save user selections in browser localStorage scoped to project, review and
+report revision. Those browser selections do not travel with a copied HTML file.
+Unavailable storage leaves controls usable and identifies choices as temporary.
+Print output retains the current completion state. User completion is separate
+from finding status, engineering acceptance and reviewer-verified comment closure.
 
 ## Sync
 

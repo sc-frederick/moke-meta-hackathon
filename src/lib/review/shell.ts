@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import { PacketReviewRpc } from "./packet.ts";
 import { ExecutionRpc } from "./execution.ts";
 import { CommandId, CommandReceipt, ProjectId, ReviewError, ReviewRpc } from "./contracts.ts";
 
@@ -14,6 +15,14 @@ const ChooseReviewPdf = Schema.Struct({
 
 /** Parent implements the file dialog and backend ImportReviewPdf call. */
 export class ReviewShellRpc extends RpcGroup.make(
+  Rpc.make("ChoosePacketReport", {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      reviewId: Schema.String.check(Schema.isUUID()),
+    }),
+    success: Schema.Boolean,
+    error: ReviewError,
+  }),
   Rpc.make("ChooseReviewPdf", {
     payload: ChooseReviewPdf,
     success: Schema.NullOr(CommandReceipt),
@@ -32,4 +41,6 @@ export class ReviewShellRpc extends RpcGroup.make(
 ) {}
 
 /** Desktop renderer RPC: application review API plus shell file capabilities. */
-export class ReviewDesktopRpc extends ReviewRpc.merge(ReviewShellRpc).merge(ExecutionRpc) {}
+export class ReviewDesktopRpc extends ReviewRpc.merge(ReviewShellRpc)
+  .merge(ExecutionRpc)
+  .merge(PacketReviewRpc) {}

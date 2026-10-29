@@ -60,10 +60,25 @@
     "heroCase": "docs/fixtures/hero-case.md",
     "primaryDemoPlatform": "linux-x64",
     "promptInstructions": {
-      "version": "moke-selected-coordination-v2",
+      "version": "moke-packet-review-v1",
       "source": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review",
       "provenance": "backend/review/prompts/provenance.json",
-      "scope": "Selected drawn-to-schedule coordination; governing code unverified"
+      "scope": "Whole supplied packet or selected discipline with explicit coverage, governing sources, findings and offline HTML report",
+      "legacyCountVersion": "moke-selected-coordination-v2",
+      "systemPrompt": "Pi Durable conversation agent.instructions with full master, shared method and applicable discipline files"
+    },
+    "packetReview": {
+      "entrypoint": "backend/packet-review/service.ts",
+      "contracts": "src/lib/review/packet.ts",
+      "migration": "migrations/0009_packet_reviews.sql",
+      "reportRenderer": "backend/packet-review/report.ts",
+      "defaultApplicationCallLimit": null,
+      "compaction": "automatic Pi compaction",
+      "capabilitySourcesCheckedOn": "2026-10-28",
+      "capabilitySources": [
+        "https://dev.meta.ai/docs/models",
+        "https://www.baseten.co/blog/muse-spark-open-launch/"
+      ]
     }
   },
   "hackathon": {
@@ -148,12 +163,13 @@
     "environmentTemplate": ".env.example",
     "setupDocumentation": "docs/inference.md",
     "modelDocumentation": "docs/models.md",
-    "sourcesCheckedOn": "2026-10-27",
+    "sourcesCheckedOn": "2026-10-28",
     "sources": [
       "https://dev.meta.ai/docs/models",
       "https://dev.meta.ai/docs/quickstart",
       "https://www.baseten.co/library/muse-spark-open/",
-      "https://docs.baseten.co/inference/model-apis/overview"
+      "https://docs.baseten.co/inference/model-apis/overview",
+      "https://www.baseten.co/blog/muse-spark-open-launch/"
     ],
     "hackathonOverride": {
       "provider": "baseten",

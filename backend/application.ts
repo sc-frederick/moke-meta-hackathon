@@ -10,8 +10,14 @@ import { Documents } from "./documents/documents.ts";
 import { acquireDataDirectoryOwnership } from "./ownership.ts";
 import { ReviewStore } from "./review/store.ts";
 import { createReviewOperations } from "./review/operations.ts";
+import { PacketReviews } from "./packet-review/service.ts";
 import { ReviewExecution } from "./review/execution.ts";
-import { ReviewError, ReviewConflict, ReviewStorageError } from "#lib/review/contracts.ts";
+import {
+  ProjectId,
+  ReviewError,
+  ReviewConflict,
+  ReviewStorageError,
+} from "#lib/review/contracts.ts";
 
 import {
   exportReviewPackage,
@@ -42,6 +48,7 @@ export class Application extends Context.Service<
     readonly restore: (source: string) => Effect.Effect<void, DatabaseFileError>;
     readonly review: ReturnType<typeof createReviewOperations>;
     readonly execution: ReviewExecution["Service"];
+    readonly packets: PacketReviews["Service"];
     readonly exportPackage: (
       destination: string,
     ) => Effect.Effect<PackageExportResult, PackageError>;
@@ -134,9 +141,16 @@ export class Application extends Context.Service<
         const review = createReviewOperations({ query: reviewQuery, documents, owner });
         const inference = config.inference;
 
+        const providers = [
+          ...(inference === undefined ? [] : [inference]),
+          ...(config.inferenceAlternatives ?? []),
+        ];
+
+        const meta = providers.find((provider) => provider.provider === "meta");
+
         let port = review.port;
 
-        if (inference?.provider === "meta") {
+        if (meta !== undefined) {
           const segmentation = yield* ReviewSegmentation.pipe(
             Effect.provide(
               yield* Layer.build(
@@ -144,7 +158,7 @@ export class Application extends Context.Service<
                   dataDirectory: owner.canonicalDirectory,
                   queries: operations,
                   owner,
-                  apiKey: inference.apiKey,
+                  apiKey: meta.apiKey,
                   loadArtifact: review.artifact,
                   readImage: review.port.readImage,
                 }),
@@ -162,6 +176,7 @@ export class Application extends Context.Service<
             ? executionOptions
             : {
                 ...executionOptions,
+                providers: providers.map((provider) => ({ ...provider, route: "live" as const })),
                 provider: {
                   provider: inference.provider,
                   apiKey: inference.apiKey,
@@ -176,8 +191,31 @@ export class Application extends Context.Service<
           Effect.provide(yield* Layer.build(executionLayer)),
         );
 
+        const packets = yield* PacketReviews.pipe(
+          Effect.provide(
+            yield* Layer.build(
+              PacketReviews.layer({
+                owner,
+                queries: operations,
+                review,
+                providers: providers.map((provider) => ({ ...provider, route: "live" as const })),
+                runPromise: entry.runPromise,
+              }),
+            ),
+          ),
+        );
+
         const quiesce = Effect.gen(function* () {
           maintaining = true;
+          yield* packets.quiesce.pipe(
+            Effect.mapError(
+              () =>
+                new PackageError({
+                  reason: "conflict",
+                  message: "Packet reviews must close safely before maintenance.",
+                }),
+            ),
+          );
           yield* execution.quiesce.pipe(
             Effect.mapError(
               () =>
@@ -234,6 +272,12 @@ export class Application extends Context.Service<
         return Application.of({
           review: publicReview,
           execution: publicExecution,
+          packets: {
+            ...packets,
+            start: (request) => executePublic(packets.start(request)),
+            control: (request) => executePublic(packets.control(request)),
+            complete: (request) => executePublic(packets.complete(request)),
+          },
           exportPackage: (destination) =>
             Effect.suspend(() =>
               pendingRestore()
@@ -290,6 +334,20 @@ export const BackendHandlers = BackendRpc.toLayer(
     const application = yield* Application;
 
     return {
+      ExportPacketReport: ({ projectId, reviewId, destination }) =>
+        application.packets
+          .exportReport(Schema.decodeUnknownSync(ProjectId)(projectId), reviewId, destination)
+          .pipe(
+            Effect.mapError(
+              () => new DatabaseFileError({ message: "The review report could not be exported." }),
+            ),
+          ),
+      StartPacketReview: (request) => application.packets.start(request),
+      ListPacketReviews: ({ projectId }) => application.packets.list(projectId),
+      GetPacketReview: ({ projectId, reviewId }) => application.packets.get(projectId, reviewId),
+      ObservePacketReviews: ({ projectId }) => application.packets.observe(projectId),
+      ControlPacketReview: (request) => application.packets.control(request),
+      CompletePacketFinding: (request) => application.packets.complete(request),
       ExportDatabase: ({ destination }) => application.export(destination),
       RestoreDatabase: ({ source }) => application.restore(source),
       ReviewSnapshot: ({ projectId, afterSequence }) =>

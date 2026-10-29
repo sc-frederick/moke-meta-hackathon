@@ -6,10 +6,10 @@ import { mkdir, readFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
-import { ReviewStorageError } from "../src/lib/review/contracts.ts";
+import { DocumentError, ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
-import { ReviewProxy, ExecutionProxy } from "./review-proxy.ts";
-import { readInferenceConfiguration, storeInferenceConfiguration } from "./credentials.ts";
+import { ReviewProxy, ExecutionProxy, PacketProxy } from "./review-proxy.ts";
+import { readInferenceConfigurations, storeInferenceConfiguration } from "./credentials.ts";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -67,12 +67,17 @@ if (!app.requestSingleInstanceLock()) {
       const layout = Schema.decodeUnknownSync(
         Schema.fromJsonString(
           Schema.Struct({
+            platform: Schema.Literal(process.platform),
+            arch: Schema.Literal(process.arch),
             nativeFile: Schema.String.check(Schema.isPattern(/^skia\.[a-z0-9-]+\.node$/)),
           }),
         ),
       )(await readFile(join(assetDirectory, "layout.json"), "utf8"));
 
-      const inference = await readInferenceConfiguration(dataDirectory, app.isPackaged);
+      const [inference, ...inferenceAlternatives] = await readInferenceConfigurations(
+        dataDirectory,
+        app.isPackaged,
+      );
 
       const launchOptions: BackendLaunch = {
         command: app.isPackaged
@@ -97,7 +102,9 @@ if (!app.requestSingleInstanceLock()) {
       };
 
       const backend = BackendApi.layer(
-        inference === undefined ? launchOptions : { ...launchOptions, inference },
+        inference === undefined
+          ? launchOptions
+          : { ...launchOptions, inference, inferenceAlternatives },
       );
 
       const shellHandlers = ReviewShellRpc.toLayer(
@@ -105,6 +112,34 @@ if (!app.requestSingleInstanceLock()) {
           const { api } = yield* BackendApi;
 
           return {
+            ChoosePacketReport: ({ projectId, reviewId }) =>
+              Effect.tryPromise({
+                try: () =>
+                  dialog.showSaveDialog({
+                    title: "Save Moke review report",
+                    defaultPath: "Moke-review.html",
+                    filters: [{ name: "HTML report", extensions: ["html"] }],
+                  }),
+                catch: () =>
+                  new ReviewStorageError({ message: "The report chooser could not open." }),
+              }).pipe(
+                Effect.flatMap((result) =>
+                  result.canceled || !result.filePath
+                    ? Effect.succeed(false)
+                    : api
+                        .ExportPacketReport({ projectId, reviewId, destination: result.filePath })
+                        .pipe(
+                          Effect.as(true),
+                          Effect.mapError(
+                            () =>
+                              new ReviewStorageError({
+                                message:
+                                  "The report could not be saved. Choose a new filename and try again.",
+                              }),
+                          ),
+                        ),
+                ),
+              ),
             ChooseReviewPdf: (request) =>
               Effect.tryPromise({
                 try: () =>
@@ -122,10 +157,14 @@ if (!app.requestSingleInstanceLock()) {
                     ? Effect.succeed(null)
                     : api.ImportReviewPdf({ ...request, source, name: basename(source) }).pipe(
                         Effect.mapError(
-                          () =>
+                          (cause) =>
                             new ReviewStorageError({
                               message:
-                                "The PDF could not be imported. Check the source and reload the project.",
+                                cause instanceof DocumentError && cause.reason === "unavailable"
+                                  ? "The drawing reader is unavailable. Close and reopen Moke, then try importing again."
+                                  : Schema.is(ReviewError)(cause)
+                                    ? cause.message
+                                    : "The PDF could not be imported. Try again or choose another PDF.",
                             }),
                         ),
                       );
@@ -219,7 +258,7 @@ if (!app.requestSingleInstanceLock()) {
         authorize: ({ frame }) =>
           frame !== null && frame !== undefined && frame.parent === null && trusted(frame.url),
       }).pipe(
-        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, shellHandlers)),
+        Layer.provide(Layer.mergeAll(ReviewProxy, ExecutionProxy, PacketProxy, shellHandlers)),
         Layer.provideMerge(backend),
         Layer.provide(logging),
       );

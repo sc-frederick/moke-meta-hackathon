@@ -1,36 +1,48 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { ReviewCommand, type Conversation, type Finding } from "#lib/review/contracts.ts";
-  import type {
-    ExecutionBudget,
-    ExecutionSetup,
-    ExecutionStatus,
-    ReviewDiscipline,
-  } from "#lib/review/execution.ts";
-  import { sendReviewMessage } from "#lib/review/conversation.ts";
-  import { newCommandId, type ReviewClient } from "#lib/review/client.ts";
+  import type { Conversation, Finding } from "#lib/review/contracts.ts";
+  import type { ExecutionStatus } from "#lib/review/execution.ts";
+  import type { ReviewClient } from "#lib/review/client.ts";
+  import { formatElapsed } from "./review-format.ts";
 
   let {
     client,
     finding,
-    setup,
-    budget,
     conversation,
-    projectVersion,
-    discipline,
+    hasReply = false,
     status = $bindable(null),
     onProgress,
   }: {
     client: ReviewClient;
     finding: Finding;
-    setup: ExecutionSetup | null;
-    budget: ExecutionBudget;
     conversation: Conversation | null;
-    projectVersion: number;
-    discipline: typeof ReviewDiscipline.Type;
+    hasReply?: boolean;
     status?: ExecutionStatus | null;
     onProgress: () => Promise<void>;
   } = $props();
+
+  let now = $state(Date.now());
+
+  const elapsed = $derived(
+    status?.startedAt == null
+      ? null
+      : Math.max(
+          0,
+          (status.state === "running" || status.state === "pausing"
+            ? now
+            : (status.stateChangedAt ?? now)) - status.startedAt,
+        ),
+  );
+
+  $effect(() => {
+    if (status?.state !== "running" && status?.state !== "pausing") return;
+
+    const interval = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  });
 
   let busy = $state(false);
   let chargeAcknowledged = $state(false);
@@ -39,35 +51,6 @@
   const active = $derived(
     status?.state === "running" || status?.state === "pausing" || status?.state === "paused",
   );
-
-  async function start() {
-    if (conversation === null) return;
-    busy = true;
-    error = "";
-
-    const result = await sendReviewMessage(client, {
-      command: ReviewCommand.cases.PostMessage.make({
-        commandId: newCommandId(),
-        projectId: finding.projectId,
-        expectedVersion: projectVersion,
-        conversationId: conversation.id,
-        text: "Inspect the selected coordination check and propose counts with exact drawing evidence. Identify missing inputs and keep governing-code claims unverified.",
-      }),
-      executionCommandId: newCommandId(),
-      findingId: finding.id,
-      discipline,
-      budget,
-    });
-
-    if (result.saved) {
-      status = result.execution;
-      chargeAcknowledged = false;
-    }
-
-    error = result.error ?? "";
-    busy = false;
-    await onProgress();
-  }
 
   async function control(action: "pause" | "resume" | "cancel") {
     if (status === null) return;
@@ -120,7 +103,13 @@
           if (firstSequence < newestStart) return;
           const result = await client.executionStatus(finding.projectId, event.runId);
 
-          if (controller.signal.aborted || !result.ok || result.value.findingId !== finding.id)
+          if (
+            controller.signal.aborted ||
+            !result.ok ||
+            result.value.findingId !== finding.id ||
+            (result.value.conversationId != null &&
+              result.value.conversationId !== conversation?.id)
+          )
             return;
           newestStart = firstSequence;
           status = result.value;
@@ -137,63 +126,70 @@
   });
 </script>
 
-<section class="execution" aria-label="Review execution" data-testid="execution-controls">
-  {#if status}
-    <div class="status-line" role="status" data-testid="execution-status">
-      <span class={["status-dot", { running: status.state === "running" }]}></span><span
-        >{status.provider === "meta" ? "Meta" : "Baseten"} · {status.state} · {status.admittedCalls} calls</span
-      >
-    </div>
-    {#if status.state === "completed"}<p>
-        Inspection finished. Open Findings to review the results.
-      </p>{/if}
-    {#if status.state === "failed"}<p>
-        The inspection stopped. Check the evidence, configuration and call limit before starting
-        another.
-      </p>{/if}
-    {#if status.state === "incompatible"}<p>
-        This saved inspection uses an earlier engine or instruction version. Start a separate
-        inspection to use this build.
-      </p>{/if}
-    {#if status.state === "uncertain" || (status.unresolvedAttempts > 0 && status.state === "cancelled")}
-      <p class="uncertain">
-        An earlier request may have been billed. It will not be sent again automatically.
-      </p>
-      <label
-        ><input type="checkbox" bind:checked={chargeAcknowledged} />I understand the prior request
-        may have been charged.</label
-      >
-      <button
-        disabled={busy || !chargeAcknowledged || status.uncertaintyAcknowledged}
-        onclick={acknowledge}
-        >{status.uncertaintyAcknowledged
-          ? "Acknowledgement recorded"
-          : "Acknowledge possible charge"}</button
-      >
+{#if status && (status.state !== "completed" || !hasReply)}
+  <section class="execution" aria-label="Review execution" data-testid="execution-controls">
+    {#if status}
+      <div class="status-line" role="status" data-testid="execution-status">
+        <span class={["status-dot", { running: status.state === "running" }]}></span><span
+          >{status.state === "running"
+            ? "Reviewing drawings"
+            : status.state === "pausing"
+              ? "Pausing review"
+              : status.state === "paused"
+                ? "Review paused"
+                : status.state === "completed"
+                  ? "Review complete"
+                  : status.state === "failed"
+                    ? "Review stopped"
+                    : status.state}</span
+        >
+      </div>
+      {#if elapsed !== null}<span class="elapsed" data-testid="execution-timer"
+          >Elapsed {formatElapsed(elapsed)}</span
+        >{/if}
+      {#if status.state === "completed"}<p>
+          Inspection finished. Open Findings to review the results.
+        </p>{/if}
+      {#if status.state === "failed"}<p>
+          The inspection stopped. Check the evidence, configuration and call limit before starting
+          another.
+        </p>{/if}
+      {#if status.state === "incompatible"}<p>
+          This saved inspection uses an earlier engine or instruction version. Start a separate
+          inspection to use this build.
+        </p>{/if}
+      {#if status.state === "uncertain" || (status.unresolvedAttempts > 0 && status.state === "cancelled")}
+        <p class="uncertain">
+          An earlier request may have been billed. It will not be sent again automatically.
+        </p>
+        <label
+          ><input type="checkbox" bind:checked={chargeAcknowledged} />I understand the prior request
+          may have been charged.</label
+        >
+        <button
+          disabled={busy || !chargeAcknowledged || status.uncertaintyAcknowledged}
+          onclick={acknowledge}
+          >{status.uncertaintyAcknowledged
+            ? "Acknowledgement recorded"
+            : "Acknowledge possible charge"}</button
+        >
+      {/if}
     {/if}
-  {/if}
-  {#if error}<p role="alert">{error}</p>{/if}
-  <div class="controls">
-    {#if !active}<button
-        data-testid="start-inspection"
-        disabled={busy ||
-          !setup?.configured ||
-          ((status?.unresolvedAttempts ?? 0) > 0 && !status?.uncertaintyAcknowledged) ||
-          status?.state === "uncertain"}
-        onclick={start}>Inspect selected check</button
-      >{/if}
-    {#if status?.state === "running"}<button disabled={busy} onclick={() => control("pause")}
-        >Pause</button
-      >{/if}
-    {#if status?.state === "paused"}<button disabled={busy} onclick={() => control("resume")}
-        >Resume</button
-      >{/if}
-    {#if active || status?.state === "uncertain"}<button
-        disabled={busy}
-        onclick={() => control("cancel")}>Cancel inspection</button
-      >{/if}
-  </div>
-</section>
+    {#if error}<p role="alert">{error}</p>{/if}
+    <div class="controls">
+      {#if status?.state === "running"}<button disabled={busy} onclick={() => control("pause")}
+          >Pause</button
+        >{/if}
+      {#if status?.state === "paused"}<button disabled={busy} onclick={() => control("resume")}
+          >Resume</button
+        >{/if}
+      {#if active || status?.state === "uncertain"}<button
+          disabled={busy}
+          onclick={() => control("cancel")}>Cancel inspection</button
+        >{/if}
+    </div>
+  </section>
+{/if}
 
 <style>
   .execution {
@@ -206,6 +202,10 @@
   p {
     line-height: 1.6;
     margin: 0;
+  }
+  .elapsed {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
   }
   .status-line {
     display: flex;
