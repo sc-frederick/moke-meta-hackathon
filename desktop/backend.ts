@@ -20,6 +20,7 @@ export interface BackendLaunch {
   readonly processing?: BackendConfig["processing"];
   readonly inference?: BackendConfig["inference"];
   readonly inferenceAlternatives?: BackendConfig["inferenceAlternatives"];
+  readonly modal?: BackendConfig["modal"];
 }
 
 const stopped = (child: ChildProcessWithoutNullStreams) =>
@@ -125,14 +126,17 @@ export class BackendApi extends Context.Service<
         const processing =
           options.processing === undefined ? paths : { ...paths, processing: options.processing };
 
-        const startup = new BackendConfig(
+        const withInference =
           options.inference === undefined
             ? processing
             : {
                 ...processing,
                 inference: options.inference,
                 inferenceAlternatives: options.inferenceAlternatives ?? [],
-              },
+              };
+
+        const startup = new BackendConfig(
+          options.modal === undefined ? withInference : { ...withInference, modal: options.modal },
         );
 
         const ready = yield* Effect.all(

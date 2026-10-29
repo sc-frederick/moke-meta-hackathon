@@ -123,6 +123,17 @@ from finding status, engineering acceptance and reviewer-verified comment closur
 
 ## Sync
 
+Cloud reviews use the same complete-package validation and replacement journal.
+The separate `<dataDirectory>.cloud/state.json` ownership record is flushed
+before dispatch and fences local writes across desktop reopen. It is excluded
+from portable packages so import cannot erase its own fence. A confirmed remote
+stop precedes result replacement or cancellation. See [cloud review recovery](cloud-reviews.md)
+for seven-day checkpoints, whole-workspace scope, and uncertain-call handling.
+The backend automatically returns completed results and resumes reconciliation
+after reopen. Live status streams replay the current receipt; persistent receipt
+revisions prevent stale replies from rolling the interface back. The synced
+notification follows package validation and completion of application maintenance.
+
 Cloud connectivity is optional. Decide the source of truth, offline writes,
 conflict rules, idempotency keys, deletions, and compatibility with older desktop
 clients for the particular application. RPC provides transport and contracts;

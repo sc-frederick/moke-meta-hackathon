@@ -1,6 +1,7 @@
 import { PacketReviewRpc } from "../src/lib/review/packet.ts";
 import { Effect, Option, Schema, Stream } from "effect";
 import { ReviewError, ReviewRpc, ReviewStorageError } from "../src/lib/review/contracts.ts";
+import { CloudReviewRpc, CloudReviewError } from "../src/lib/review/cloud.ts";
 import { BackendApi } from "./backend.ts";
 import { ExecutionError, ExecutionRpc } from "../src/lib/review/execution.ts";
 
@@ -103,6 +104,49 @@ export const PacketProxy = PacketReviewRpc.toLayer(
                 }),
           ),
         ),
+    };
+  }),
+);
+
+/** Cloud credentials and sandbox identifiers stay behind the trusted Bun API. */
+export const CloudReviewProxy = CloudReviewRpc.toLayer(
+  Effect.gen(function* () {
+    const { api } = yield* BackendApi;
+
+    const safe = Effect.mapError((cause) =>
+      Option.match(Schema.decodeUnknownOption(CloudReviewError)(cause), {
+        onSome: (error) => error,
+        onNone: () =>
+          new CloudReviewError({
+            reason: "unavailable",
+            message: "Cloud review is unavailable. Reconnect before changing execution location.",
+          }),
+      }),
+    );
+
+    return {
+      CloudReviewSetup: () => api.CloudReviewSetup({}).pipe(safe),
+      StartCloudReview: (request) => api.StartCloudReview(request).pipe(safe),
+      StartCloudPacketReview: (request) => api.StartCloudPacketReview(request).pipe(safe),
+      CloudReviewStatus: () => api.CloudReviewStatus({}).pipe(safe),
+      ObserveCloudReview: () =>
+        api.ObserveCloudReview({}).pipe(
+          Stream.mapError((cause) =>
+            Option.match(Schema.decodeUnknownOption(CloudReviewError)(cause), {
+              onSome: (error) => error,
+              onNone: () =>
+                new CloudReviewError({
+                  reason: "unavailable",
+                  message:
+                    "Cloud updates disconnected. Reconnecting will recover the current review.",
+                }),
+            }),
+          ),
+        ),
+      RetryCloudReviewSync: () => api.RetryCloudReviewSync({}).pipe(safe),
+      RefreshCloudReview: (request) => api.RefreshCloudReview(request).pipe(safe),
+      ImportCloudReview: (request) => api.ImportCloudReview(request).pipe(safe),
+      CancelCloudReview: (request) => api.CancelCloudReview(request).pipe(safe),
     };
   }),
 );

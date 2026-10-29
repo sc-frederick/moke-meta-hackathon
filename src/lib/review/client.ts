@@ -15,13 +15,19 @@ import {
 import { ReviewDesktopRpc } from "#lib/review/shell.ts";
 import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
 import {
+  CloudReviewError,
+  type CloudReviewUpdate,
+  type StartCloudReview,
+  type StartCloudPacketReview,
+} from "#lib/review/cloud.ts";
+import {
   ExecutionError,
   type ExecutionEvent,
   type RunId,
   type StartExecution,
 } from "#lib/review/execution.ts";
 
-const ClientError = Schema.Union([ReviewError, ExecutionError]);
+const ClientError = Schema.Union([ReviewError, ExecutionError, CloudReviewError]);
 
 class ReviewDesktopApi extends Context.Service<
   ReviewDesktopApi,
@@ -144,6 +150,62 @@ export function createReviewClient() {
       run(
         Effect.flatMap(ReviewDesktopApi, (api) => api.ChoosePacketReport({ projectId, reviewId })),
         "The HTML review report could not be exported.",
+      ),
+    cloudSetup: () =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.CloudReviewSetup({})),
+        "Cloud configuration is unavailable.",
+      ),
+    cloudStatus: () =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.CloudReviewStatus({})),
+        "Cloud ownership could not be read. Reconnect before editing.",
+      ),
+    observeCloudReview: (
+      onUpdate: (update: CloudReviewUpdate) => Promise<void>,
+      signal: AbortSignal,
+    ) =>
+      run(
+        Effect.gen(function* () {
+          const api = yield* ReviewDesktopApi;
+          yield* Stream.runForEach(api.ObserveCloudReview({}), (update) =>
+            Effect.promise(() => onUpdate(update)),
+          );
+        }),
+        "Cloud updates disconnected. Reconnecting to your existing review…",
+        signal,
+      ),
+    retryCloudSync: () =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.RetryCloudReviewSync({})),
+        "Cloud sync could not reconnect. Your local workspace remains protected.",
+      ),
+    startCloudReview: (request: typeof StartCloudReview.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.StartCloudReview(request)),
+        "Cloud dispatch could not be confirmed. Reconnect before starting another review.",
+      ),
+    startCloudPacketReview: (request: typeof StartCloudPacketReview.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.StartCloudPacketReview(request)),
+        "Cloud dispatch could not be confirmed. Reconnect before starting another review.",
+      ),
+    refreshCloudReview: (id: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.RefreshCloudReview({ id })),
+        "Cloud progress is unavailable. Local editing remains paused.",
+      ),
+    importCloudReview: (id: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.ImportCloudReview({ id })),
+        "The cloud package could not be imported.",
+      ),
+    cancelCloudReview: (id: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.CancelCloudReview({ id, acknowledgePossibleCharge: true, commandId: newCommandId() }),
+        ),
+        "Cloud execution could not be confirmed stopped. Local editing remains paused.",
       ),
     executionSetup: () =>
       run(

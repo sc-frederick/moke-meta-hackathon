@@ -3,7 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CloudReviewRecord } from "../../backend/cloud/contracts.ts";
+import { writeCloudState } from "../../backend/cloud/files.ts";
 import { Artifact, Project, Revision, ReviewMessage, Sheet } from "#lib/review/contracts.ts";
 import { PacketReview, PacketScope, ReviewPass } from "#lib/review/packet.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
@@ -43,6 +45,9 @@ test("document QA needs no count check and persisted findings support evidence, 
         "MOKE_SESSION_CREDENTIAL_FILE",
         "MODEL_API_KEY",
         "BASETEN_API_KEY",
+        "MODAL_TOKEN_ID",
+        "MODAL_TOKEN_SECRET",
+        "MOKE_MODAL_CONFIG",
       ].includes(key)
         ? []
         : [[key, value]],
@@ -131,10 +136,16 @@ test("document QA needs no count check and persisted findings support evidence, 
     await app.close();
 
     const seeded = seedCompletedReview(directory);
+    await Effect.runPromise(
+      writeCloudState(join(`${directory}.cloud`, "state.json"), [seeded.cloud]),
+    );
     app = await electron.launch(options);
     page = await app.firstWindow();
     monitor();
     await page.setViewportSize({ width: 1440, height: 1000 });
+    const cloud = page.getByTestId("cloud-review-controls");
+    await expect(cloud).toContainText("Results synced");
+    await expect(page.getByLabel("Message", { exact: true })).toBeEditable();
     const panel = page.getByTestId("packet-review-panel");
     await expect(panel).toContainText("Whole-set review");
     await expect(panel).toContainText("Review finished with gaps");
@@ -200,6 +211,12 @@ test("document QA needs no count check and persisted findings support evidence, 
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await rm(`${directory}.cloud`, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 });
 
@@ -361,7 +378,51 @@ function seedCompletedReview(directory: string) {
         JSON.stringify(review),
       );
 
-    return { findingId, findingTitle, conversationId: message.conversationId };
+    const request = {
+      commandId: crypto.randomUUID(),
+      projectId: project.id,
+      conversationId: message.conversationId,
+      messageId: message.id,
+      model: review.model,
+      discipline: "auto",
+      maxCalls: null,
+      kind: "packet",
+      transferScope: "whole-application",
+    };
+
+    const cloud = Schema.decodeUnknownSync(CloudReviewRecord)({
+      id: crypto.randomUUID(),
+      revision: 4,
+      syncFailure: null,
+      request,
+      fingerprint: JSON.stringify(request),
+      phase: "imported",
+      createdAt: now - 5000,
+      expiresAt: now + 60_000,
+      sandboxId: "offline-fixture-confirmed-stopped",
+      inputSnapshotId: null,
+      resultSnapshotId: null,
+      sandboxName: "offline-fixture",
+      appName: "offline-fixture",
+      environment: "main",
+      sourceVersion: project.sourceVersion,
+      factVersion: project.factVersion,
+      projectVersion: project.version,
+      execution: null,
+      packet: {
+        id: review.id,
+        projectId: project.id,
+        conversationId: message.conversationId,
+        model: review.model,
+        state: review.state,
+        version: review.version,
+        admittedCalls: 0,
+      },
+      message:
+        "Offline desktop proof: returned packet results are local. No cloud or model calls were made.",
+    });
+
+    return { findingId, findingTitle, conversationId: message.conversationId, cloud };
   } finally {
     database.close();
   }

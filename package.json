@@ -11,6 +11,9 @@
     "#lib/*": "./src/lib/*"
   },
   "scripts": {
+    "modal:image": "bun scripts/modal.ts image",
+    "modal:warm": "bun scripts/modal.ts warm",
+    "test:cloud": "bun scripts/validate-cloud.ts",
     "dev": "bun --no-orphans scripts/desktop-dev.mjs",
     "check:api-keys": "bun scripts/check-api-keys.ts",
     "build": "bun run build:ui && bun run build:desktop && bun run build:backend",
@@ -41,7 +44,8 @@
   },
   "dependencies": {
     "effect": "4.0.4",
-    "electron-effect-rpc": "1.0.1"
+    "electron-effect-rpc": "1.0.1",
+    "modal": "0.11.1"
   },
   "devDependencies": {
     "@effect/sql-sqlite-bun": "4.0.4",

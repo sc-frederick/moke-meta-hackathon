@@ -29,8 +29,15 @@ import {
   PackageError,
   type PackageExportResult,
   type PackageRestoreResult,
+  type PackageLimits,
 } from "#lib/review/packages.ts";
 import { ExecutionError } from "#lib/review/execution.ts";
+import { CloudReviewError } from "#lib/review/cloud.ts";
+import { CloudReviews, CloudSandbox, unavailableCloudSandbox } from "./cloud/service.ts";
+import { modalSandboxLayer } from "./cloud/modal.ts";
+import { executionPersistence } from "./review/execution-store.ts";
+import { cloudPackageLimits } from "./cloud/transfer.ts";
+import { CloudReviewSynchronization } from "./cloud/sync.ts";
 
 /** The single managed application runtime is also the entrypoint for Pi callbacks. */
 export interface ApplicationEntry {
@@ -49,14 +56,21 @@ export class Application extends Context.Service<
     readonly review: ReturnType<typeof createReviewOperations>;
     readonly execution: ReviewExecution["Service"];
     readonly packets: PacketReviews["Service"];
+    readonly cloud: CloudReviews["Service"];
+    readonly cloudSync: CloudReviewSynchronization["Service"];
     readonly exportPackage: (
       destination: string,
+      limits?: typeof PackageLimits.Type,
     ) => Effect.Effect<PackageExportResult, PackageError>;
     readonly restorePackage: (source: string) => Effect.Effect<PackageRestoreResult, PackageError>;
   }
 >()("app/Application") {
   /** Migrate before serving and serialize recovery with scoped per-operation SQL connections. */
-  static layer(config: BackendConfig, entry: ApplicationEntry) {
+  static layer(
+    config: BackendConfig,
+    entry: ApplicationEntry,
+    cloudSandbox?: Layer.Layer<CloudSandbox>,
+  ) {
     return Layer.effect(
       Application,
       Effect.gen(function* () {
@@ -242,19 +256,172 @@ export class Application extends Context.Service<
           maintaining = false;
         });
 
+        const cloudFailure = (message: string) =>
+          Effect.mapError(() => new CloudReviewError({ reason: "conflict", message }));
+
+        const cloudOptions = {
+          directory: `${owner.canonicalDirectory}.cloud`,
+          inspect: (request: Parameters<CloudReviews["Service"]["start"]>[0]) =>
+            Effect.gen(function* () {
+              if (!("kind" in request))
+                yield* review.port
+                  .inspect(request)
+                  .pipe(
+                    cloudFailure("The selected review or its saved instructions are unavailable."),
+                  );
+
+              const state = yield* review
+                .snapshot(request.projectId, 0)
+                .pipe(cloudFailure("The selected project could not be read."));
+
+              if (state.project === null)
+                return yield* new CloudReviewError({
+                  reason: "conflict",
+                  message: "Select an existing review project first.",
+                });
+              const project = state.project;
+
+              if (
+                "kind" in request &&
+                (state.sheets.length === 0 ||
+                  !state.messages.some(
+                    (message) =>
+                      message.id === request.messageId &&
+                      message.conversationId === request.conversationId &&
+                      message.role === "reviewer",
+                  ))
+              )
+                return yield* new CloudReviewError({
+                  reason: "conflict",
+                  message:
+                    "Import the drawing set and save its review request before pushing to cloud.",
+                });
+
+              return {
+                sourceVersion: project.sourceVersion,
+                factVersion: project.factVersion,
+                projectVersion: project.version,
+              };
+            }),
+          prepare: (destination: string) =>
+            Effect.gen(function* () {
+              const persistence = executionPersistence(filename, operations);
+
+              const blocked = yield* persistence
+                .query(
+                  Effect.gen(function* () {
+                    const sql = yield* SqlClient.SqlClient;
+
+                    const countBlocked =
+                      (yield* sql`SELECT run_id FROM review_execution_runs r WHERE r.state IN ('running','pausing','paused','uncertain') OR ((EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=r.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=r.run_id AND s.status='uncertain')) AND NOT EXISTS(SELECT 1 FROM review_execution_acknowledgements k WHERE k.run_id=r.run_id)) LIMIT 1`)
+                        .length > 0;
+
+                    const packetBlocked =
+                      (yield* sql`SELECT id FROM packet_reviews WHERE json_extract(payload,'$.state') IN ('running','paused','uncertain') LIMIT 1`)
+                        .length > 0;
+
+                    return countBlocked || packetBlocked;
+                  }),
+                )
+                .pipe(cloudFailure("Review execution could not be checked before transfer."));
+
+              if (blocked)
+                return yield* new CloudReviewError({
+                  reason: "conflict",
+                  message:
+                    "Finish or cancel existing local inspections and acknowledge any unresolved charges before starting a separate cloud review.",
+                });
+              yield* exportReviewPackage(
+                { ...packages, limits: cloudPackageLimits },
+                destination,
+              ).pipe(
+                cloudFailure(
+                  "The complete workspace could not be prepared for cloud review. Cloud transfers are limited to 256 MiB.",
+                ),
+              );
+            }),
+          restore: (source: string) =>
+            restoreReviewPackage({ ...packages, limits: cloudPackageLimits }, source).pipe(
+              Effect.asVoid,
+              Effect.mapError(
+                (error) =>
+                  new CloudReviewError({
+                    reason: error.reason === "limit" ? "limit" : "incompatible",
+                    message: error.message,
+                  }),
+              ),
+            ),
+          restorePending: pendingRestore,
+        };
+
+        const withProvider =
+          inference === undefined
+            ? cloudOptions
+            : { ...cloudOptions, provider: inference, providers };
+
+        const cloud = yield* CloudReviews.pipe(
+          Effect.provide(
+            yield* Layer.build(
+              CloudReviews.layer(
+                config.modal === undefined
+                  ? withProvider
+                  : { ...withProvider, modal: config.modal },
+              ).pipe(
+                Layer.provide(
+                  cloudSandbox ??
+                    (config.modal === undefined
+                      ? unavailableCloudSandbox
+                      : modalSandboxLayer(config.modal, inference?.apiKey)),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        const locally = <A, E>(operation: Effect.Effect<A, E>) =>
+          Effect.gen(function* () {
+            yield* cloud.assertLocal.pipe(
+              Effect.mapError((error) => new ReviewConflict({ message: error.message })),
+            );
+
+            return yield* operation;
+          });
+
+        const cloudMaintenance = <A>(operation: Effect.Effect<A, CloudReviewError>) =>
+          Effect.gen(function* () {
+            if (pendingRestore())
+              return yield* new CloudReviewError({ reason: "conflict", message: restoreMessage });
+            maintaining = true;
+            yield* Effect.void.pipe(Semaphore.withPermits(workSlots, 16));
+
+            return yield* operation;
+          }).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance));
+
+        const cloudSync = yield* CloudReviewSynchronization.pipe(
+          Effect.provide(
+            yield* Layer.build(
+              CloudReviewSynchronization.layer((id) =>
+                cloudMaintenance(cloud.importResults(id)),
+              ).pipe(Layer.provide(Layer.succeed(CloudReviews, cloud))),
+            ),
+          ),
+        );
+
         const publicReview = {
           ...review,
           snapshot: (...args: Parameters<typeof review.snapshot>) =>
             admit(review.snapshot(...args)),
-          command: (...args: Parameters<typeof review.command>) => admit(review.command(...args)),
+          command: (...args: Parameters<typeof review.command>) =>
+            admit(locally(review.command(...args))),
           importPdf: (...args: Parameters<typeof review.importPdf>) =>
-            admit(review.importPdf(...args)),
-          render: (...args: Parameters<typeof review.render>) => admit(review.render(...args)),
+            admit(locally(review.importPdf(...args))),
+          render: (...args: Parameters<typeof review.render>) =>
+            admit(locally(review.render(...args))),
           chunk: (...args: Parameters<typeof review.chunk>) => admit(review.chunk(...args)),
         };
 
         const executePublic = <A>(operation: Effect.Effect<A, ExecutionError>) =>
-          admit(operation).pipe(
+          admit(locally(operation)).pipe(
             Effect.mapError((cause) =>
               cause instanceof ExecutionError
                 ? cause
@@ -278,17 +445,31 @@ export class Application extends Context.Service<
             control: (request) => executePublic(packets.control(request)),
             complete: (request) => executePublic(packets.complete(request)),
           },
-          exportPackage: (destination) =>
+          cloudSync,
+          cloud: CloudReviews.of({
+            ...cloud,
+            start: (request) => cloudMaintenance(cloud.start(request)),
+            importResults: (id) => cloudMaintenance(cloud.importResults(id)),
+          }),
+          exportPackage: (destination, limits) =>
             Effect.suspend(() =>
               pendingRestore()
                 ? Effect.fail(new PackageError({ reason: "interrupted", message: restoreMessage }))
-                : exportReviewPackage(packages, destination),
+                : exportReviewPackage(
+                    limits === undefined ? packages : { ...packages, limits },
+                    destination,
+                  ),
             ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
           restorePackage: (source) =>
             Effect.suspend(() =>
               pendingRestore()
                 ? Effect.fail(new PackageError({ reason: "interrupted", message: restoreMessage }))
-                : restoreReviewPackage(packages, source),
+                : cloud.assertLocal.pipe(
+                    Effect.mapError(
+                      (error) => new PackageError({ reason: "conflict", message: error.message }),
+                    ),
+                    Effect.andThen(restoreReviewPackage(packages, source)),
+                  ),
             ).pipe(Effect.ensuring(finishMaintenance), Semaphore.withPermit(maintenance)),
           export: (destination) =>
             Effect.suspend(() =>
@@ -301,6 +482,9 @@ export class Application extends Context.Service<
               Effect.gen(function* () {
                 if (maintaining || pendingRestore())
                   return yield* new DatabaseFileError({ message: restoreMessage });
+                yield* cloud.assertLocal.pipe(
+                  Effect.mapError((error) => new DatabaseFileError({ message: error.message })),
+                );
                 const currentReviews = yield* hasReviewBearingRows(filename);
                 const incomingReviews = yield* hasReviewBearingRows(source);
 
@@ -359,6 +543,15 @@ export const BackendHandlers = BackendRpc.toLayer(
       ExportReviewPackage: ({ destination }) => application.exportPackage(destination),
       RestoreReviewPackage: ({ source }) => application.restorePackage(source),
       ExecutionSetup: () => application.execution.setup,
+      CloudReviewSetup: () => application.cloud.setup,
+      StartCloudReview: (request) => application.cloud.start(request),
+      StartCloudPacketReview: (request) => application.cloud.start(request),
+      CloudReviewStatus: () => application.cloud.status,
+      ObserveCloudReview: () => application.cloudSync.observe,
+      RetryCloudReviewSync: () => application.cloudSync.retry,
+      RefreshCloudReview: ({ id }) => application.cloud.refresh(id),
+      ImportCloudReview: ({ id }) => application.cloud.importResults(id),
+      CancelCloudReview: ({ id }) => application.cloud.cancel(id),
       StartExecution: (request) => application.execution.start(request),
       ExecutionStatus: ({ projectId, runId }) => application.execution.status(projectId, runId),
       ControlExecution: ({ projectId, runId, expectedVersion, action, commandId }) =>

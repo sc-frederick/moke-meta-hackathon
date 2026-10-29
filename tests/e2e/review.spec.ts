@@ -24,7 +24,15 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     Object.entries(process.env).flatMap(([key, value]) =>
       value === undefined ||
       key === "ELECTRON_RUN_AS_NODE" ||
-      (!live && ["MODEL_API_KEY", "BASETEN_API_KEY", "MOKE_SESSION_CREDENTIAL_FILE"].includes(key))
+      (!live &&
+        [
+          "MODEL_API_KEY",
+          "BASETEN_API_KEY",
+          "MOKE_SESSION_CREDENTIAL_FILE",
+          "MODAL_TOKEN_ID",
+          "MODAL_TOKEN_SECRET",
+          "MOKE_MODAL_CONFIG",
+        ].includes(key))
         ? []
         : [[key, value]],
     ),
@@ -102,10 +110,14 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
     await expect(callLimit).toHaveValue("");
     await callLimit.fill("12");
     await expect(callLimit).toHaveValue("12");
+    await expect(page.getByRole("heading", { name: "Cloud reviews" })).toBeVisible();
 
     if (!live) await callLimit.fill("");
 
     await page.getByRole("button", { name: "Close review settings" }).click();
+    await page.getByRole("button", { name: "Execution location: On this computer" }).click();
+    await expect(page.getByRole("option", { name: "Push to cloud" })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByTestId("import-pdf").click();
     await expect(page.getByTestId(/^confirm-sheet-/)).toHaveCount(2);
 
