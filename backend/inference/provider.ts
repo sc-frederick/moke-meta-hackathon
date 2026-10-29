@@ -518,7 +518,11 @@ export function createAdmittedModels(
       ),
     streamSimple: (model, context, options) =>
       guarded(model, context, options, (fetch, bounded) =>
-        base.streamSimple(model, bounded, requestOptions(options, fetch)),
+        // Simple options inject a context-sized output limit. Packet requests on Baseten
+        // use the API default; reasoning is already set explicitly in requestOptions.
+        admission.packetReview && selected.provider === "baseten"
+          ? base.stream<Api>(model, bounded, requestOptions(options, fetch))
+          : base.streamSimple(model, bounded, requestOptions(options, fetch)),
       ),
   });
 

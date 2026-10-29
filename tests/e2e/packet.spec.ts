@@ -157,13 +157,29 @@ test("document QA needs no count check and persisted findings support evidence, 
     await page.setViewportSize({ width: 1440, height: 1000 });
     const cloud = page.getByTestId("cloud-review-controls");
     await expect(cloud).toContainText("Results synced");
+    await expect(cloud.locator(".receipt-details")).toHaveCount(0);
+    await cloud
+      .getByRole("button", { name: "Show transfer and review details", exact: true })
+      .click();
+    await expect(cloud.locator(".receipt-details")).toBeVisible();
+    await cloud
+      .getByRole("button", { name: "Hide transfer and review details", exact: true })
+      .click();
+    await expect(cloud.locator(".receipt-details")).toHaveCount(0);
     await expect(page.getByLabel("Message", { exact: true })).toBeEditable();
     const panel = page.getByTestId("packet-review-panel");
     await expect(panel).toContainText("Whole-set review");
-    await expect(panel).toContainText("Review finished with gaps");
+    await expect(panel.getByRole("heading", { level: 2 })).toHaveText(
+      "Review finished with coverage gaps",
+    );
     await expect(panel).toContainText("1 of 2 sheets opened");
-    await expect(panel.locator(".progress")).toContainText("1 of 88 review passes recorded");
+    await expect(panel.locator(".progress")).toContainText("4 of 88 review passes recorded");
+    // The gap headline names the recorded pass that is still unsettled.
+    await expect(panel.locator(".progress")).toContainText("1 still needs input or a reason");
     await expect(panel).toContainText("Offline desktop fixture");
+    await expect(panel.locator(".summary strong")).toHaveText("Offline desktop fixture");
+    await expect(panel.locator(".summary code")).toHaveText("saved evidence");
+    await expect(panel.locator(".summary")).not.toContainText("**");
     const reportPath = join(directory, "exported-review.html");
     await app.evaluate(({ dialog }, filePath) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath });
@@ -172,6 +188,11 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect
       .poll(async () => readFile(reportPath, "utf8").catch(() => ""))
       .toContain(seeded.findingTitle);
+    const exportedReport = await readFile(reportPath, "utf8");
+    expect(exportedReport).toContain("Review finished with coverage gaps.");
+    expect(exportedReport).toContain("1 of 2 requested sheets opened");
+    expect(exportedReport).toContain("4 of 88 requested review passes recorded");
+    expect(exportedReport).toContain("1 unopened sheet; 84 unreviewed passes");
     await panel.getByText("Governing sources and citations", { exact: true }).click();
     await expect(
       panel.getByRole("button", { name: "Open source in browser", exact: true }),
@@ -184,6 +205,21 @@ test("document QA needs no count check and persisted findings support evidence, 
     await page.getByText("Previous reviews in this conversation", { exact: true }).click();
     await page.getByRole("button", { name: "Open saved review", exact: true }).first().click();
     await expect(page.getByTestId("historical-review-panel")).toContainText(seeded.previousSummary);
+    const historyPanel = page.getByTestId("historical-review-panel");
+    await expect(historyPanel).toContainText("Synthetic saved provider failure");
+    await expect(historyPanel).not.toContainText("Cancel this review before starting");
+    await historyPanel
+      .getByRole("button", { name: "Copy review diagnostics", exact: true })
+      .click();
+    await expect(historyPanel).toContainText("Review diagnostics copied.");
+    const diagnostics = await app.evaluate(({ clipboard }) => clipboard.readText());
+    expect(JSON.parse(diagnostics)).toMatchObject({
+      reviewId: seeded.previousReviewId,
+      state: "cancelled",
+      model: "meta-models/muse-spark-open-1026",
+      error:
+        "Synthetic saved provider failure. Cancel this review before starting a separate review.",
+    });
     await expect(panel).toContainText(seeded.currentSummary);
     await page.getByRole("button", { name: "Back to latest review", exact: true }).click();
     await expect(panel).toContainText(seeded.currentSummary);
@@ -192,8 +228,60 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(page.locator(".application-message")).not.toContainText(seeded.currentSummary);
     await expect(page.getByRole("button", { name: /^Check:/ })).toHaveCount(0);
     await panel.getByText("Sheet coverage and review records", { exact: true }).click();
+    const coverage = panel.locator(".coverage");
+    const filters = coverage.getByRole("group", { name: "Find review records", exact: true });
+    const statusFilter = filters.getByLabel("Status", { exact: true });
+    const disciplineFilter = filters.getByLabel("Discipline", { exact: true });
+    await expect(statusFilter).toHaveValue("attention");
+    await expect(panel.getByTestId("coverage-matches")).toContainText(
+      "86 matching records across 2 sheets",
+    );
+    await expect(
+      panel
+        .getByTestId("discipline-coverage")
+        .getByRole("row", { name: /^General / })
+        .getByRole("cell"),
+    ).toHaveText(["8", "1", "1", "1", "4", "1"]);
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(0);
+    // Saved configuration keys read as labels, and values keep their original casing.
+    await expect(panel.locator(".configuration")).toContainText("Permit stage");
+    await expect(panel.locator(".configuration")).not.toContainText("permitStage");
+    await expect(panel.locator(".configuration dd").first()).toHaveCSS("text-transform", "none");
+    await page.screenshot({ path: test.info().outputPath("audit-coverage-summary.png") });
     await panel.locator(".sheet-coverage > summary").first().click();
-    await expect(panel).toContainText("unreviewed");
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(20);
+    await expect(coverage).toContainText("Page 1 of 3");
+    await coverage.getByRole("button", { name: "Next records", exact: true }).click();
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(20);
+    await expect(coverage).toContainText("Page 2 of 3");
+    await coverage.getByRole("button", { name: "Next records", exact: true }).click();
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(2);
+    await expect(
+      coverage.getByRole("button", { name: "Next records", exact: true }),
+    ).toBeDisabled();
+    await statusFilter.selectOption("checked");
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(1);
+    await expect(panel.getByTestId("coverage-record")).toContainText("Checked");
+    await statusFilter.selectOption("not_applicable");
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(1);
+    await expect(panel.getByTestId("coverage-record")).toContainText("Not applicable");
+    await expect(panel.getByTestId("coverage-record")).toContainText(
+      "This synthetic fixture has no prior comments.",
+    );
+    await statusFilter.selectOption("unreviewed");
+    await disciplineFilter.selectOption("civil");
+    await expect(panel.getByTestId("coverage-matches")).toContainText(
+      "8 matching records across 2 sheets",
+    );
+    await expect(panel.getByTestId("coverage-record")).toHaveCount(4);
+    await filters.getByRole("searchbox", { name: "Sheet", exact: true }).fill("page 2");
+    await expect(panel.locator(".sheet-coverage")).toHaveCount(1);
+    await expect(panel.getByTestId("coverage-matches")).toContainText(
+      "4 matching records across 1 sheet",
+    );
+    await expect(panel.locator(".progress")).toContainText("4 of 88 review passes recorded");
+    await filters.getByRole("searchbox", { name: "Sheet", exact: true }).fill("");
+    await panel.getByText("Sheet coverage and review records", { exact: true }).click();
     const finding = page.getByTestId(`packet-finding-${seeded.findingId}`);
     await finding.click();
     await expect(
@@ -546,8 +634,19 @@ function seedCompletedReview(directory: string) {
           sheetId: sheet.id,
           pass,
           discipline: "general",
-          status: sheet.id === firstSheet.id && pass === "completeness" ? "checked" : "unreviewed",
-          note: "Offline UI fixture; no model inspection is asserted.",
+          status:
+            sheet.id === firstSheet.id
+              ? {
+                  completeness: "checked",
+                  requirements: "issue",
+                  coordination: "needs_input",
+                  prior_comments: "not_applicable",
+                }[pass]
+              : "unreviewed",
+          note:
+            sheet.id === firstSheet.id && pass === "prior_comments"
+              ? "This synthetic fixture has no prior comments."
+              : "Offline UI fixture; no model inspection is asserted.",
         })),
       ),
       sources: [
@@ -593,7 +692,7 @@ function seedCompletedReview(directory: string) {
       ],
       priorComments: [],
       summary:
-        "Offline desktop fixture: persisted packet results and remaining coverage gaps. No model review was performed in this UI fixture.",
+        "**Offline desktop fixture**: persisted packet results and remaining coverage gaps with `saved evidence`. No model review was performed in this UI fixture.",
       missingInputs: ["Jurisdiction, permit stage, and remaining source inspection."],
       error: null,
       finished: true,
@@ -688,6 +787,9 @@ function seedCompletedReview(directory: string) {
         changedAt: now - 8000,
         summary: previousSummary,
         findings: [],
+        state: "cancelled" as const,
+        error:
+          "Synthetic saved provider failure. Cancel this review before starting a separate review.",
       }),
     );
 
@@ -730,7 +832,8 @@ function seedCompletedReview(directory: string) {
       conversationId: message.conversationId,
       cloud,
       previousSummary,
-      currentSummary: review.summary,
+      currentSummary: "persisted packet results and remaining coverage gaps with",
+      previousReviewId: previousReview.id,
     };
   } finally {
     database.close();

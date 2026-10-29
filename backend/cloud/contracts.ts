@@ -6,6 +6,7 @@ import {
   CloudReviewPhase,
   CloudReviewRequest,
   CloudPacketProgress,
+  CloudTransferProgress,
 } from "#lib/review/cloud.ts";
 import { ExecutionStatus } from "#lib/review/execution.ts";
 import {
@@ -69,6 +70,7 @@ export const CloudReviewRecord = Schema.Struct({
   createdAt: Schema.Finite,
   expiresAt: Schema.Finite,
   transferBytes: Schema.optionalKey(Schema.Int),
+  transfer: Schema.optionalKey(CloudTransferProgress),
   sandboxId: Schema.NullOr(Schema.String),
   inputSnapshotId: Schema.NullOr(Schema.String),
   resultSnapshotId: Schema.NullOr(Schema.String),

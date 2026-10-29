@@ -6,6 +6,7 @@ import {
   CommandId,
   type OperationId,
   type ProjectId,
+  type SuggestSheetLabels,
   type Region,
   ReviewError,
   ReviewCommand,
@@ -73,6 +74,11 @@ export function createReviewClient() {
   };
 
   return {
+    suggestSheetLabels: (request: typeof SuggestSheetLabels.Type) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.SuggestSheetLabels(request)),
+        "Sheet names could not be read from the original PDF.",
+      ),
     steerPacketReview: (request: typeof SteerPacketReview.Type) =>
       run(
         Effect.flatMap(ReviewDesktopApi, (api) => api.SteerPacketReview(request)),
@@ -325,6 +331,14 @@ export function createReviewClient() {
       run(
         Effect.flatMap(ReviewDesktopApi, (client) => client.ChooseReviewExport({})),
         "The review package could not be exported.",
+      ),
+
+    copyPacketReviewDiagnostics: (projectId: typeof ProjectId.Type, reviewId: string) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.CopyPacketReviewDiagnostics({ projectId, reviewId }),
+        ),
+        "The review diagnostics could not be copied.",
       ),
 
     openReviewSource: (url: string) =>

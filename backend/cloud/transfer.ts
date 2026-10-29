@@ -1,8 +1,8 @@
 import { Effect, Schema } from "effect";
 import { createHash } from "node:crypto";
-import { lstat, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CloudReviewError } from "#lib/review/cloud.ts";
+import { CloudReviewError, type CloudTransferProgress } from "#lib/review/cloud.ts";
 import { PackageManifest, type PackageFile } from "#lib/review/packages.ts";
 
 /** Cloud uploads are deliberately smaller than offline package exports. */
@@ -123,4 +123,99 @@ export const parseCloudManifest = Effect.fn("parseCloudManifest")(function* (tex
     });
 
   return { manifest, files };
+});
+
+type ReportTransfer = (
+  progress: typeof CloudTransferProgress.Type,
+) => Effect.Effect<void, CloudReviewError>;
+
+const fileProgress = (
+  direction: typeof CloudTransferProgress.Type.direction,
+  files: ReadonlyArray<PackageFile>,
+  text: string,
+  report: ReportTransfer,
+) => {
+  let completedBytes = 0;
+  let completedFiles = 0;
+  const totalBytes = files.reduce((total, file) => total + file.bytes, Buffer.byteLength(text));
+
+  const publish = () =>
+    report({ direction, completedBytes, totalBytes, completedFiles, totalFiles: files.length + 1 });
+
+  return {
+    publish,
+    complete: (bytes: number) => {
+      completedBytes += bytes;
+      completedFiles += 1;
+
+      return publish();
+    },
+  };
+};
+
+/** Publish only successfully uploaded package files; the request and snapshot are separate stages. */
+export const uploadCloudPackage = Effect.fn("uploadCloudPackage")(function* (
+  text: string,
+  copy: (file: PackageFile) => Effect.Effect<void, CloudReviewError>,
+  writeManifest: Effect.Effect<void, CloudReviewError>,
+  report: ReportTransfer,
+) {
+  const { files } = yield* parseCloudManifest(text);
+  const progress = fileProgress("upload", files, text, report);
+  yield* progress.publish();
+
+  for (const file of files) {
+    yield* copy(file);
+    yield* progress.complete(file.bytes);
+  }
+
+  yield* writeManifest;
+  yield* progress.complete(Buffer.byteLength(text));
+});
+
+/** Resume verified files from the immutable result manifest and report each verified completion. */
+export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* (
+  text: string,
+  destination: string,
+  copy: (file: PackageFile, local: string) => Effect.Effect<void, CloudReviewError>,
+  report: ReportTransfer,
+) {
+  const { files } = yield* parseCloudManifest(text);
+  const progress = fileProgress("download", files, text, report);
+  yield* progress.publish();
+  yield* Effect.tryPromise({
+    try: () => mkdir(destination, { recursive: true, mode: 0o700 }),
+    catch: () =>
+      new CloudReviewError({
+        reason: "storage",
+        message: "The cloud download directory could not be created.",
+      }),
+  });
+
+  for (const file of files) {
+    const local = join(destination, file.path);
+
+    if (!(yield* downloadedCloudFileMatches(local, file))) {
+      yield* copy(file, local);
+
+      if (!(yield* downloadedCloudFileMatches(local, file)))
+        return yield* new CloudReviewError({
+          reason: "incompatible",
+          message: "A downloaded cloud file does not match the selected result package.",
+        });
+    }
+
+    yield* progress.complete(file.bytes);
+  }
+
+  yield* clearInterruptedCloudDownloads(destination);
+  yield* Effect.tryPromise({
+    try: () => writeFile(join(destination, "manifest.json"), text, { mode: 0o600 }),
+    catch: () =>
+      new CloudReviewError({
+        reason: "storage",
+        message: "The downloaded cloud manifest could not be saved.",
+      }),
+  });
+  yield* progress.complete(Buffer.byteLength(text));
 });

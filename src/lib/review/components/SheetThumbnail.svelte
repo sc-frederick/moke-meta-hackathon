@@ -49,8 +49,9 @@
 
 <style>
   .thumbnail {
-    width: 32px;
-    height: 40px;
+    width: var(--sheet-thumbnail-width, 32px);
+    height: var(--sheet-thumbnail-height, 40px);
+    flex-shrink: 0;
     display: grid;
     place-items: center;
     border: 1px solid var(--nd-hairline);

@@ -21,6 +21,14 @@ const ChooseReviewPdf = Schema.Struct({
 
 /** Parent implements the file dialog and backend ImportReviewPdf call. */
 export class ReviewShellRpc extends RpcGroup.make(
+  Rpc.make("CopyPacketReviewDiagnostics", {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      reviewId: Schema.String.check(Schema.isUUID()),
+    }),
+    success: Schema.Void,
+    error: ReviewError,
+  }),
   Rpc.make("OpenReviewSource", {
     payload: { url: ReviewSourceUrl },
     success: Schema.Void,

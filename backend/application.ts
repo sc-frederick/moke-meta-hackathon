@@ -21,6 +21,7 @@ import {
 
 import {
   exportReviewPackage,
+  estimateReviewPackage,
   restoreReviewPackage,
   validateReviewPackage,
   recoverInterruptedRestore,
@@ -265,8 +266,46 @@ export class Application extends Context.Service<
         const cloudFailure = (message: string) =>
           Effect.mapError(() => new CloudReviewError({ reason: "conflict", message }));
 
+        // Cloud transfers the whole workspace, so any active local review in any project blocks it.
+        const localWorkBlockingCloud = executionPersistence(filename, operations)
+          .query(
+            Effect.gen(function* () {
+              const sql = yield* SqlClient.SqlClient;
+
+              const countRuns =
+                yield* sql`SELECT run_id FROM review_execution_runs r WHERE r.state IN ('running','pausing','paused','uncertain') OR ((EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=r.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=r.run_id AND s.status='uncertain')) AND NOT EXISTS(SELECT 1 FROM review_execution_acknowledgements k WHERE k.run_id=r.run_id))`;
+
+              const packets = yield* Schema.decodeUnknownEffect(
+                Schema.Array(Schema.Struct({ name: Schema.String })),
+              )(
+                yield* sql`SELECT DISTINCT json_extract(payload,'$.projectName') AS name FROM packet_reviews WHERE json_extract(payload,'$.state') IN ('running','paused','uncertain') ORDER BY name`,
+              );
+
+              return [
+                ...packets.map((row) => row.name),
+                ...(countRuns.length > 0
+                  ? [`${countRuns.length} count ${countRuns.length === 1 ? "check" : "checks"}`]
+                  : []),
+              ];
+            }),
+          )
+          .pipe(cloudFailure("Review execution could not be checked before transfer."));
+
         const cloudOptions = {
           directory: `${owner.canonicalDirectory}.cloud`,
+          estimate: estimateReviewPackage({
+            ...packages,
+            assertReadable: Effect.suspend(() =>
+              pendingRestore()
+                ? Effect.fail(new PackageError({ reason: "conflict", message: restoreMessage }))
+                : Effect.void,
+            ),
+          }).pipe(
+            cloudFailure("The workspace size estimate could not be read. Recheck before sending."),
+            Effect.flatMap((estimate) =>
+              Effect.map(localWorkBlockingCloud, (localReviews) => ({ ...estimate, localReviews })),
+            ),
+          ),
           inspect: (request: Parameters<CloudReviews["Service"]["start"]>[0]) =>
             Effect.gen(function* () {
               if (!("kind" in request))
@@ -311,31 +350,12 @@ export class Application extends Context.Service<
             }),
           prepare: (destination: string) =>
             Effect.gen(function* () {
-              const persistence = executionPersistence(filename, operations);
+              const blocking = yield* localWorkBlockingCloud;
 
-              const blocked = yield* persistence
-                .query(
-                  Effect.gen(function* () {
-                    const sql = yield* SqlClient.SqlClient;
-
-                    const countBlocked =
-                      (yield* sql`SELECT run_id FROM review_execution_runs r WHERE r.state IN ('running','pausing','paused','uncertain') OR ((EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=r.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=r.run_id AND s.status='uncertain')) AND NOT EXISTS(SELECT 1 FROM review_execution_acknowledgements k WHERE k.run_id=r.run_id)) LIMIT 1`)
-                        .length > 0;
-
-                    const packetBlocked =
-                      (yield* sql`SELECT id FROM packet_reviews WHERE json_extract(payload,'$.state') IN ('running','paused','uncertain') LIMIT 1`)
-                        .length > 0;
-
-                    return countBlocked || packetBlocked;
-                  }),
-                )
-                .pipe(cloudFailure("Review execution could not be checked before transfer."));
-
-              if (blocked)
+              if (blocking.length > 0)
                 return yield* new CloudReviewError({
                   reason: "conflict",
-                  message:
-                    "Finish or cancel existing local inspections and acknowledge any unresolved charges before starting a separate cloud review.",
+                  message: `Cloud review sends the whole workspace, so local reviews must finish or be cancelled first. Still active on this computer: ${blocking.join(", ")}. Stopped reviews also need Cancel to acknowledge possible charges.`,
                 });
 
               return yield* exportReviewPackage(
@@ -423,6 +443,8 @@ export class Application extends Context.Service<
             admit(locally(review.command(...args))),
           importPdf: (...args: Parameters<typeof review.importPdf>) =>
             admit(locally(review.importPdf(...args))),
+          suggestSheetLabels: (...args: Parameters<typeof review.suggestSheetLabels>) =>
+            admit(locally(review.suggestSheetLabels(...args))),
           render: (...args: Parameters<typeof review.render>) =>
             admit(locally(review.render(...args))),
           chunk: (...args: Parameters<typeof review.chunk>) => admit(review.chunk(...args)),
@@ -548,6 +570,7 @@ export const BackendHandlers = BackendRpc.toLayer(
       ReviewSnapshot: ({ projectId, afterSequence }) =>
         application.review.snapshot(projectId, afterSequence),
       ReviewCommand: ({ command }) => application.review.command(command),
+      SuggestSheetLabels: (request) => application.review.suggestSheetLabels(request),
       RenderSource: (request) => application.review.render(request),
       ReadArtifactChunk: (request) => application.review.chunk(request),
       ImportReviewPdf: (request) => application.review.importPdf(request),

@@ -1,4 +1,14 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  protocol,
+  shell,
+} from "electron";
 import { Effect, Layer, Logger, ManagedRuntime, Option, Schema } from "effect";
 import { MainRpcServer } from "electron-effect-rpc/main";
 import { appendFileSync } from "node:fs";
@@ -164,6 +174,37 @@ if (!app.requestSingleInstanceLock()) {
           const { api } = yield* BackendApi;
 
           return {
+            CopyPacketReviewDiagnostics: ({ projectId, reviewId }) =>
+              api.GetPacketReview({ projectId, reviewId }).pipe(
+                Effect.mapError(
+                  () =>
+                    new ReviewStorageError({ message: "The saved review could not be loaded." }),
+                ),
+                Effect.flatMap((review) =>
+                  Effect.tryPromise({
+                    try: () =>
+                      clipboard.writeText(
+                        JSON.stringify(
+                          {
+                            reviewId: review.id,
+                            model: review.model,
+                            state: review.state,
+                            error: review.error,
+                            providerFailure: review.providerFailure ?? null,
+                            admittedCalls: review.admittedCalls,
+                            openedSheets: review.inspectedSheetIds.length,
+                          },
+                          null,
+                          2,
+                        ),
+                      ),
+                    catch: () =>
+                      new ReviewStorageError({
+                        message: "The review diagnostics could not be copied.",
+                      }),
+                  }),
+                ),
+              ),
             OpenReviewSource: ({ url }) =>
               Effect.tryPromise({
                 try: () => shell.openExternal(url),

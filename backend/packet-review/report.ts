@@ -1,7 +1,10 @@
 import type { PacketReview } from "../../src/lib/review/packet.ts";
 import { reviewDisciplines } from "../../src/lib/review/execution.ts";
 import { Match } from "effect";
-import { packetCoverageProgress } from "../../src/lib/review/packet-coverage.ts";
+import {
+  configurationLabel,
+  packetCoverageProgress,
+} from "../../src/lib/review/packet-coverage.ts";
 
 const escape = (value: string | number) =>
   String(value).replace(/[&<>"']/g, (character) => {
@@ -84,6 +87,31 @@ export function renderPacketReport(
 
   const coverageProgress = packetCoverageProgress(review);
 
+  const unopenedSheets = review.sheets.filter(
+    (sheet) => !review.inspectedSheetIds.includes(sheet.id),
+  ).length;
+
+  const unreviewedPasses = coverageProgress.rows.filter(
+    (entry) => entry.status === "unreviewed",
+  ).length;
+
+  const hasCoverageGaps = unopenedSheets > 0 || !coverageProgress.complete;
+
+  // Needs-input and unexplained not-applicable passes count as recorded but leave a gap.
+  const unsettledPasses = coverageProgress.recorded - coverageProgress.settled;
+
+  const recordedAt = (milliseconds: number) =>
+    new Date(milliseconds).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+
+  const coverageSummary = `${review.state === "completed" && hasCoverageGaps ? "Review finished with coverage gaps. " : ""}${review.sheets.length - unopenedSheets} of ${review.sheets.length} requested sheets opened; ${coverageProgress.recorded} of ${coverageProgress.total} requested review passes recorded. ${unopenedSheets} unopened ${unopenedSheets === 1 ? "sheet" : "sheets"}; ${unreviewedPasses} unreviewed ${unreviewedPasses === 1 ? "pass" : "passes"}${unsettledPasses > 0 ? `; ${unsettledPasses} recorded ${unsettledPasses === 1 ? "pass still needs" : "passes still need"} input or a reason` : ""}. Recorded passes do not establish engineering correctness; Not applicable is separate from inspected work.`;
+
   const gaps = coverageProgress.gaps.map((gap) => {
     const pass = passes.find(([id]) => id === gap.pass)?.[1] ?? gap.pass;
 
@@ -100,7 +128,7 @@ export function renderPacketReport(
   const complete =
     review.finished &&
     review.state === "completed" &&
-    coverageProgress.complete &&
+    !hasCoverageGaps &&
     review.missingInputs.length === 0 &&
     !findings.some((finding) => finding.status === "Needs input") &&
     unresolvedCitations === 0;
@@ -174,14 +202,14 @@ export function renderPacketReport(
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; object-src 'none'; form-action 'none'"><title>${escape(review.projectName)} — MOKE drawing review</title>
 <style>${styles}</style></head><body><main data-storage-key="${escape(storageKey)}">
-<header><p class="eyebrow">MOKE · Drawing review</p><h1>${escape(review.projectName)}</h1><p class="scope">${escape(scope)}</p><div class="review-state">${escape(reviewState)}</div><dl class="metadata"><div><dt>Review</dt><dd>${escape(review.id)} · revision ${review.version}</dd></div><div><dt>Requested</dt><dd>${escape(new Date(review.startedAt).toISOString())}</dd></div><div><dt>Last recorded</dt><dd>${escape(new Date(review.changedAt).toISOString())}</dd></div><div><dt>Execution</dt><dd>${escape(review.state)} · ${review.admittedCalls} calls${review.maxCalls === null ? "" : ` / ${review.maxCalls} requested limit`}</dd></div></dl></header>
-<section aria-labelledby="summary"><h2 id="summary">Review summary</h2>${paragraph(review.summary || "No review summary has been recorded.")}${review.error ? `<p class="callout">${escape(review.error)}</p>` : ""}<p>This report records the requested scope and evidence below. User completion tracking is separate from finding status, engineering acceptance and reviewer-verified prior-comment closure.</p><h3>Request</h3>${paragraph(review.request)}<h3>Missing inputs</h3>${list(review.missingInputs, "No missing inputs were recorded.")}${gaps.length ? `<h3>Coverage requiring follow-up</h3>${list(gaps, "")}` : ""}<p>${review.citations.length === 0 ? "No governing citations were recorded; regulatory conclusions remain unverified." : `${unresolvedCitations} of ${review.citations.length} citations remain unverified or incorrect.`}</p></section>
+<header><p class="eyebrow">MOKE · Drawing review</p><h1>${escape(review.projectName)}</h1><p class="scope">${escape(scope)}</p><div class="review-state">${escape(reviewState)}</div><dl class="metadata"><div><dt>Review</dt><dd>${escape(review.id)} · revision ${review.version}</dd></div><div><dt>Requested</dt><dd>${escape(recordedAt(review.startedAt))}</dd></div><div><dt>Last recorded</dt><dd>${escape(recordedAt(review.changedAt))}</dd></div><div><dt>Execution</dt><dd>${escape(review.state)} · ${review.admittedCalls} calls${review.maxCalls === null ? "" : ` / ${review.maxCalls} requested limit`}</dd></div></dl></header>
+<section aria-labelledby="summary"><h2 id="summary">Review summary</h2><p class="callout">${escape(coverageSummary)}</p>${paragraph(review.summary || "No review summary has been recorded.")}${review.error ? `<p class="callout">${escape(review.error)}</p>` : ""}<p>This report records the requested scope and evidence below. User completion tracking is separate from finding status, engineering acceptance and reviewer-verified prior-comment closure.</p><h3>Request</h3>${paragraph(review.request)}<h3>Missing inputs</h3>${list(review.missingInputs, "No missing inputs were recorded.")}${gaps.length ? `<h3>Coverage requiring follow-up</h3>${list(gaps, "")}` : ""}<p>${review.citations.length === 0 ? "No governing citations were recorded; regulatory conclusions remain unverified." : `${unresolvedCitations} of ${review.citations.length} citations remain unverified or incorrect.`}</p></section>
 <section aria-labelledby="configuration"><h2 id="configuration">Project configuration and governing sources</h2>${
     Object.keys(review.projectConfiguration).length
       ? `<dl class="configuration">${Object.entries(review.projectConfiguration)
           .map(
             ([key, value]) =>
-              `<div><dt>${escape(key)}</dt><dd>${escape(value || "Needs input")}</dd></div>`,
+              `<div><dt>${escape(configurationLabel(key))}</dt><dd>${escape(value || "Needs input")}</dd></div>`,
           )
           .join("")}</dl>`
       : paragraph("Project configuration and governing editions need input.")
@@ -200,7 +228,7 @@ ${findings
   )
   .join("")}</section>
 <section aria-labelledby="coverage"><h2 id="coverage">Document inventory and review coverage</h2><p>Coverage is recorded for every requested sheet, discipline and pass. Whole-set reviews account for all 11 disciplines; excluded work requires an explicit Not applicable reason. Opening a source image does not establish completion of its checks. Missing entries remain unreviewed. Compatible coverage from earlier scopes remains visible but does not settle a different discipline's checks.</p>${review.sheets.length ? `<div class="table-wrap"><table class="coverage"><thead><tr><th>Document / sheet</th>${passes.map(([, title]) => `<th>${title}</th>`).join("")}</tr></thead><tbody>${coverageRows}</tbody></table></div>` : paragraph("No source sheets were recorded for this review.")}</section>
-<section aria-labelledby="citations"><h2 id="citations">Governing-source and citation log</h2>${review.sources.length ? review.sources.map((source) => `<article class="record"><h3>${escape(source.title || "Untitled source")}</h3><p>${badge(source.status)} · ${source.official ? "Official source" : "Other source"}</p><p class="url">${sourceLink(source.url)}</p><dl><dt>Source ID</dt><dd>${escape(source.id)}</dd><dt>Retrieved</dt><dd>${escape(source.retrievedAt)}</dd><dt>Content SHA-256</dt><dd>${escape(source.sha256 ?? "Not available")}</dd></dl>${source.status === "unavailable" ? paragraph(source.text || "Source access was unavailable.") : ""}</article>`).join("") : paragraph("No governing sources have been retrieved.")}${review.citations.map((citation) => `<article class="record"><h3>${escape(citation.document || "Governing document needs input")} ${escape(citation.section)}</h3><p>${badge(citation.status)} · Citation ${escape(citation.id)}</p><dl><dt>Jurisdiction</dt><dd>${escape(citation.jurisdiction || "Needs input")}</dd><dt>Edition / date</dt><dd>${escape(citation.edition || "Needs input")}</dd><dt>Retrieved source</dt><dd>${escape(citation.sourceId ?? "Not available")}</dd></dl><h4>Governing text</h4>${citation.quote ? `<blockquote class="prose">${escape(citation.quote)}</blockquote>` : paragraph("No governing text was recorded.")}<h4>Application to the observed condition</h4>${paragraph(citation.application)}${paragraph(citation.note)}</article>`).join("")}</section>
+<section aria-labelledby="citations"><h2 id="citations">Governing-source and citation log</h2>${review.sources.length ? review.sources.map((source) => `<article class="record"><h3>${escape(source.title || "Untitled source")}</h3><p>${badge(source.status)} · ${source.official ? "Official source" : "Other source"}</p><p class="url">${sourceLink(source.url)}</p><dl><dt>Source ID</dt><dd>${escape(source.id)}</dd><dt>Retrieved</dt><dd>${escape(Number.isNaN(Date.parse(source.retrievedAt)) ? source.retrievedAt : recordedAt(Date.parse(source.retrievedAt)))}</dd><dt>Content SHA-256</dt><dd>${escape(source.sha256 ?? "Not available")}</dd></dl>${source.status === "unavailable" ? paragraph(source.text || "Source access was unavailable.") : ""}</article>`).join("") : paragraph("No governing sources have been retrieved.")}${review.citations.map((citation) => `<article class="record"><h3>${escape(citation.document || "Governing document needs input")} ${escape(citation.section)}</h3><p>${badge(citation.status)} · Citation ${escape(citation.id)}</p><dl><dt>Jurisdiction</dt><dd>${escape(citation.jurisdiction || "Needs input")}</dd><dt>Edition / date</dt><dd>${escape(citation.edition || "Needs input")}</dd><dt>Retrieved source</dt><dd>${escape(citation.sourceId ?? "Not available")}</dd></dl><h4>Governing text</h4>${citation.quote ? `<blockquote class="prose">${escape(citation.quote)}</blockquote>` : paragraph("No governing text was recorded.")}<h4>Application to the observed condition</h4>${paragraph(citation.application)}${paragraph(citation.note)}</article>`).join("")}</section>
 <section aria-labelledby="calculations"><h2 id="calculations">Supporting calculations</h2>${
     review.calculations.length
       ? review.calculations

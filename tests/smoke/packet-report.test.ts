@@ -54,7 +54,11 @@ function review(changes: Partial<PacketReview> = {}) {
     ],
     inspectedSheetIds: [identifiers.sheet],
     evidenceIds: [identifiers.evidence],
-    projectConfiguration: { Jurisdiction: "Needs input", Scope: "Electrical coordination" },
+    projectConfiguration: {
+      Jurisdiction: "Needs input",
+      Scope: "Electrical coordination",
+      permitStage: "Needs input - submittal date not stated",
+    },
     coverage: [
       {
         sheetId: identifiers.sheet,
@@ -192,8 +196,12 @@ test("packet report retains actual coverage, source status, calculations, prior 
     "governing code edition",
     "Source image opened",
     "reviewer-verified prior-comment closure",
+    // Saved camelCase keys are labelled for readers; values keep their casing.
+    "<dt>Permit stage</dt><dd>Needs input - submittal date not stated</dd>",
   ])
     expect(html).toContain(content);
+  expect(html).not.toContain("permitStage");
+  expect(html).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
   expect(html).toContain(`src="${pixel}"`);
   expect(html).toContain("https://example.gov/code?edition=2023&amp;section=1");
   expect(html).not.toMatch(/<(?:script|link|iframe|img)[^>]+(?:src|href)="https?:/);

@@ -504,6 +504,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
     };
 
     let ready = false;
+    const stages: string[] = [];
     let stopped = false;
     let dispatched = 0;
     let modelCalls = 0;
@@ -596,10 +597,14 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
               (progress) =>
                 Effect.sync(() => {
                   latest = progress;
+
+                  if (progress.packet?.stage !== undefined) stages.push(progress.packet.stage);
                 }),
             ),
           );
           expect(latest.phase).toBe("ready");
+          expect(stages[0]).toBe("reviewing");
+          expect(stages.slice(-2)).toEqual(["preparing-results", "results-ready"]);
           const journals = join(remote.directory, "execution-journals");
           const files = (await readdir(journals)).filter((name) => name.endsWith(".sqlite"));
           expect(files).toHaveLength(1);

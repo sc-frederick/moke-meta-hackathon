@@ -8,7 +8,7 @@ import {
   SandboxFilesystemNotFoundError,
   type Sandbox,
 } from "modal";
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ModalConfiguration } from "#lib/backend-rpc.ts";
 import { CloudReviewError } from "#lib/review/cloud.ts";
@@ -21,11 +21,7 @@ import {
   type CloudReviewRecord,
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
-import {
-  clearInterruptedCloudDownloads,
-  downloadedCloudFileMatches,
-  parseCloudManifest,
-} from "./transfer.ts";
+import { downloadCloudPackage, uploadCloudPackage } from "./transfer.ts";
 import { parseCloudWorkerProgress } from "./progress.ts";
 
 const ModalFileChange = Schema.Struct({
@@ -467,20 +463,22 @@ export const modalSandboxLayer = (
             }),
           ),
         allocate,
-        upload: (record, source) =>
+        upload: (record, source, report) =>
           Effect.gen(function* () {
             const sandbox = yield* original(record);
             const text = yield* modalCall(() => readFile(join(source, "manifest.json"), "utf8"));
-            const { files } = yield* parseCloudManifest(text);
-
-            for (const file of files)
-              yield* modalCall(() =>
-                sandbox.filesystem.copyFromLocal(
-                  join(source, file.path),
-                  `/moke/input/${file.path}`,
+            yield* uploadCloudPackage(
+              text,
+              (file) =>
+                modalCall(() =>
+                  sandbox.filesystem.copyFromLocal(
+                    join(source, file.path),
+                    `/moke/input/${file.path}`,
+                  ),
                 ),
-              );
-            yield* modalCall(() => sandbox.filesystem.writeText(text, "/moke/input/manifest.json"));
+              modalCall(() => sandbox.filesystem.writeText(text, "/moke/input/manifest.json")),
+              report,
+            );
             yield* modalCall(() =>
               sandbox.filesystem.writeText(
                 JSON.stringify({
@@ -615,38 +613,33 @@ export const modalSandboxLayer = (
               return { progress, resultSnapshotId: checkpoint?.imageId ?? null, sourceStopped };
             }),
           ),
-        download: (record, destination) =>
+        download: (record, destination, report) =>
           reading(record, (sandbox) =>
             Effect.gen(function* () {
               const text = yield* modalCall(() =>
                 sandbox.filesystem.readText("/moke/output/manifest.json"),
               );
 
-              const { files } = yield* parseCloudManifest(text);
-              yield* modalCall(() => mkdir(destination, { recursive: true, mode: 0o700 }));
+              yield* downloadCloudPackage(
+                text,
+                destination,
+                (file, local) =>
+                  Effect.gen(function* () {
+                    const info = yield* modalCall(() =>
+                      sandbox.filesystem.stat(`/moke/output/${file.path}`),
+                    );
 
-              for (const file of files) {
-                if (yield* downloadedCloudFileMatches(join(destination, file.path), file)) continue;
-
-                const info = yield* modalCall(() =>
-                  sandbox.filesystem.stat(`/moke/output/${file.path}`),
-                );
-
-                if (info.type !== "file" || info.size !== file.bytes)
-                  return yield* new CloudReviewError({
-                    reason: "incompatible",
-                    message: "A cloud package file changed before download.",
-                  });
-                yield* modalCall(() =>
-                  sandbox.filesystem.copyToLocal(
-                    `/moke/output/${file.path}`,
-                    join(destination, file.path),
-                  ),
-                );
-              }
-
-              yield* clearInterruptedCloudDownloads(destination);
-              yield* modalCall(() => Bun.write(join(destination, "manifest.json"), text));
+                    if (info.type !== "file" || info.size !== file.bytes)
+                      return yield* new CloudReviewError({
+                        reason: "incompatible",
+                        message: "A cloud package file changed before download.",
+                      });
+                    yield* modalCall(() =>
+                      sandbox.filesystem.copyToLocal(`/moke/output/${file.path}`, local),
+                    );
+                  }),
+                report,
+              );
             }),
           ),
         stop: (record) =>

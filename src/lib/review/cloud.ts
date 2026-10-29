@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { CommandId, FindingId, ProjectId } from "./contracts.ts";
 import { ExecutionStatus, StartExecution } from "./execution.ts";
-import { PacketReview, StartPacketReview } from "./packet.ts";
+import { PacketActivity, PacketReview, StartPacketReview } from "./packet.ts";
 
 /** Cloud runs copy a complete workspace and fence its local writes until returned. */
 export const StartCloudReview = Schema.Struct({
@@ -36,6 +36,28 @@ export const CloudPacketProgress = Schema.Struct({
   recordedPasses: Schema.optionalKey(Schema.Int),
   totalPasses: Schema.optionalKey(Schema.Int),
   changedAt: Schema.optionalKey(Schema.Finite),
+  stage: Schema.optionalKey(Schema.Literals(["reviewing", "preparing-results", "results-ready"])),
+  lastOpenedDrawing: Schema.optionalKey(Schema.String),
+  activity: Schema.optionalKey(Schema.NullOr(PacketActivity)),
+});
+
+/** Completed package files, including files verified and reused during a download retry. */
+export const CloudTransferProgress = Schema.Struct({
+  direction: Schema.Literals(["upload", "download"]),
+  completedBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  totalBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  completedFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  totalFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+
+/** Read-only size estimate of referenced workspace files; final preparation enforces exact limits. */
+export const CloudWorkspaceEstimate = Schema.Struct({
+  bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  files: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  projects: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  measuredAt: Schema.Finite,
+  /** Projects whose active local reviews must finish before the whole workspace can transfer. */
+  localReviews: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 /** Stable cloud operation identity; sandbox identifiers stay in the backend. */
@@ -79,6 +101,7 @@ export class CloudReviewStatus extends Schema.Class<CloudReviewStatus>("CloudRev
   createdAt: Schema.Finite,
   expiresAt: Schema.Finite,
   transferBytes: Schema.optionalKey(Schema.Int),
+  transfer: Schema.optionalKey(CloudTransferProgress),
   execution: Schema.NullOr(ExecutionStatus),
   packet: Schema.optionalKey(CloudPacketProgress),
   message: Schema.String,
@@ -94,6 +117,8 @@ export class CloudReviewSetup extends Schema.Class<CloudReviewSetup>("CloudRevie
   timeoutMinutes: Schema.Int,
   warmPool: Schema.Boolean,
   transferScope: Schema.Literal("whole-application"),
+  workspaceEstimate: Schema.optionalKey(CloudWorkspaceEstimate),
+  workspaceEstimateError: Schema.optionalKey(Schema.String),
 }) {}
 
 /** Replayed current cloud state and safe synchronization failures for a live desktop subscription. */

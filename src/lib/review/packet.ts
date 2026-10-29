@@ -158,6 +158,56 @@ export const PacketSheet = Schema.Struct({
   discipline: Schema.optionalKey(Schema.NullOr(ReviewDiscipline)),
 });
 
+/** Host-admitted tool names; model arguments and provider errors never enter activity telemetry. */
+export const PacketActivityTool = Schema.Literals([
+  "inventory_packet",
+  "render_sheet",
+  "search_sources",
+  "read_source",
+  "calculate",
+  "record_project",
+  "record_coverage",
+  "record_coverage_batch",
+  "record_citation",
+  "record_finding",
+  "record_prior_comment",
+  "ask_reviewer",
+  "finish_review",
+  "segment_objects",
+]);
+
+/** Bounded host stages describe actual tool work independently of model reasoning. */
+export const PacketActivityStage = Schema.Literals([
+  "inventory",
+  "rendering",
+  "research",
+  "calculation",
+  "recording",
+  "segmentation",
+]);
+
+/** Human-readable labels are controlled by the application rather than model output. */
+export const packetActivityStageLabels = {
+  inventory: "Reading drawing inventory",
+  rendering: "Rendering drawing",
+  research: "Checking sources",
+  calculation: "Calculating",
+  recording: "Recording review",
+  segmentation: "Segmenting drawing objects",
+} as const satisfies Record<typeof PacketActivityStage.Type, string>;
+
+/** One host-owned tool activity, retaining completion so subsequent inference is not labelled active. */
+export const PacketActivity = Schema.Struct({
+  id: Id,
+  tool: PacketActivityTool,
+  stage: PacketActivityStage,
+  sheetId: Schema.optionalKey(SheetId),
+  sheetLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  status: Schema.Literals(["active", "finished"]),
+  startedAt: Schema.Finite,
+  finishedAt: Schema.NullOr(Schema.Finite),
+});
+
 /** Durable packet progress and report data sent to the trusted workbench. */
 export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   id: Id,
@@ -177,6 +227,7 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   activeDurationMs: Schema.optionalKey(Schema.Number),
   activeSince: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   providerFailure: Schema.optionalKey(Schema.NullOr(ProviderFailure)),
+  activity: Schema.optionalKey(Schema.NullOr(PacketActivity)),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   admittedCalls: Schema.Int,
   promptVersion: Schema.String,

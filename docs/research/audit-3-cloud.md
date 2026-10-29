@@ -40,8 +40,7 @@ unrelated rows from the existing replacement package would lose local projects
 on return. Project-scoped cloud sync is therefore unresolved future work,
 rather than an unsafe shortcut in this patch.
 
-Read-only workbench snapshots wait for maintenance exclusion to release rather
-than emitting an expected-maintenance command error. Local mutations remain
+Read-only workbench snapshots share SQL replacement exclusion and check pending restoration before opening SQLite. They do not wait behind network maintenance or emit expected-maintenance command errors. Local mutations remain
 fenced during cloud ownership. The root workbench restores the active job's
 project and conversation on reopen. Public cloud status now retains the requested
 conversation, model and scope before worker acknowledgement, plus transfer bytes.
@@ -94,15 +93,19 @@ path limits, snapshot requirements and uncertain-request protections remain.
 The Svelte autofixer reported no issues for `CloudReviewControls.svelte`.
 
 The unique audit-only image `moke-review-engine:audit3-fixes-20261029` was
-last rebuilt as `im-01M63P54VRN8PXFH7FJV3NZMS8`, retaining the existing production
+last rebuilt as `im-01M644B1KBNWT5KTS160NMF596`, retaining the existing production
 tag and private operator configuration. The real preflight checked both provider
-secrets and the new worker identity in 2272 ms. Its cached repeat took 312 ms,
+secrets and the new worker identity in 2098 ms. Its cached repeat took 396 ms,
 and an independent SDK listing showed zero active preflight sandboxes afterward.
 The image was rebuilt after the Baseten eight-image request-window fix and Sol's
-plural-absence guard correction, then after the native cloud-return fixes. Fresh current-source bundles match the uploaded
+plural-absence guard correction, then after the native cloud-return, admission-publication and SDK output-policy fixes. Fresh current-source bundles match the uploaded
 files exactly. A separate network-blocked sandbox read the remote worker bytes:
 [both remote hashes match](audit-3-cloud-worker-proof.json), and that proof sandbox
 was confirmed terminated. [The safe preflight receipt](audit-3-cloud-preflight.json) records the
 image, prompt identities, resource bounds and migration hashes. This preflight
 issued no model requests and does not prove successful inference. The parent
 validation report records the observed live Windows/cloud outcomes separately.
+
+## Reopened native acceptance
+
+The pre-send composer now shows a read-only estimate of whole-workspace MiB, file count, project count and limits. Final package preparation still enforces exact bounds. Upload/download counters advance per completed file, including verified reused downloads, rather than showing a static package size. Host-owned tool activity identifies active/finished tool, controlled stage and the drawing when applicable. Terminal cards collapse their details. Native transfer proof and remaining limits are recorded in [the corrected acceptance report](audit-3-validation.md).

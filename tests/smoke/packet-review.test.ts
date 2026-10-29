@@ -365,10 +365,13 @@ test("a sent provider failure remains uncertain through restart and cannot be re
     const started = await session.run(session.packets.start(request));
     const uncertain = await until(session, started.id, "uncertain");
     expect(sends).toBe(1);
+    expect(uncertain.error).toContain("The provider did not return a complete response");
     await session.dispose();
     session = await open(directory, transport, false);
     const restored = await session.run(session.packets.get(request.projectId, started.id));
     expect(restored.state).toBe("uncertain");
+    expect(restored.error).toBe(uncertain.error);
+    expect(restored.providerFailure).toEqual(uncertain.providerFailure);
     const replay = await session.run(session.packets.start(request));
     expect(replay.id).toBe(uncertain.id);
 

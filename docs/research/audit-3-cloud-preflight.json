@@ -1,7 +1,7 @@
 {
-  "checkedAt": "2026-10-29T11:19:57.510Z",
+  "checkedAt": "2026-10-29T15:31:58.500Z",
   "imageName": "moke-review-engine:audit3-fixes-20261029",
-  "imageId": "im-01M63P54VRN8PXFH7FJV3NZMS8",
+  "imageId": "im-01M644B1KBNWT5KTS160NMF596",
   "identity": {
     "protocol": 3,
     "engine": "review-pi-1.4.0-v1",
@@ -27,8 +27,8 @@
       "available": true
     }
   ],
-  "preflightElapsedMs": 2272,
-  "cachedPreflightElapsedMs": 312,
+  "preflightElapsedMs": 2098,
+  "cachedPreflightElapsedMs": 396,
   "activePreflightSandboxes": [],
   "migrations": [
     {
@@ -73,6 +73,6 @@
     }
   ],
   "productionConfigurationUntouched": true,
-  "bundleSha256": "f4510fceef0ba585b82a924ac9f6796a51b5f9116d0609f16da65a1db384abad",
+  "bundleSha256": "0803c2ed24883143e6f8b32b1c470718f91114de35357512dd90b045362e3b0a",
   "warmPool": null
 }

@@ -430,6 +430,31 @@ export class ReviewStore extends Context.Service<
                 entityId = sheet.id;
                 message = "Sheet identity and coverage confirmed.";
               }),
+            ApplySheetLabels: (command) =>
+              Effect.gen(function* () {
+                if (!state.revisions.some((revision) => revision.id === command.revisionId))
+                  return yield* failure("The revision does not belong to this project.");
+
+                if (
+                  new Set(command.labels.map((item) => item.sheetId)).size !== command.labels.length
+                )
+                  return yield* failure("Each sheet can receive only one suggested name.");
+
+                for (const item of command.labels) {
+                  const sheet = findSheet(item.sheetId);
+
+                  if (sheet?.revisionId !== command.revisionId)
+                    return yield* failure("The sheet does not belong to this revision.");
+
+                  if (sheet.label !== `Page ${sheet.pageIndex + 1}`)
+                    return yield* failure("Suggested names cannot replace existing sheet labels.");
+                  yield* save("sheet", new Sheet(Struct.assign(sheet, { label: item.label })));
+                }
+
+                entityId = command.revisionId;
+                message =
+                  "Suggested sheet names applied. Confirmation and count coverage are unchanged.";
+              }),
             CreateFinding: (command) =>
               Effect.gen(function* () {
                 const drawn = findSheet(command.drawnSheetId);

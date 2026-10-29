@@ -7,6 +7,7 @@
     Project,
     ReviewSnapshot,
     Sheet,
+    SheetLabelSuggestions,
   } from "#lib/review/contracts.ts";
   import { Match, Option, Schema } from "effect";
   import { ReviewCommand, OperationId, RevisionId } from "#lib/review/contracts.ts";
@@ -87,12 +88,43 @@
   let cloudStatus = $state.raw<CloudReviewStatus | null>(null);
   let cloudSetup = $state.raw<CloudReviewSetup | null>(null);
   let cloudLoaded = $state(false);
+  let estimatingWorkspace = $state(false);
+
+  // Preflight and packaging run before the cloud receipt exists, so time them here.
+  let cloudSubmittedAt = $state<number | null>(null);
+  let cloudSubmitClock = $state(0);
+  const submittingCloud = $derived(cloudSubmittedAt !== null);
+
+  $effect(() => {
+    if (cloudSubmittedAt === null) return;
+
+    const clock = setInterval(() => {
+      cloudSubmitClock = Date.now();
+    }, 1000);
+
+    return () => clearInterval(clock);
+  });
 
   const cloudLocked = $derived(
     cloudStatus !== null && cloudReviewLocksWorkspace(cloudStatus.phase),
   );
 
-  const cloudBlocked = $derived(!cloudLoaded || cloudLocked);
+  const cloudBlocked = $derived(!cloudLoaded || cloudLocked || submittingCloud);
+
+  const cloudEstimateOverLimit = $derived(
+    cloudSetup?.workspaceEstimate !== undefined &&
+      (cloudSetup.workspaceEstimate.bytes > 1024 * 1024 * 1024 ||
+        cloudSetup.workspaceEstimate.files > 5000),
+  );
+
+  const cloudLocalReviews = $derived(cloudSetup?.workspaceEstimate?.localReviews ?? []);
+
+  const cloudEstimateMissing = $derived(
+    location === "cloud" &&
+      reviewMode === "review" &&
+      (estimatingWorkspace || cloudSetup?.workspaceEstimate === undefined),
+  );
+
   let callLimit = $state<number | undefined>(undefined);
   let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
   let packetBusy = $state(false);
@@ -115,7 +147,8 @@
     string,
     {
       draft: string;
-      scroll: number;
+      /** Null follows the latest message; the layout can change before the user returns. */
+      scroll: number | null;
       scopeMode: "whole_set" | "selected_sheets" | "discipline";
       revisionId: string;
       sheetIds: ReadonlyArray<Sheet["id"]>;
@@ -146,6 +179,15 @@
   let sourceZoomFactor = $state(1);
   let sourceImageUrl = $state("");
   let sourceArtifact = $state.raw<Artifact | null>(null);
+
+  // A saved model render can be a partial crop even when a location only names the sheet.
+  const sourceIsCrop = $derived(
+    sourceArtifact?.region != null &&
+      previewedSheet !== null &&
+      (sourceArtifact.region.width < previewedSheet.box.width * 0.98 ||
+        sourceArtifact.region.height < previewedSheet.box.height * 0.98),
+  );
+
   let sourceRequestedDpi = 96;
   let pendingDropImport = $state.raw<Parameters<ReviewClient["chooseReviewPdf"]>[0] | null>(null);
 
@@ -159,6 +201,27 @@
   let findingsButton: HTMLButtonElement | undefined = $state();
   let findingsBubble: HTMLElement | undefined = $state();
   let chatViewport: HTMLDivElement | undefined = $state();
+
+  // A thread at its latest message stays there while reviews load or the window resizes,
+  // until the reader scrolls up.
+  let followLatest = true;
+
+  $effect(() => {
+    const viewport = chatViewport;
+    const content = viewport?.firstElementChild;
+
+    if (!viewport || !content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (followLatest) viewport.scrollTop = viewport.scrollHeight;
+    });
+
+    observer.observe(viewport);
+    observer.observe(content);
+
+    return () => observer.disconnect();
+  });
+
   let composerInput: HTMLTextAreaElement | undefined = $state();
   let searchInput: HTMLInputElement | undefined = $state();
 
@@ -283,12 +346,29 @@
     return currentMessages.filter((message) => message.id !== displayedAnswer?.id);
   });
 
+  // These notices describe one moment of a review and go stale once its state changes.
+  const reviewStatusNotices = ["Review started.", "Review status refreshed."];
+
+  // Reviews load after a project switch, so the conversation's model is restored when they arrive.
+  let modelChosen = false;
+
   function receivePacketReview(review: PacketReview) {
     if (review.projectId !== selectedProjectId) return;
     const previous = packetReviews.find((item) => item.id === review.id);
 
     if (previous && previous.version > review.version) return;
+
+    if (previous && previous.state !== review.state && reviewStatusNotices.includes(notice))
+      notice = "";
     packetReviews = [...packetReviews.filter((item) => item.id !== review.id), review];
+
+    if (!modelChosen && review.conversationId === selectedConversationId) {
+      const latest = packetReviews
+        .filter((item) => item.conversationId === selectedConversationId)
+        .reduce((last, item) => (item.startedAt > last.startedAt ? item : last));
+
+      selectedModel = latest.model;
+    }
   }
 
   async function trackPacketReviews(projectId: Project["id"]) {
@@ -349,7 +429,9 @@
     if (cloudBlocked) return;
     packetBusy = true;
 
-    const result = await client.controlPacketReview(
+    if (reviewStatusNotices.includes(notice)) notice = "";
+
+    let result = await client.controlPacketReview(
       review.projectId,
       review.id,
       review.version,
@@ -357,10 +439,97 @@
       maxCalls,
     );
 
+    if (!result.ok && "reason" in result.error && result.error.reason === "conflict") {
+      const current = await client.getPacketReview(review.projectId, review.id);
+
+      if (current.ok) {
+        receivePacketReview(current.value);
+        const retryPause = action === "pause" && current.value.state === "running";
+
+        const retryCancel =
+          action === "cancel" && ["running", "paused", "uncertain"].includes(current.value.state);
+
+        if (retryPause || retryCancel)
+          result = await client.controlPacketReview(
+            current.value.projectId,
+            current.value.id,
+            current.value.version,
+            action,
+            maxCalls,
+          );
+      }
+    }
+
     packetBusy = false;
 
-    if (result.ok) receivePacketReview(result.value);
+    if (review.projectId !== selectedProjectId || review.conversationId !== selectedConversationId)
+      return;
+
+    if (result.ok) {
+      error = "";
+      receivePacketReview(result.value);
+    } else error = result.error.message;
+  }
+
+  async function refreshPacketReview(review: PacketReview) {
+    packetBusy = true;
+    const result = await client.getPacketReview(review.projectId, review.id);
+    packetBusy = false;
+
+    if (review.projectId !== selectedProjectId || review.conversationId !== selectedConversationId)
+      return;
+
+    if (result.ok) {
+      receivePacketReview(result.value);
+      error = "";
+      notice = "Review status refreshed.";
+    } else error = result.error.message;
+  }
+
+  async function refreshWorkspaceEstimate() {
+    if (estimatingWorkspace) return;
+    estimatingWorkspace = true;
+    const result = await client.cloudSetup();
+    estimatingWorkspace = false;
+
+    if (result.ok) cloudSetup = result.value;
     else error = result.error.message;
+  }
+
+  async function suggestSheetLabels(): Promise<SheetLabelSuggestions | null> {
+    if (!project || !scopeRevision || cloudBlocked) return null;
+
+    const result = await client.suggestSheetLabels({
+      projectId: project.id,
+      revisionId: scopeRevision.id,
+    });
+
+    if (result.ok) return result.value;
+
+    error = result.error.message;
+
+    return null;
+  }
+
+  async function applySheetLabels(
+    revisionId: Sheet["revisionId"],
+    labels: ReadonlyArray<{ sheetId: Sheet["id"]; label: string }>,
+  ) {
+    if (!project || labels.length === 0) return false;
+
+    return await runCommand(
+      reviewCommand(
+        ReviewCommand.cases.ApplySheetLabels.make({
+          commandId: newCommandId(),
+          projectId: project.id,
+          expectedVersion: project.version,
+          revisionId,
+          labels: Schema.decodeUnknownSync(ReviewCommand.cases.ApplySheetLabels.fields.labels)(
+            labels,
+          ),
+        }),
+      ),
+    );
   }
 
   async function completePacketFinding(
@@ -418,6 +587,7 @@
     if (artifact) {
       sourceLoading = true;
       previewedSheet = sheet;
+      sourceZoomFactor = 1;
 
       if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
       sourceImageUrl = "";
@@ -570,7 +740,11 @@
     if (activeConversation)
       conversationViews.set(activeConversation.id, {
         draft,
-        scroll: chatViewport?.scrollTop ?? 0,
+        scroll:
+          chatViewport &&
+          chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight > 24
+            ? chatViewport.scrollTop
+            : null,
         scopeMode,
         revisionId: scopeRevisionId,
         sheetIds: selectedSheetIds,
@@ -672,6 +846,12 @@
     if (reviewMode === "review") {
       if (sheets.length === 0 || !selectedModelAvailable || !validCallLimit || executionBlocked)
         return;
+
+      if (
+        location === "cloud" &&
+        (cloudEstimateMissing || cloudEstimateOverLimit || cloudLocalReviews.length > 0)
+      )
+        return;
       busy = true;
 
       if (!scopeRevision || !scopeCount || (scopeMode === "discipline" && discipline === "auto")) {
@@ -708,18 +888,33 @@
       };
 
       if (location === "cloud") {
+        cloudSubmittedAt = cloudSubmitClock = Date.now();
+        busy = false;
+
         const result = await client.startCloudPacketReview({
           ...request,
           kind: "packet",
           transferScope: "whole-application",
         });
 
+        cloudSubmittedAt = null;
+
         if (result.ok) {
           cloudStatus = latestCloudReviewStatus(cloudStatus, result.value);
           executionStatus = null;
-          error = "";
-          notice = "Review pushed to cloud. Progress and results sync automatically.";
-        } else error = `Your message was saved. ${result.error.message}`;
+
+          if (
+            selectedProjectId === command.projectId &&
+            selectedConversationId === command.conversationId
+          ) {
+            error = "";
+            notice = "Review pushed to cloud. Progress and results sync automatically.";
+          }
+        } else if (
+          selectedProjectId === command.projectId &&
+          selectedConversationId === command.conversationId
+        )
+          error = `Your message was saved. ${result.error.message}`;
       } else {
         const result = await client.startPacketReview(request);
 
@@ -730,7 +925,7 @@
         } else error = `Your message was saved. ${result.error.message}`;
       }
 
-      await refresh(saved.value.projectId);
+      await refresh();
       busy = false;
     } else if (await runCommand(command)) {
       draft = "";
@@ -739,7 +934,12 @@
 
     await tick();
 
-    if (chatViewport) chatViewport.scrollTop = chatViewport.scrollHeight;
+    if (
+      chatViewport &&
+      selectedProjectId === command.projectId &&
+      selectedConversationId === command.conversationId
+    )
+      chatViewport.scrollTop = chatViewport.scrollHeight;
   }
 
   function importPdf() {
@@ -967,6 +1167,7 @@
     finding?: Finding,
     overlays?: typeof sourceOverlays,
     request = ++sourceRequest,
+    keepZoom = false,
   ) {
     if (project === null) return;
     const projectId = project.id;
@@ -977,6 +1178,9 @@
     sourceOverlays = [];
     previewedSheet = sheet;
     sourceLoading = true;
+
+    // Only previous/next/jump navigation keeps the reviewer's zoom; a new context starts fitted.
+    if (!keepZoom) sourceZoomFactor = 1;
 
     const targetRegion = region ?? {
       x: sheet.box.x,
@@ -1132,7 +1336,11 @@
       previousReview?.model ??
       setup?.models?.find((model) => model.available)?.id ??
       selectedModel;
+    modelChosen = saved?.model !== undefined;
     location = saved?.location ?? "local";
+
+    // Local reviews may have started elsewhere since this conversation measured the workspace.
+    if (location === "cloud") void refreshWorkspaceEstimate();
     callLimit = saved?.callLimit;
     selectedConversationId = id;
     draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
@@ -1140,9 +1348,10 @@
     closeFindings();
     await tick();
 
-    if (chatViewport)
-      chatViewport.scrollTop =
-        (id === null ? 0 : conversationViews.get(id)?.scroll) ?? chatViewport.scrollHeight;
+    const savedScroll = id === null ? 0 : conversationViews.get(id)?.scroll;
+    followLatest = savedScroll === undefined || savedScroll === null;
+
+    if (chatViewport) chatViewport.scrollTop = savedScroll ?? chatViewport.scrollHeight;
   }
 
   function selectReviewFinding(id: string) {
@@ -1181,8 +1390,8 @@
   }
 
   function handleKey(event: KeyboardEvent) {
-    if (event.defaultPrevented || projectDialog?.open || settingsDialog?.open || importDialog?.open)
-      return;
+    // Every dialog opens modally, including child-component dialogs, and owns its own Escape.
+    if (event.defaultPrevented || document.querySelector("dialog[open]") !== null) return;
 
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
@@ -1416,7 +1625,13 @@
         setup = result.value;
         const configuredModel = Schema.decodeUnknownOption(ReviewModelId)(result.value.model);
 
-        if (Option.isSome(configuredModel)) selectedModel = configuredModel.value;
+        // A conversation that already has a review keeps that review's model.
+        if (
+          Option.isSome(configuredModel) &&
+          !modelChosen &&
+          !packetReviews.some((item) => item.conversationId === selectedConversationId)
+        )
+          selectedModel = configuredModel.value;
       } else error = result.error.message;
     });
 
@@ -1449,6 +1664,11 @@
     {review}
     {historical}
     busy={packetBusy || busy || cloudBlocked}
+    onRefresh={() => refreshPacketReview(review)}
+    onCopyDiagnostics={async () => {
+      const result = await client.copyPacketReviewDiagnostics(review.projectId, review.id);
+      return result.ok;
+    }}
     onControl={(action, maxCalls) => controlPacketReview(review, action, maxCalls)}
     onFinding={async (id) => {
       historyReviewId = historical ? review.id : null;
@@ -1538,7 +1758,7 @@
           >
           <button
             class={["findings-trigger", { expanded: popoverOpen }]}
-            disabled={busy}
+            disabled={busy || cloudBlocked}
             bind:this={findingsButton}
             aria-label="Open findings"
             aria-expanded={popoverOpen}
@@ -1756,7 +1976,7 @@
             class="new-chat"
             data-testid="new-conversation"
             onclick={project ? createConversation : openProjectDialog}
-            disabled={busy}
+            disabled={busy || cloudBlocked}
             ><ReviewIcon name="plus" size={16} /><span
               >{project ? "New conversation" : "New project"}</span
             ></button
@@ -1806,7 +2026,7 @@
           </nav>
           <div class="sidebar-footer">
             {#if project}
-              <button class="nav-action" onclick={openProjectDialog} disabled={busy}
+              <button class="nav-action" onclick={openProjectDialog} disabled={busy || cloudBlocked}
                 ><ReviewIcon name="folder" size={16} /><span>New project</span></button
               >
             {/if}
@@ -1821,7 +2041,7 @@
             >
             <div class="package-actions">
               <button
-                disabled={busy || !project}
+                disabled={busy || cloudBlocked || !project}
                 onclick={async () => {
                   busy = true;
                   const result = await client.chooseReviewExport();
@@ -1869,7 +2089,16 @@
               onclick={() => (notice = "")}><ReviewIcon name="x" size={15} /></button
             >
           </div>{/if}
-        <div class="chat-scroll" bind:this={chatViewport}>
+        <div
+          class="chat-scroll"
+          bind:this={chatViewport}
+          onscroll={() => {
+            if (chatViewport)
+              followLatest =
+                chatViewport.scrollHeight - chatViewport.scrollTop - chatViewport.clientHeight <=
+                24;
+          }}
+        >
           <div class="conversation-content">
             {#if !ready}<div class="chat-empty"><p role="status">Opening workspace…</p></div>
             {:else if project === null}<div class="chat-empty">
@@ -1990,6 +2219,7 @@
           projectId={selectedProjectId}
           conversationId={activeConversation?.id ?? null}
           projectName={project?.name ?? ""}
+          {projects}
           onReturned={onCloudReturned}
         />
         {#if project}
@@ -2067,6 +2297,7 @@
                     disabled={busy || executionBlocked || cloudBlocked}
                     onChange={(value) => {
                       location = value === "cloud" ? "cloud" : "local";
+                      if (location === "cloud") void refreshWorkspaceEstimate();
                     }}
                   />
                   <ReviewSelect
@@ -2076,6 +2307,7 @@
                     disabled={busy || executionBlocked || cloudBlocked}
                     onChange={(value) => {
                       selectedModel = Schema.decodeUnknownSync(ReviewModelId)(value);
+                      modelChosen = true;
                     }}
                   />
                   <ReviewSelect
@@ -2121,6 +2353,11 @@
                     cloudBlocked ||
                     !project ||
                     (reviewMode === "review" &&
+                      location === "cloud" &&
+                      (cloudEstimateMissing ||
+                        cloudEstimateOverLimit ||
+                        cloudLocalReviews.length > 0)) ||
+                    (reviewMode === "review" &&
                       activePacketReview?.state !== "running" &&
                       (sheets.length === 0 ||
                         !selectedModelAvailable ||
@@ -2138,8 +2375,47 @@
                 >
               </div>
             </form>
+            {#if reviewMode === "review" && location === "cloud" && !cloudBlocked}
+              <div class="cloud-preview" aria-label="Cloud transfer preview">
+                <strong>Cloud sends the whole workspace</strong>
+                {#if cloudSetup?.workspaceEstimate}
+                  <span>
+                    Estimated {(cloudSetup.workspaceEstimate.bytes / 1024 / 1024).toFixed(1)} MiB ·
+                    {cloudSetup.workspaceEstimate.files} files ·
+                    {cloudSetup.workspaceEstimate.projects}
+                    {cloudSetup.workspaceEstimate.projects === 1 ? "project" : "projects"}. Limit:
+                    1,024 MiB / 5,000 files.
+                  </span>
+                {:else}<span>
+                    {estimatingWorkspace
+                      ? "Measuring workspace…"
+                      : "Check the workspace size before sending."}
+                  </span>{/if}
+                <button
+                  class="text-button"
+                  disabled={estimatingWorkspace || busy}
+                  onclick={refreshWorkspaceEstimate}
+                  >{estimatingWorkspace ? "Measuring…" : "Recheck size"}</button
+                >
+                {#if cloudSetup?.workspaceEstimateError}<p role="alert">
+                    {cloudSetup.workspaceEstimateError}
+                  </p>{/if}
+                {#if cloudLocalReviews.length > 0}<p role="alert">
+                    Local reviews must finish or be cancelled before the whole workspace can go to
+                    the cloud. Still active on this computer: {cloudLocalReviews.join(", ")}.
+                    Recheck when they are done.
+                  </p>{/if}
+                {#if cloudEstimateOverLimit}<p role="alert">
+                    This workspace exceeds the cloud limit. Your message has not been sent. Export a
+                    backup and use a smaller workspace for this review.
+                  </p>{/if}
+              </div>
+            {/if}
             <div class="composer-help">
-              {#if cloudBlocked}{cloudLoaded
+              {#if submittingCloud && !cloudLocked && cloudSubmittedAt !== null}Checking cloud setup
+                and packaging the workspace · {formatElapsed(
+                  Math.max(0, cloudSubmitClock - cloudSubmittedAt),
+                )}. Upload progress appears when packaging finishes.{:else if cloudBlocked}{cloudLoaded
                   ? "Cloud review in progress. Results sync automatically; local edits are paused."
                   : "Connecting to your cloud review…"}{:else if reviewMode === "review" && location === "cloud"}Pushes
                 every project in this workspace, including PDFs and review history (up to 1 GiB /
@@ -2196,8 +2472,11 @@
               onclick={() => (sourceTab = "revision")}>Revision</button
             >
           </div>
-          <div class="source-scroll">
-            {#if error}<p role="alert" class="banner">{error}</p>{/if}
+          {#if error}<p role="alert" class="banner">{error}</p>{/if}
+          <div
+            class="source-scroll"
+            class:packet-evidence={sourceTab === "evidence" && selectedPacketFinding !== null}
+          >
             {#if sourceTab === "evidence" && selectedPacketFinding}<article
                 class="selected-finding"
                 data-testid="selected-packet-finding"
@@ -2237,9 +2516,10 @@
                         : " · View sheet"}</button
                     >{/each}
                 </div>
-                {#if selectedPacketFinding.evidenceNote}<p class="muted">
-                    {selectedPacketFinding.evidenceNote}
-                  </p>{/if}
+                {#if selectedPacketFinding.evidenceNote}<details>
+                    <summary>Evidence notes</summary>
+                    <p class="muted">{selectedPacketFinding.evidenceNote}</p>
+                  </details>{/if}
                 {#each selectedPacketFinding.citationIds as id (id)}{@const citation =
                     displayedPacketReview?.citations.find(
                       (item) => item.id === id,
@@ -2280,6 +2560,8 @@
               >
               <SheetSetup
                 {loadThumbnail}
+                onSuggestLabels={suggestSheetLabels}
+                onApplyLabels={applySheetLabels}
                 sheets={scopeSheets}
                 bind:selectedIds={selectedSheetIds}
                 onAssign={assignSheetDiscipline}
@@ -2360,7 +2642,15 @@
                   sheets={sheets.filter((sheet) => sheet.revisionId === previewedSheet?.revisionId)}
                   currentSheetId={previewedSheet?.id ?? null}
                   onSheet={async (sheet) => {
-                    await loadSheetSource(sheet, 96);
+                    await loadSheetSource(
+                      sheet,
+                      96,
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
+                      true,
+                    );
                   }}
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
@@ -2370,7 +2660,7 @@
               <div class="source-provenance">
                 <strong>{previewedSheet.label}</strong><span
                   >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
-                    1}</span
+                    1}{sourceIsCrop ? " · partial view of this page" : ""}</span
                 >
               </div>
             {:else if sourceTab === "revision"}
@@ -2380,6 +2670,7 @@
               <RevisionMapping
                 {revisions}
                 {sheets}
+                {loadThumbnail}
                 correspondence={snapshot?.sheetCorrespondence ?? []}
                 busy={busy || cloudBlocked}
                 onApply={associateRevision}
@@ -2430,6 +2721,7 @@
         <div class="search-field">
           <ReviewIcon name="search" size={18} /><input
             aria-label="Search findings"
+            placeholder={`Search this conversation in ${project?.name ?? "this project"}`}
             bind:this={searchInput}
             bind:value={findQuery}
           /><button
@@ -2454,7 +2746,7 @@
               class="menu-empty"
             >
               {findQuery
-                ? "No matching findings."
+                ? "No matching findings in this conversation or the project's count checks. Other conversations and projects are not searched."
                 : "No findings in this conversation or count comparisons."}
             </p>{/if}
         </div>
@@ -3459,6 +3751,70 @@
   .selected-finding p {
     margin: 8px 0;
   }
+  .source-scroll.packet-evidence {
+    display: grid;
+    grid-template-columns: minmax(230px, 31%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-height: 0;
+    overflow: hidden;
+    gap: 14px;
+  }
+  .packet-evidence .selected-finding {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 12px 8px 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .packet-evidence .selected-finding h2 {
+    font-size: 18px;
+    line-height: 1.35;
+  }
+  .packet-evidence .finding-evidence-actions {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .packet-evidence .finding-evidence-actions button {
+    text-align: left;
+    white-space: normal;
+    line-height: 1.4;
+    padding: 8px;
+  }
+  .source-scroll.packet-evidence :global(.viewer) {
+    grid-column: 2;
+    grid-row: 1;
+    height: 100%;
+    min-height: 0;
+  }
+  .packet-evidence > .muted {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .packet-evidence > .source-provenance {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .cloud-preview {
+    display: flex;
+    gap: 6px 12px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    margin: 10px 4px 0;
+    font-size: 12px;
+    color: var(--nd-ink-muted);
+  }
+  .cloud-preview strong {
+    color: var(--nd-ink);
+    font-weight: 550;
+  }
+  .cloud-preview p {
+    flex-basis: 100%;
+    margin: 0;
+  }
   .revision-picker {
     display: flex;
     gap: 12px;
@@ -3589,6 +3945,27 @@
     }
     .source-scroll :global(.viewer) {
       min-height: 300px;
+    }
+    .source-scroll.packet-evidence {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(90px, 180px) minmax(0, 1fr) auto;
+    }
+    .packet-evidence .selected-finding {
+      grid-row: 1;
+      padding: 0;
+    }
+    .source-scroll.packet-evidence :global(.viewer) {
+      grid-column: 1;
+      grid-row: 2;
+      min-height: 0;
+    }
+    .packet-evidence > .muted {
+      grid-column: 1;
+      grid-row: 2;
+    }
+    .packet-evidence > .source-provenance {
+      grid-column: 1;
+      grid-row: 3;
     }
   }
 </style>

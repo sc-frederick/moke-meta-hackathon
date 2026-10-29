@@ -8,6 +8,7 @@ import {
   CloudReviewStatus,
   cloudReviewLocksWorkspace,
   type CloudReviewRequest,
+  type CloudWorkspaceEstimate,
 } from "#lib/review/cloud.ts";
 import { reviewModels } from "#lib/review/models.ts";
 import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
@@ -37,6 +38,8 @@ export interface CloudReviewConfiguration {
   readonly prepare: (
     destination: string,
   ) => Effect.Effect<void | { readonly bytes: number }, CloudReviewError>;
+  /** Read referenced files without quiescing local review work or writing a package. */
+  readonly estimate?: Effect.Effect<typeof CloudWorkspaceEstimate.Type, CloudReviewError>;
   readonly restore: (source: string) => Effect.Effect<void, CloudReviewError>;
   readonly restorePending: () => boolean;
 }
@@ -82,8 +85,11 @@ const publicStatus = (record: CloudReviewRecord) => {
       ? contextual
       : { ...contextual, transferBytes: record.transferBytes };
 
+  const progress =
+    record.transfer === undefined ? transfer : { ...transfer, transfer: record.transfer };
+
   return new CloudReviewStatus(
-    record.packet === undefined ? transfer : { ...transfer, packet: record.packet },
+    record.packet === undefined ? progress : { ...progress, packet: record.packet },
   );
 };
 
@@ -249,12 +255,23 @@ export class CloudReviews extends Context.Service<
                   )
               : "Set up the cloud and model connections before pushing a review.";
 
+            const estimate =
+              config.estimate === undefined
+                ? {}
+                : yield* config.estimate.pipe(
+                    Effect.map((workspaceEstimate) => ({ workspaceEstimate })),
+                    Effect.catch((error) =>
+                      Effect.succeed({ workspaceEstimateError: error.message }),
+                    ),
+                  );
+
             return new CloudReviewSetup({
               configured: configured && checked === null,
               message: checked,
               timeoutMinutes: config.modal?.timeoutMinutes ?? 15,
               warmPool: config.modal?.poolQueue !== undefined && config.modal.poolQueue !== null,
               transferScope: "whole-application",
+              ...estimate,
             });
           }),
           status: Effect.sync(() => {
@@ -355,7 +372,21 @@ export class CloudReviews extends Context.Service<
               const sandboxId = yield* sandbox.allocate(record);
               record = { ...record, sandboxId };
               yield* save(record);
-              const inputSnapshotId = yield* sandbox.upload(record, input);
+
+              const inputSnapshotId = yield* sandbox.upload(record, input, (transfer) =>
+                Effect.gen(function* () {
+                  record = {
+                    ...record,
+                    transfer,
+                    message:
+                      transfer.completedFiles === transfer.totalFiles
+                        ? "Workspace files uploaded. Preparing cloud execution."
+                        : "Uploading workspace files to the cloud.",
+                  };
+                  yield* save(record);
+                }),
+              );
+
               record = {
                 ...record,
                 inputSnapshotId,
@@ -401,7 +432,19 @@ export class CloudReviews extends Context.Service<
                     message:
                       "Local evidence changed after this transfer. Cloud results cannot replace the current workspace.",
                   });
-                yield* sandbox.download(record, output);
+                yield* sandbox.download(record, output, (transfer) =>
+                  Effect.gen(function* () {
+                    record = {
+                      ...record,
+                      transfer,
+                      message:
+                        transfer.completedFiles === transfer.totalFiles
+                          ? "Result files downloaded and verified. Preparing workspace import."
+                          : "Downloading cloud result files.",
+                    };
+                    yield* save(record);
+                  }),
+                );
                 // A lost connection is never proof that the other owner has stopped.
                 yield* sandbox.stop(record);
                 record = {

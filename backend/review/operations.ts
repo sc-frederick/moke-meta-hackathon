@@ -12,6 +12,9 @@ import {
   ReviewCommand,
   ReviewInputError,
   ReviewError,
+  SheetLabelSuggestion,
+  SheetLabelSuggestions,
+  SuggestSheetLabels,
 } from "#lib/review/contracts.ts";
 import { ExecutionError } from "#lib/review/execution.ts";
 import type { Documents } from "../documents/documents.ts";
@@ -153,6 +156,38 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
         ),
       ),
     );
+  });
+
+  const suggestSheetLabels = Effect.fn("Review.suggestSheetLabels")(function* (
+    request: typeof SuggestSheetLabels.Type,
+  ) {
+    if (config.documents === undefined) return yield* unavailable();
+    const state = yield* snapshot(request.projectId, 0);
+    const revision = state.revisions.find((item) => item.id === request.revisionId);
+
+    if (revision === undefined)
+      return yield* new ReviewInputError({ message: "The revision is outside this project." });
+    const sheets = state.sheets.filter((sheet) => sheet.revisionId === revision.id);
+
+    const inspected = sheets.some((sheet) => sheet.label === `Page ${sheet.pageIndex + 1}`)
+      ? yield* config.documents.inspectStored(revision.sha256)
+      : undefined;
+
+    return new SheetLabelSuggestions({
+      revisionId: revision.id,
+      proposals: sheets.map((sheet) => {
+        const generic = sheet.label === `Page ${sheet.pageIndex + 1}`;
+        const candidate = inspected?.pages.find((page) => page.pageIndex === sheet.pageIndex);
+        const proposedLabel = generic && candidate?.label !== sheet.label ? candidate?.label : null;
+
+        return new SheetLabelSuggestion({
+          sheetId: sheet.id,
+          currentLabel: sheet.label,
+          proposedLabel: proposedLabel ?? null,
+          status: !generic ? "preserved" : proposedLabel ? "suggested" : "unresolved",
+        });
+      }),
+    });
   });
 
   const toExecution = <A>(operation: Effect.Effect<A, typeof ReviewError.Type>) =>
@@ -452,6 +487,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
     render: source,
     chunk,
     importPdf,
+    suggestSheetLabels,
     port,
   };
 }

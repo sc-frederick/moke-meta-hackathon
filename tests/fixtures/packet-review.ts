@@ -58,12 +58,58 @@ class FixtureApi extends Context.Service<
 >()("test/PacketReviewFixture") {}
 
 /** Open the real packet service, SQLite store, and PDF worker under one owned runtime. */
+/** Text the host returns when a reviewer calls finish_review before coverage is recorded. */
+export const coverageGateText = "Coverage is incomplete, so this review is not finished yet.";
+
+/**
+ * Scripted reviewers in most tests finish early. Answer the bounded coverage gate by repeating the
+ * script's own finish_review call so those tests keep their behavior; the gate has its own tests.
+ */
+const GateRequest = Schema.fromJsonString(
+  Schema.Struct({
+    input: Schema.optionalKey(
+      Schema.Array(
+        Schema.Struct({
+          type: Schema.optionalKey(Schema.String),
+          name: Schema.optionalKey(Schema.String),
+          arguments: Schema.optionalKey(Schema.fromJsonString(Schema.Json)),
+          output: Schema.optionalKey(Schema.Json),
+        }),
+      ),
+    ),
+  }),
+);
+
+export function acceptCoverageGate(transport: ProviderTransport): ProviderTransport {
+  return async (input, init) => {
+    const decoded = Schema.decodeUnknownOption(GateRequest)(init?.body);
+    const items = Option.isSome(decoded) ? (decoded.value.input ?? []) : [];
+    const last = items.at(-1);
+
+    const finish = items.findLast(
+      (item) => item.type === "function_call" && item.name === "finish_review",
+    );
+
+    if (
+      last?.type === "function_call_output" &&
+      JSON.stringify(last.output ?? "").includes(coverageGateText) &&
+      finish?.arguments !== undefined
+    )
+      return response([{ name: "finish_review", arguments: finish.arguments }]);
+
+    return await transport(input, init);
+  };
+}
+
 export async function open(
   directory: string,
-  transport: ProviderTransport,
+  rawTransport: ProviderTransport,
   setup = true,
   afterRun?: <A>(value: A) => Promise<void>,
+  gate: "accept" | "observe" = "accept",
 ) {
+  const transport = gate === "accept" ? acceptCoverageGate(rawTransport) : rawTransport;
+
   let enter: <A, E>(operation: Effect.Effect<A, E>, options?: Effect.RunOptions) => Promise<A> =
     Effect.runPromise;
 

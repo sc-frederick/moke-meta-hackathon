@@ -46,9 +46,16 @@ conversations. The installed Meta catalog gives Spark 1.3 and Wonder a
 context window in its [model catalog](https://dev.meta.ai/docs/models). Baseten
 advertises a [1M-token context for Spark Open](https://www.baseten.co/blog/muse-spark-open-launch/)
 but does not publish a separate serving output ceiling there. The desktop leaves
-Baseten's output parameter at its API default instead of imposing the older
-4,096-token application limit. These capability sources were checked on
-2026-10-28.
+Baseten's output parameter at its API default by using the ordinary stream path;
+the SDK's simple stream would insert a context-sized output limit. The public
+[Chat Completions reference](https://docs.baseten.co/reference/inference-api/chat-completions)
+documents a 4,096-token default for `max_tokens`. The dated hackathon variant's
+separate limit for `max_completion_tokens` is not established by that reference.
+The adapter sets neither field for Baseten packet requests and retains explicit
+high reasoning. Request-shape captures verify both completion entrypoints.
+These capability sources were checked on 2026-10-29. The output-policy correction
+does not establish the cause of the observed provider timeout or guarantee review
+completion.
 
 A packet review defaults to no application call ceiling. An optional user call
 budget counts model and SAM requests together. Reaching it pauses work and keeps

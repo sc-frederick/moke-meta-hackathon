@@ -1,6 +1,6 @@
 import type { Effect, Stream } from "effect";
 import type { InferenceConfiguration } from "#lib/backend-rpc.ts";
-import type { CloudReviewError } from "#lib/review/cloud.ts";
+import type { CloudReviewError, CloudTransferProgress } from "#lib/review/cloud.ts";
 import type { CloudReviewRecord } from "./contracts.ts";
 import type { CloudRecoveredWorkerProgress } from "./progress.ts";
 
@@ -16,6 +16,7 @@ export interface CloudSandboxPort {
   readonly upload: (
     record: CloudReviewRecord,
     source: string,
+    report: (progress: typeof CloudTransferProgress.Type) => Effect.Effect<void, CloudReviewError>,
   ) => Effect.Effect<string, CloudReviewError>;
   readonly dispatch: (
     record: CloudReviewRecord,
@@ -28,6 +29,7 @@ export interface CloudSandboxPort {
   readonly download: (
     record: CloudReviewRecord,
     destination: string,
+    report: (progress: typeof CloudTransferProgress.Type) => Effect.Effect<void, CloudReviewError>,
   ) => Effect.Effect<void, CloudReviewError>;
   /** This only succeeds once the original execution sandbox is confirmed terminated. */
   readonly stop: (record: CloudReviewRecord) => Effect.Effect<void, CloudReviewError>;

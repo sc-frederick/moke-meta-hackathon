@@ -200,46 +200,46 @@ test("the generic SDK completion entrypoint uses the same native output and reas
   expect(session.receipts).toHaveLength(1);
 });
 
-test("packet Spark Open uses only its Baseten credential and exact hackathon model route", async () => {
-  const session = fixture("baseten");
+test.each(["simple", "generic"] as const)(
+  "packet Spark Open preserves provider output defaults through %s",
+  async (entrypoint) => {
+    const session = fixture("baseten");
 
-  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
-    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
-  );
+    const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      entrypoint === "simple"
+        ? session.admitted.models.completeSimple(session.model, shortContext, { telemetry })
+        : session.admitted.models.complete(session.model, shortContext, { telemetry }),
+    );
 
-  expect(answer.stopReason).toBe("stop");
-  expect(answer.usage.output).toBe(6000);
-  expect(session.requests).toHaveLength(1);
-  const captured = session.requests[0];
+    expect(answer.stopReason).toBe("stop");
+    expect(answer.usage.output).toBe(6000);
+    expect(session.requests).toHaveLength(1);
+    const captured = session.requests[0];
 
-  if (!captured) throw new Error("No Baseten request reached transport");
+    if (!captured) throw new Error("No Baseten request reached transport");
 
-  const wire = Schema.decodeUnknownSync(
-    Schema.fromJsonString(
-      Schema.Struct({
-        model: Schema.String,
-        reasoning_effort: Schema.String,
-        max_tokens: Schema.optional(Schema.Int),
-        max_completion_tokens: Schema.optional(Schema.Int),
-      }),
-    ),
-  )(captured.body);
+    const wire = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          model: Schema.String,
+          reasoning_effort: Schema.String,
+          max_tokens: Schema.optional(Schema.Int),
+          max_completion_tokens: Schema.optional(Schema.Int),
+        }),
+      ),
+    )(captured.body);
 
-  expect(captured.url).toBe("https://inference.baseten.co/v1/chat/completions");
-  expect(captured.authorization).toBe("Bearer packet-baseten-fixture-key");
-  expect(wire.model).toBe("meta-models/muse-spark-open-1026");
-  expect(wire.reasoning_effort).toBe("high");
-  expect(session.admitted.capabilities.contextWindow).toBe(1048576);
-  // This records the SDK's context-fit default, not a claimed published Baseten output maximum.
-  const sdkDefault = wire.max_tokens ?? wire.max_completion_tokens;
+    expect(captured.url).toBe("https://inference.baseten.co/v1/chat/completions");
+    expect(captured.authorization).toBe("Bearer packet-baseten-fixture-key");
+    expect(wire.model).toBe("meta-models/muse-spark-open-1026");
+    expect(wire.reasoning_effort).toBe("high");
+    expect(session.admitted.capabilities.contextWindow).toBe(1048576);
+    expect(wire.max_tokens).toBeUndefined();
+    expect(wire.max_completion_tokens).toBeUndefined();
 
-  if (sdkDefault !== undefined) {
-    expect(sdkDefault).toBeGreaterThan(8192);
-    expect(sdkDefault).toBeLessThanOrEqual(session.admitted.capabilities.contextWindow);
-  }
-
-  expect(session.receipts).toHaveLength(1);
-});
+    expect(session.receipts).toHaveLength(1);
+  },
+);
 
 test("only packet review admits the actual compaction summarize phase while invalid phases stay blocked", async () => {
   const phase = {

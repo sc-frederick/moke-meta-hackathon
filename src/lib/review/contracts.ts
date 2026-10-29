@@ -104,6 +104,30 @@ export class Sheet extends Schema.Class<Sheet>("Sheet")({
   coverage: Schema.Literals(["unreviewed", "partial", "reviewer_complete"]),
 }) {}
 
+/** Advisory stored-PDF names are separate from sheet verification and count coverage. */
+export class SheetLabelSuggestion extends Schema.Class<SheetLabelSuggestion>(
+  "SheetLabelSuggestion",
+)({
+  sheetId: SheetId,
+  currentLabel: Label,
+  proposedLabel: Schema.NullOr(Label),
+  status: Schema.Literals(["suggested", "unresolved", "preserved"]),
+}) {}
+
+/** One read-only inspection proposes names without changing the existing inventory. */
+export class SheetLabelSuggestions extends Schema.Class<SheetLabelSuggestions>(
+  "SheetLabelSuggestions",
+)({
+  revisionId: RevisionId,
+  proposals: Schema.Array(SheetLabelSuggestion).check(Schema.isMaxLength(200)),
+}) {}
+
+/** Name suggestions are scoped to an immutable revision owned by the requested project. */
+export const SuggestSheetLabels = Schema.Struct({ projectId: ProjectId, revisionId: RevisionId });
+
+/** Explicit reviewer metadata edits replace only generic page labels. */
+export const SuggestedSheetLabel = Schema.Struct({ sheetId: SheetId, label: Label });
+
 /** Image provenance includes both directions of the complete PDF-to-raster map. */
 export class Artifact extends Schema.Class<Artifact>("Artifact")({
   id: ArtifactId,
@@ -302,6 +326,11 @@ export const ReviewCommand = Schema.Union([
     label: Label,
     coverage: Sheet.fields.coverage,
   }),
+  Schema.TaggedStruct("ApplySheetLabels", {
+    ...ScopedCommand,
+    revisionId: RevisionId,
+    labels: Schema.NonEmptyArray(SuggestedSheetLabel).check(Schema.isMaxLength(200)),
+  }),
   Schema.TaggedStruct("CreateFinding", {
     ...ScopedCommand,
     title: Label,
@@ -398,6 +427,11 @@ export class ReviewRpc extends RpcGroup.make(
   Rpc.make("ReviewCommand", {
     payload: { command: ReviewCommand },
     success: CommandReceipt,
+    error: ReviewError,
+  }),
+  Rpc.make("SuggestSheetLabels", {
+    payload: SuggestSheetLabels,
+    success: SheetLabelSuggestions,
     error: ReviewError,
   }),
   Rpc.make("RenderSource", { payload: RenderSource, success: Artifact, error: ReviewError }),

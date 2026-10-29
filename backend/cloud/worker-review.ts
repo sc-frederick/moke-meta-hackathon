@@ -18,27 +18,52 @@ export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
   if ("kind" in request) {
     const started = yield* application.packets.start(request);
 
-    const progress = (review: typeof started) =>
+    const packetProgress = (
+      review: typeof started,
+      stage: "reviewing" | "preparing-results" | "results-ready",
+    ) => {
+      const lastOpenedId = review.inspectedSheetIds.at(-1);
+      const lastOpened = review.sheets.find((sheet) => sheet.id === lastOpenedId);
+
+      const packet = {
+        id: review.id,
+        projectId: review.projectId,
+        conversationId: review.conversationId,
+        model: review.model,
+        state: review.state,
+        version: review.version,
+        admittedCalls: review.admittedCalls,
+        projectName: review.projectName,
+        openedSheets: review.inspectedSheetIds.length,
+        totalSheets: review.sheets.length,
+        findings: review.findings.length,
+        recordedPasses: packetCoverageProgress(review).recorded,
+        totalPasses: packetCoverageProgress(review).total,
+        changedAt: review.changedAt,
+        stage,
+        activity: review.state === "running" ? (review.activity ?? null) : null,
+      };
+
+      return lastOpened === undefined
+        ? packet
+        : {
+            ...packet,
+            lastOpenedDrawing: `${lastOpened.label || `Page ${lastOpened.pageIndex + 1}`} · ${lastOpened.documentName}`,
+          };
+    };
+
+    const progress = (
+      review: typeof started,
+      stage: "reviewing" | "preparing-results" = "reviewing",
+    ) =>
       publish({
         phase: "running",
         execution: null,
-        packet: {
-          id: review.id,
-          projectId: review.projectId,
-          conversationId: review.conversationId,
-          model: review.model,
-          state: review.state,
-          version: review.version,
-          admittedCalls: review.admittedCalls,
-          projectName: review.projectName,
-          openedSheets: review.inspectedSheetIds.length,
-          totalSheets: review.sheets.length,
-          findings: review.findings.length,
-          recordedPasses: packetCoverageProgress(review).recorded,
-          totalPasses: packetCoverageProgress(review).total,
-          changedAt: review.changedAt,
-        },
-        message: `Cloud review ${review.state}; ${review.admittedCalls} review calls admitted.`,
+        packet: packetProgress(review, stage),
+        message:
+          stage === "preparing-results"
+            ? "Saving the result package before download."
+            : `Cloud review ${review.state}; ${review.admittedCalls} review calls admitted.`,
       });
 
     yield* progress(started);
@@ -49,27 +74,16 @@ export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
       Effect.timeout(timeoutMs),
       Effect.catchTag("TimeoutError", () => application.packets.quiesce),
     );
+    yield* progress(
+      yield* application.packets.get(request.projectId, started.id),
+      "preparing-results",
+    );
     yield* application.exportPackage(destination, cloudPackageLimits);
     const finished = yield* application.packets.get(request.projectId, started.id);
     yield* publish({
       phase: "ready",
       execution: null,
-      packet: {
-        id: finished.id,
-        projectId: finished.projectId,
-        conversationId: finished.conversationId,
-        model: finished.model,
-        state: finished.state,
-        version: finished.version,
-        admittedCalls: finished.admittedCalls,
-        projectName: finished.projectName,
-        openedSheets: finished.inspectedSheetIds.length,
-        totalSheets: finished.sheets.length,
-        findings: finished.findings.length,
-        recordedPasses: packetCoverageProgress(finished).recorded,
-        totalPasses: packetCoverageProgress(finished).total,
-        changedAt: finished.changedAt,
-      },
+      packet: packetProgress(finished, "results-ready"),
       message:
         finished.state === "completed"
           ? "The cloud review finished. Findings and sources will sync automatically."
@@ -111,6 +125,11 @@ export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
     Effect.timeout(timeoutMs),
     Effect.catchTag("TimeoutError", () => application.execution.quiesce),
   );
+  yield* publish({
+    phase: "running",
+    execution: yield* application.execution.status(request.projectId, started.runId),
+    message: "Saving the result package before download.",
+  });
   yield* application.exportPackage(destination, cloudPackageLimits);
   const finished = yield* application.execution.status(request.projectId, started.runId);
   yield* publish({

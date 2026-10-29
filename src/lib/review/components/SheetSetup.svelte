@@ -1,6 +1,11 @@
 <script lang="ts">
   import { Option, Schema } from "effect";
-  import type { Sheet } from "#lib/review/contracts.ts";
+  import type {
+    RevisionId,
+    Sheet,
+    SheetLabelSuggestions,
+    SuggestedSheetLabel,
+  } from "#lib/review/contracts.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import { sheetCaption } from "./review-format.ts";
   import SheetThumbnail from "./SheetThumbnail.svelte";
@@ -15,6 +20,8 @@
     onPreview,
     onCreate,
     loadThumbnail,
+    onSuggestLabels,
+    onApplyLabels,
   }: {
     sheets: ReadonlyArray<Sheet>;
     busy: boolean;
@@ -27,6 +34,11 @@
     onConfirm: (sheet: Sheet, label: string, coverage: Sheet["coverage"]) => Promise<void>;
     onPreview: (sheet: Sheet) => void;
     loadThumbnail?: (sheet: Sheet) => Promise<string | null>;
+    onSuggestLabels?: () => Promise<SheetLabelSuggestions | null>;
+    onApplyLabels?: (
+      revisionId: typeof RevisionId.Type,
+      labels: ReadonlyArray<typeof SuggestedSheetLabel.Type>,
+    ) => Promise<boolean>;
     onCreate: (input: {
       title: string;
       objectClass: string;
@@ -36,13 +48,77 @@
     }) => Promise<boolean>;
   } = $props();
 
-  const confirmed = $derived(sheets.filter((sheet) => sheet.confirmed));
   let title = $state("");
   let objectClass = $state("");
   let drawnSheetId = $state("");
   let scheduledSheetId = $state("");
   let applicabilityConfirmed = $state(false);
+  let labelsVerified = $state(false);
+
+  // Counts are accepted only on verified sheets, so unverified sources are verified in this flow.
+  const unverifiedSources = $derived(
+    sheets.filter(
+      (sheet) => !sheet.confirmed && (sheet.id === drawnSheetId || sheet.id === scheduledSheetId),
+    ),
+  );
+
   let query = $state("");
+  let readingLabels = $state(false);
+  let applyingLabels = $state(false);
+  let labelSuggestions = $state<SheetLabelSuggestions | null>(null);
+  let labelNotice = $state<{ revisionId: typeof RevisionId.Type; text: string } | null>(null);
+
+  const genericSheets = $derived(
+    sheets.filter((sheet) => sheet.label === `Page ${sheet.pageIndex + 1}`),
+  );
+
+  const visibleSuggestions = $derived(
+    labelSuggestions?.revisionId === sheets[0]?.revisionId ? labelSuggestions : null,
+  );
+
+  const applicableSuggestions = $derived(
+    visibleSuggestions?.proposals.flatMap((proposal) => {
+      const current = sheets.find((sheet) => sheet.id === proposal.sheetId);
+
+      return proposal.status === "suggested" &&
+        proposal.proposedLabel &&
+        current?.label === proposal.currentLabel &&
+        current.label === `Page ${current.pageIndex + 1}`
+        ? [{ sheetId: current.id, label: proposal.proposedLabel }]
+        : [];
+    }) ?? [],
+  );
+
+  async function suggestNames() {
+    if (!onSuggestLabels) return;
+    readingLabels = true;
+    labelNotice = null;
+
+    try {
+      labelSuggestions = await onSuggestLabels();
+    } finally {
+      readingLabels = false;
+    }
+  }
+
+  async function applyNames() {
+    if (!onApplyLabels || !visibleSuggestions || applicableSuggestions.length === 0) return;
+    const revisionId = visibleSuggestions.revisionId;
+    const labels = applicableSuggestions;
+    applyingLabels = true;
+
+    try {
+      if (await onApplyLabels(revisionId, labels)) {
+        labelSuggestions = null;
+        labelNotice = {
+          revisionId,
+          text: `${labels.length} sheet ${labels.length === 1 ? "name" : "names"} applied. Confirmation and count-check coverage are unchanged.`,
+        };
+      }
+    } finally {
+      applyingLabels = false;
+    }
+  }
 
   const filteredSheets = $derived(
     sheets.filter((sheet) =>
@@ -76,6 +152,78 @@
       Import a drawing PDF to begin. Earlier revisions stay in the project.
     </p>
   {:else}
+    {#if onSuggestLabels && onApplyLabels}
+      <div class="name-tools">
+        <button
+          type="button"
+          data-testid="read-sheet-labels"
+          disabled={busy || readingLabels || applyingLabels || genericSheets.length === 0}
+          onclick={suggestNames}
+          >{readingLabels ? "Reading sheet names…" : "Read sheet names"}</button
+        >
+        <small class="muted"
+          >{genericSheets.length > 0
+            ? "Suggest names from this stored PDF. Custom labels and count verification stay unchanged."
+            : "All sheets already have names. Custom labels are preserved."}</small
+        >
+      </div>
+      {#if labelNotice?.revisionId === sheets[0]?.revisionId}<p class="label-notice" role="status">
+          {labelNotice?.text}
+        </p>{/if}
+      {#if visibleSuggestions}
+        <section class="name-suggestions" aria-label="Suggested sheet names">
+          <div class="section-heading">
+            <h3>Suggested sheet names</h3>
+            <button
+              class="dismiss-suggestions"
+              type="button"
+              disabled={applyingLabels}
+              onclick={() => (labelSuggestions = null)}>Dismiss</button
+            >
+          </div>
+          <p class="muted">
+            Review names before applying. Unconfirmed sheet names remain advisory; applying names
+            does not confirm sheets or change count coverage.
+          </p>
+          <div class="suggestion-table">
+            <table>
+              <thead><tr><th>Current label</th><th>Suggested name</th></tr></thead>
+              <tbody>
+                {#each visibleSuggestions.proposals as proposal (proposal.sheetId)}
+                  <tr data-testid={`sheet-label-proposal-${proposal.sheetId}`}>
+                    <td>{proposal.currentLabel}</td>
+                    <td
+                      >{proposal.status === "preserved"
+                        ? "Keep existing label"
+                        : (proposal.proposedLabel ?? "No unambiguous name found")}</td
+                    >
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          {#if applicableSuggestions.length === 0}<p role="status">
+              No sheet names can be applied. Existing labels stay in place.
+            </p>{/if}
+          <div class="name-apply">
+            <small class="muted"
+              >{applicableSuggestions.length}
+              {applicableSuggestions.length === 1 ? "generic label" : "generic labels"} will change</small
+            >
+            <button
+              type="button"
+              data-testid="apply-sheet-labels"
+              disabled={busy ||
+                readingLabels ||
+                applyingLabels ||
+                applicableSuggestions.length === 0}
+              onclick={applyNames}
+              >{applyingLabels ? "Applying sheet names…" : "Apply suggested names"}</button
+            >
+          </div>
+        </section>
+      {/if}
+    {/if}
     <label class="sheet-search"
       >Find a sheet<input
         type="search"
@@ -195,13 +343,14 @@
                 Only for verified count comparisons. Discipline assignment does not confirm source
                 coverage.
               </p>
-              <label
-                >Count-check coverage<select name="coverage" value={sheet.coverage}
+              <div class="coverage-field">
+                <label for={`sheet-coverage-${sheet.id}`}>Count-check coverage</label>
+                <select id={`sheet-coverage-${sheet.id}`} name="coverage" value={sheet.coverage}
                   ><option value="unreviewed">Not reviewed yet</option><option value="partial"
                     >Part of the sheet</option
                   ><option value="reviewer_complete">The whole sheet</option></select
-                ></label
-              >
+                >
+              </div>
               <button type="submit" disabled={busy} data-testid={`confirm-sheet-${sheet.id}`}
                 >{sheet.confirmed
                   ? "Update verification"
@@ -220,6 +369,7 @@
       data-testid="create-finding-form"
       onsubmit={async (event) => {
         event.preventDefault();
+        for (const sheet of unverifiedSources) await onConfirm(sheet, sheet.label, sheet.coverage);
         const created = await onCreate({
           title: title.trim(),
           objectClass: objectClass.trim(),
@@ -232,6 +382,7 @@
           title = "";
           objectClass = "";
           applicabilityConfirmed = false;
+          labelsVerified = false;
         }
       }}
     >
@@ -258,32 +409,45 @@
         /></label
       >
       <label
-        >Drawing sheet<select bind:value={drawnSheetId} required
-          ><option value="">Choose confirmed sheet…</option
-          >{#each confirmed as sheet (sheet.id)}<option value={sheet.id}>{sheet.label}</option
+        >Drawing sheet<select
+          bind:value={drawnSheetId}
+          onchange={() => (labelsVerified = false)}
+          required
+          ><option value="">Choose sheet…</option>{#each sheets as sheet (sheet.id)}<option
+              value={sheet.id}>{sheet.label}{sheet.confirmed ? "" : " · label unverified"}</option
             >{/each}</select
         ></label
       >
       <label
-        >Schedule sheet<select bind:value={scheduledSheetId} required
-          ><option value="">Choose confirmed sheet…</option
-          >{#each confirmed as sheet (sheet.id)}<option value={sheet.id}>{sheet.label}</option
+        >Schedule sheet<select
+          bind:value={scheduledSheetId}
+          onchange={() => (labelsVerified = false)}
+          required
+          ><option value="">Choose sheet…</option>{#each sheets as sheet (sheet.id)}<option
+              value={sheet.id}>{sheet.label}{sheet.confirmed ? "" : " · label unverified"}</option
             >{/each}</select
         ></label
       >
+      {#if unverifiedSources.length > 0}<label class="checkbox"
+          ><input
+            type="checkbox"
+            bind:checked={labelsVerified}
+            required
+            data-testid="verify-count-sources"
+          />I checked that {unverifiedSources.map((sheet) => sheet.label).join(" and ")}
+          {unverifiedSources.length === 1 ? "is the correct sheet" : "are the correct sheets"} for this
+          count</label
+        >{/if}
       <label class="checkbox"
         ><input type="checkbox" bind:checked={applicabilityConfirmed} required />Both sources apply
         to the same items and area</label
       >
-      {#if confirmed.length === 0}<p class="muted">
-          Confirm at least one source sheet above first.
-        </p>{/if}
       <div class="actions">
         <button type="button" onclick={() => (createOpen = false)}>Cancel</button><button
           class="primary"
           type="submit"
           data-testid="create-finding-submit"
-          disabled={busy || confirmed.length === 0}>Create check</button
+          disabled={busy}>Create check</button
         >
       </div>
     </form>
@@ -320,6 +484,68 @@
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+  .name-tools,
+  .name-apply {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .name-tools small {
+    flex: 1;
+    min-width: 180px;
+    line-height: 1.5;
+  }
+  .name-suggestions {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--nd-hairline-strong);
+    border-radius: 6px;
+    background: var(--nd-panel);
+  }
+  .name-suggestions h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .name-suggestions p {
+    font-size: 12px;
+  }
+  .dismiss-suggestions {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .suggestion-table {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    text-align: left;
+  }
+  th,
+  td {
+    padding: 8px;
+    border-bottom: 1px solid var(--nd-hairline);
+    overflow-wrap: anywhere;
+  }
+  th {
+    color: var(--nd-ink-muted);
+    font-size: 11px;
+    font-weight: 400;
+  }
+  td:first-child {
+    width: 35%;
+  }
+  .name-apply {
+    justify-content: space-between;
+  }
+  .label-notice {
+    color: var(--nd-ink-muted);
+    font-size: 12px;
   }
   .sheet-row {
     display: grid;
@@ -405,7 +631,8 @@
     border-top: 1px solid var(--nd-hairline);
     padding: 20px 0 0;
   }
-  label {
+  label,
+  .coverage-field {
     display: grid;
     gap: 6px;
     line-height: 1.5;

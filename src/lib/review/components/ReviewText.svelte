@@ -14,7 +14,7 @@
   {#each text.split("\n") as line, index (index)}
     {#if /^#{1,6}\s/.test(line)}<h4>{@render inline(line.replace(/^#{1,6}\s+/, ""))}</h4>
     {:else if /^\s*[-*]\s/.test(line)}<p class="list-item">
-        <span aria-hidden="true">• </span>{@render inline(line.replace(/^\s*[-*]\s+/, ""))}
+        <span aria-hidden="true">{"• "}</span>{@render inline(line.replace(/^\s*[-*]\s+/, ""))}
       </p>
     {:else if line.trim()}<p>{@render inline(line)}</p>{/if}
   {/each}

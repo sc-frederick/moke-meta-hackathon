@@ -19,6 +19,10 @@ export class Documents extends Context.Service<
     readonly importPdf: (
       source: string,
     ) => Effect.Effect<ImportedPdf, DocumentError | ReviewStorageError>;
+    /** Reinspect verified immutable bytes without adding a revision or replacing its inventory. */
+    readonly inspectStored: (
+      sha256: string,
+    ) => Effect.Effect<ImportedPdf, DocumentError | ReviewStorageError>;
     readonly render: (
       originalSha256: string,
       sheet: Sheet,
@@ -74,6 +78,29 @@ export class Documents extends Context.Service<
                 return new ImportedPdf({
                   sha256: stored.sha256,
                   byteLength: stored.byteLength,
+                  pages: inspected.pages,
+                });
+              }),
+            ),
+
+          inspectStored: (sha256) =>
+            withPdfJob((worker) =>
+              Effect.gen(function* () {
+                const verified = yield* readArtifactChunk(
+                  config.dataDirectory,
+                  sha256,
+                  "application/pdf",
+                  0,
+                  1,
+                );
+
+                const pdfPath = artifactPath(config.dataDirectory, sha256, "application/pdf");
+                yield* validatePdfSource(pdfPath);
+                const inspected = yield* workerInspect(worker, pdfPath);
+
+                return new ImportedPdf({
+                  sha256,
+                  byteLength: verified.totalBytes,
                   pages: inspected.pages,
                 });
               }),

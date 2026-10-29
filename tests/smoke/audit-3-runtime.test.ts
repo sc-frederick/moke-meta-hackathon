@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { Artifact, SheetId } from "#lib/review/contracts.ts";
 import { PacketReview } from "#lib/review/packet.ts";
 import {
+  coverageGateText,
   decodeRequest,
   id,
   open,
@@ -125,6 +126,10 @@ test.each([
   "no battery calculations or NAC voltage-drop tables",
   "no schedules",
   "no matrices",
+  "not located",
+  "not found",
+  "lacking input labels",
+  "clipped in the supplied PDF",
 ] as const)(
   "an absence claim (%s) requires source search even as a Needs input recommendation",
   async (wording) => {
@@ -399,6 +404,133 @@ test("a Spark Open tool batch retains eight fresh images and rejects the ninth b
     expect(final.evidenceIds).toHaveLength(8);
     expect(final.inspectedSheetIds).toEqual([page]);
     expect(final.providerFailure).toBeNull();
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30000);
+
+test.each([
+  { maxCalls: undefined, rejections: 1 },
+  { maxCalls: 6, rejections: 0 },
+] as const)(
+  "an early finish is returned for unopened sheets once unless the user set a call budget (%j)",
+  async ({ maxCalls, rejections }) => {
+    const directory = await mkdtemp(join(tmpdir(), "moke-audit3-finish-gate-"));
+    let step = 0;
+    let history: ReadonlyArray<string> = [];
+
+    const finish = (summary: string) =>
+      response([{ name: "finish_review", arguments: { summary, missingInputs: [] } }]);
+
+    const session = await open(
+      directory,
+      async (_url, init) => {
+        history = strings(decodeRequest(init));
+
+        if (step === 0) {
+          step++;
+
+          return response([{ name: "inventory_packet", arguments: {} }]);
+        }
+
+        // Finish immediately; an unbudgeted review is sent back until the gate gives up.
+        if (step <= rejections + 1) {
+          step++;
+
+          return finish(step > rejections + 1 ? "Finished with recorded gaps." : "Early finish");
+        }
+
+        return response([], "Finished with recorded gaps.");
+      },
+      true,
+      undefined,
+      "observe",
+    );
+
+    try {
+      const request = await session.request(
+        "Review the whole set.",
+        maxCalls === undefined ? undefined : { maxCalls },
+      );
+
+      const started = await session.run(session.packets.start(request));
+      const completed = await until(session, started.id, "completed");
+      expect(completed.finished).toBe(true);
+      expect(completed.summary).toBe("Finished with recorded gaps.");
+
+      const gates = history.filter((text) => text.includes(coverageGateText));
+      expect(gates).toHaveLength(rejections);
+
+      if (rejections > 0) {
+        expect(gates[0]).toContain("2 of 2 requested sheets were never opened");
+        expect(gates[0]).toContain("record_coverage_batch");
+        expect(gates[0]).toContain("That next call is accepted");
+      }
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  30000,
+);
+
+test("a cropped render tells the reviewer that content can continue past its edge", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-audit3-crop-note-"));
+  const notes: Array<string | undefined> = [];
+  let step = 0;
+  let inventory: PacketReview | undefined;
+
+  const session = await open(directory, async (_url, init) => {
+    const request = decodeRequest(init);
+
+    switch (step++) {
+      case 0:
+        return response([{ name: "inventory_packet", arguments: {} }]);
+      case 1: {
+        inventory = outputs(PacketReview, request).at(-1);
+        const sheet = inventory?.sheets[0];
+
+        if (!sheet) throw new Error("Missing source inventory");
+
+        return response([
+          {
+            name: "render_sheet",
+            arguments: {
+              sheetId: sheet.id,
+              region: { ...sheet.box, width: sheet.box.width / 2, height: sheet.box.height / 2 },
+            },
+          },
+        ]);
+      }
+
+      case 2:
+        notes.push(
+          outputs(Schema.Struct({ cropNote: Schema.optionalKey(Schema.String) }), request).at(-1)
+            ?.cropNote,
+        );
+
+        return response([
+          { name: "render_sheet", arguments: { sheetId: inventory?.sheets[0]?.id ?? "" } },
+        ]);
+      case 3:
+        notes.push(
+          outputs(Schema.Struct({ cropNote: Schema.optionalKey(Schema.String) }), request).at(-1)
+            ?.cropNote,
+        );
+
+        return response([], "Crop guidance observed.");
+      default:
+        return response([], "Crop guidance observed.");
+    }
+  });
+
+  try {
+    const request = await session.request("Review the whole set.", { maxCalls: 6 });
+    const started = await session.run(session.packets.start(request));
+    await until(session, started.id, "failed");
+    expect(notes[0]).toContain("can continue past its edges");
+    expect(notes[1]).toBeUndefined();
   } finally {
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
