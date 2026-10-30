@@ -465,7 +465,7 @@
     pointer-events: none;
   }
   .masks path {
-    fill: rgb(3 105 161 / 0.35);
+    fill: rgb(246 90 26 / 0.3);
   }
   .overlay {
     position: absolute;

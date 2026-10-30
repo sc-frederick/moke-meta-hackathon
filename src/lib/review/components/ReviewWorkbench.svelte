@@ -2784,7 +2784,7 @@
                 <div class="finding-evidence-actions">
                   {#if selectedPacketFinding.focus}{@const focus =
                       selectedPacketFinding.focus}<button
-                      class="ghost"
+                      class="evidence-action"
                       disabled={busy || sourceLoading || cloudBlocked}
                       onclick={() => openPacketFocus(focus)}
                       >SAM focus · {focus.segments.length}
