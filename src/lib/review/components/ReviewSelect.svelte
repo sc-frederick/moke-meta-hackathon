@@ -207,12 +207,11 @@
     color: inherit;
     padding: 6px 10px;
   }
-  .options button:hover:not(:disabled),
-  .options button:focus-visible {
+  .options button:hover:not(:disabled) {
     background: var(--color-slate);
-    box-shadow: none;
   }
   .options button:focus-visible {
+    background: var(--color-slate);
     box-shadow: inset 2px 0 0 var(--color-ember);
   }
   .options button[aria-selected="true"] {
