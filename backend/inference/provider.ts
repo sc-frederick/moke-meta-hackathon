@@ -97,7 +97,8 @@ async function refusedBeforeGeneration(response: Response) {
         chunks.push(part.value);
       }
     } finally {
-      await reader.cancel();
+      // Cancelling a clone settles only once the original body is read, which happens later.
+      void reader.cancel().catch(() => undefined);
     }
   }
 

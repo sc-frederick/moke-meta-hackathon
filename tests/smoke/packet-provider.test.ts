@@ -464,12 +464,17 @@ test.each([
             padding: "x".repeat(padding),
           });
 
-          // A streamed body has no Content-Length, so only the bytes read can bound it.
+          // A streamed body has no Content-Length, so only the bytes read can bound it. Chunks
+          // arrive on demand, so an oversized body still has unread chunks when reading stops.
+          const encoded = new TextEncoder().encode(body);
+          let offset = 0;
+
           return new Response(
             new ReadableStream({
-              start(controller) {
-                controller.enqueue(new TextEncoder().encode(body));
-                controller.close();
+              pull(controller) {
+                if (offset >= encoded.length) return controller.close();
+                controller.enqueue(encoded.slice(offset, offset + 1024));
+                offset += 1024;
               },
             }),
             { status: 404, headers: { "retry-after": "1", "content-type": "application/json" } },
