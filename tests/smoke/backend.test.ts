@@ -106,7 +106,7 @@ test("Bun owns typed APIs, authenticated access, recovery, persistence, and proc
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("missing migrations fail backend startup and preserve existing files", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "bun-startup-failure-"));
@@ -133,7 +133,7 @@ test("missing migrations fail backend startup and preserve existing files", asyn
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("a backend crash reports a failed typed call and notifies its owner", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "bun-crash-"));
@@ -168,7 +168,7 @@ test("a backend crash reports a failed typed call and notifies its owner", async
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("an unavailable backend executable returns a typed startup failure", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "bun-missing-executable-"));

@@ -174,5 +174,5 @@ test.each(["during-render", "during-next-inference"] as const)(
       await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );

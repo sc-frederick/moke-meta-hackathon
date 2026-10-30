@@ -135,7 +135,7 @@ test.each(["edition", "section", "other section", "document", "short quote", "su
       await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );
 
 test("resubmittal closure retains its revision target across an uninspected follow-up", async () => {
@@ -364,4 +364,4 @@ test("resubmittal closure retains its revision target across an uninspected foll
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);

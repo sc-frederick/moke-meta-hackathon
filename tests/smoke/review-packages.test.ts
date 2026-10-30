@@ -1182,7 +1182,7 @@ test("complete packages retain packet journals, evidence and both kinds of uncer
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("pre-packet packages remain readable when the new packet tables are absent", async () => {
   const root = await mkdtemp(join(tmpdir(), "legacy-packet-package-"));
@@ -1215,4 +1215,4 @@ test("pre-packet packages remain readable when the new packet tables are absent"
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);

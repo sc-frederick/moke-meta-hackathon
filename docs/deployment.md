@@ -13,7 +13,10 @@ as a `desktop-<OS>-<architecture>` artifact, available on the workflow run for s
 days. CI builds Windows NSIS installers, macOS DMG and ZIP files, and Linux
 AppImage and Debian packages using each runner's native architecture. Repository
 text files use LF line endings on every OS so Windows passes the same format
-checks.
+checks. Windows runner disk stalls have slowed tests tenfold for tens of seconds, so
+Windows CI keeps temporary files on the faster D: drive and gives smoke tests without
+their own limit 20 seconds instead of 5. Tests with their own limit allow for these
+stalls on every OS.
 
 Releases run from version tags matching package.json. They publish unsigned
 installers and SHA256SUMS to GitHub Releases after all builds succeed. Code signing and notarization are not

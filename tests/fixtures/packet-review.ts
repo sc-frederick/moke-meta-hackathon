@@ -319,9 +319,9 @@ export type Session = Awaited<ReturnType<typeof open>>;
 
 /** Await a public review state with a bounded timeout and immediate terminal-failure diagnostics. */
 export async function until(session: Session, reviewId: string, state: PacketReview["state"]) {
-  // Windows CI once stalled a 1-second review past 15 s. Stay under the usual 30-second test limit
+  // Windows CI has stalled 1-second reviews past 15 s. Stay under the usual 120-second test limit
   // so a real hang still reports this helper's state and error rather than a bare timeout.
-  const deadline = performance.now() + 25000;
+  const deadline = performance.now() + 100000;
 
   while (performance.now() < deadline) {
     const current = await session.run(session.packets.get(session.projectId, reviewId));

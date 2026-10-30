@@ -530,7 +530,7 @@ test("stale late proposals fail promotion and malformed tool args never reach th
     await malformed.runtime.dispose();
     await rm(malformedPath, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("compiled processes exclude a second owner and reacquire after SIGKILL", async () => {
   const path = await mkdtemp(join(tmpdir(), "review-owner-"));
@@ -571,7 +571,7 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function*(){ yield* acquireData
     await first.exited;
     await rm(path, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("compiled Pi process killed at dispatch reopens uncertain with zero extra sends", async () => {
   const path = await directory();
@@ -674,7 +674,7 @@ if(process.argv[2]==="start"||process.argv[2]==="bounded"){
     await first.exited;
     await rm(path, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("SDK error retry headers cannot bypass the one-send reservation", async () => {
   const path = await directory();
