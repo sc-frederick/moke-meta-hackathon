@@ -2304,9 +2304,8 @@
                     text={message.text}
                   />{:else if message.text === initialReview.text}<div class="preset-request">
                     <p>
-                      <strong>Initial Review</strong><span class="muted">
-                        · whole set · all disciplines · four passes</span
-                      >
+                      <strong>Initial Review</strong>
+                      <span class="muted">· whole set · all disciplines · four passes</span>
                     </p>
                     <details>
                       <summary>Show the full request</summary>
