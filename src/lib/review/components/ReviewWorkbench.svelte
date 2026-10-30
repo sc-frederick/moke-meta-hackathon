@@ -3224,7 +3224,7 @@
     letter-spacing: var(--tracking-wider);
     text-transform: uppercase;
   }
-  .menu-section-label:not(:first-child) {
+  .finding-row + .menu-section-label {
     margin-top: var(--space-xs);
     padding-top: var(--space-sm);
     border-top: 1px solid var(--color-border);
@@ -3700,7 +3700,8 @@
   }
   .source-tabs button {
     position: relative;
-    padding: var(--space-sm) 0;
+    margin-inline: calc(var(--space-2xs) * -1);
+    padding: var(--space-sm) var(--space-2xs);
     border: 0;
     background: transparent;
     color: var(--color-text-muted);
@@ -3714,8 +3715,8 @@
   .source-tabs button::after {
     content: "";
     position: absolute;
-    left: 0;
-    right: 0;
+    left: var(--space-2xs);
+    right: var(--space-2xs);
     bottom: -1px;
     height: 2px;
     background: transparent;
@@ -4000,6 +4001,9 @@
   .search-field input:focus-visible {
     background: transparent;
     box-shadow: none;
+  }
+  .search-field:has(input:focus-visible) {
+    border-bottom-color: var(--color-accent);
   }
   @media (max-width: 1180px) and (min-width: 701px) {
     .desktop.source-open .app-body {

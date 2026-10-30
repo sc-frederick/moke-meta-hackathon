@@ -212,6 +212,9 @@
     background: var(--color-slate);
     box-shadow: none;
   }
+  .options button:focus-visible {
+    box-shadow: inset 2px 0 0 var(--color-ember);
+  }
   .options button[aria-selected="true"] {
     color: var(--color-text);
   }

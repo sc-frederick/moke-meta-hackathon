@@ -26,10 +26,11 @@ layout. Components use the tokens directly; there is no second UI system.
   checkboxes, 8px for dialogs, menus and popovers. Borders are 1px hairlines.
   Only menus, popovers and dialogs use the floating shadow.
 - **Controls.** Buttons are uppercase Inter at 11px: Ember primary, hairline
-  secondary and ghost, 32px tall in toolbars and rows and 40px in dialogs.
-  Inputs are 40px Slate wells that take an Ember edge and halo on focus; the
-  selects inside sheet rows use the 32px button height so each row lines up. Checkboxes use Forge's clipped tick. Tabs use mono labels with a 2px
-  Ember underline.
+  secondary and ghost. They are 32px tall in toolbars and rows and 40px in
+  dialogs. Inputs are 40px Slate wells that take an Ember edge and halo on
+  focus; selects inside sheet rows use the 32px button height so each row lines
+  up. Checkboxes use Forge's clipped tick. Tabs use mono labels with a 2px Ember
+  underline.
 - **Icons.** Tabler outline icons only, at a 1.6 stroke (1.8 on Ember buttons).
   `src/lib/review/icons.ts` copies the official paths, and
   `tests/smoke/icons.test.ts` fails if any path drifts from `@tabler/icons`.
