@@ -2282,7 +2282,19 @@
                         "general"}</span
                     >{/if}
                 </div>
-                {#if message.role === "application"}<ReviewText text={message.text} />{:else}<p>
+                {#if message.role === "application"}<ReviewText
+                    text={message.text}
+                  />{:else if message.text === initialReview.text}<div class="preset-request">
+                    <p>
+                      <strong>Initial Review</strong><span class="muted">
+                        · whole set · all disciplines · four passes</span
+                      >
+                    </p>
+                    <details>
+                      <summary>Show the full request</summary>
+                      <p>{message.text}</p>
+                    </details>
+                  </div>{:else}<p>
                     {message.text}
                   </p>{/if}
                 {#if message.origin}<button
@@ -3363,6 +3375,15 @@
   .scope-select {
     min-width: 0;
     flex: 1;
+  }
+  .preset-request summary {
+    cursor: pointer;
+    margin-top: 6px;
+    color: var(--nd-ink-muted);
+    font-size: 13px;
+  }
+  .preset-request details p {
+    margin-top: 8px;
   }
   .initial-review {
     display: flex;
