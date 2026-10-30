@@ -221,29 +221,33 @@ export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* 
       }),
   });
 
+  // Count files a previous attempt already verified first, so a later failure keeps them counted.
+  const missing: Array<PackageFile> = [];
+
+  for (const file of files)
+    if (yield* downloadedCloudFileMatches(join(destination, file.path), file))
+      yield* progress.complete(file.bytes);
+    else missing.push(file);
+
   // Each completion saves the receipt, so reports stay in order while copies overlap.
   const reporting = yield* Semaphore.make(1);
 
   yield* Effect.forEach(
-    files,
+    missing,
     (file) =>
       Effect.gen(function* () {
         const local = join(destination, file.path);
-        let reused = false;
+        yield* reuse(file, local);
+        const reused = yield* downloadedCloudFileMatches(local, file);
 
-        if (!(yield* downloadedCloudFileMatches(local, file))) {
-          yield* reuse(file, local);
-          reused = yield* downloadedCloudFileMatches(local, file);
+        if (!reused) {
+          yield* copy(file, local);
 
-          if (!reused) {
-            yield* copy(file, local);
-
-            if (!(yield* downloadedCloudFileMatches(local, file)))
-              return yield* new CloudReviewError({
-                reason: "incompatible",
-                message: "A downloaded cloud file does not match the selected result package.",
-              });
-          }
+          if (!(yield* downloadedCloudFileMatches(local, file)))
+            return yield* new CloudReviewError({
+              reason: "incompatible",
+              message: "A downloaded cloud file does not match the selected result package.",
+            });
         }
 
         yield* progress.complete(file.bytes, reused).pipe(Semaphore.withPermit(reporting));
