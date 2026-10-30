@@ -399,7 +399,9 @@ const seedPacketReviews = async (
       ids.push({ id, journalId, state });
     }
   } finally {
-    database.close();
+    // close() keeps the files open until garbage collection finalizes the prepared statements,
+    // and Windows cannot delete open files. close(true) finalizes them now.
+    database.close(true);
   }
 
   return ids;
