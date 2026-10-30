@@ -437,3 +437,52 @@ test.each([true, false])(
     }
   },
 );
+
+test.each([
+  ["model_not_found", 2, "stop"],
+  ["unknown_route", 1, "error"],
+] as const)(
+  "a Meta 404 %s refusal is resent only when nothing was generated",
+  async (code, requests, stopReason) => {
+    let sent = 0;
+
+    const admitted = createAdmittedModels(
+      {
+        provider: "meta",
+        model: "muse-spark-1.3",
+        apiKey: Redacted.make("packet-meta-fixture-key"),
+        route: "recorded",
+        transport: async () => {
+          sent++;
+
+          return sent === 1
+            ? Response.json(
+                { error: { code, message: "The requested model was not found." } },
+                { status: 404, headers: { "retry-after": "1" } },
+              )
+            : response("meta");
+        },
+      },
+      {
+        packetReview: true,
+        maxInputTokens: 1048576,
+        maxOutputTokens: 256000,
+        begin: async () => null,
+        send: async () => undefined,
+        complete: async () => undefined,
+        end: async () => undefined,
+      },
+    );
+
+    const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+    if (!model) throw new Error("Fixture model not available");
+
+    const answer = await admitted.telemetry.startSpan(generation, (telemetry) =>
+      admitted.models.completeSimple(model, shortContext, { telemetry }),
+    );
+
+    expect(answer.stopReason).toBe(stopReason);
+    expect(sent).toBe(requests);
+  },
+);

@@ -72,6 +72,23 @@ interface MetaPayloadChanges {
 /** Provider refusals before generation: rate limits and missing serving capacity. */
 const retryableStatuses = new Set([429, 529]);
 
+const ModelNotFound = Schema.fromJsonString(
+  Schema.Struct({ error: Schema.Struct({ code: Schema.Literal("model_not_found") }) }),
+);
+
+/**
+ * Meta intermittently answers a served model with 404 `model_not_found` (about one request in
+ * eight for one team's key on 2026-10-30). Like a rate limit, nothing was generated.
+ */
+async function refusedBeforeGeneration(response: Response) {
+  if (retryableStatuses.has(response.status)) return true;
+
+  if (response.status !== 404 || Number(response.headers.get("content-length") ?? 0) > 16384)
+    return false;
+
+  return Option.isSome(Schema.decodeUnknownOption(ModelNotFound)(await response.clone().text()));
+}
+
 /** Wait before resending a refused request, honouring the provider's Retry-After seconds. */
 function refusalDelay(response: Response, retry: number) {
   const requested = Number(response.headers.get("retry-after"));
@@ -547,9 +564,9 @@ export function createAdmittedModels(
               const dispatch = configuration.transport ?? globalThis.fetch;
               let response = await dispatch(input, init);
 
-              // A rate-limit or capacity refusal happens before generation, so resending it
-              // cannot duplicate paid work. Parallel sheet reviewers rely on this backoff.
-              for (let retry = 0; retryableStatuses.has(response.status) && retry < 6; retry++) {
+              // A rate-limit, capacity or model-routing refusal happens before generation, so
+              // resending it cannot duplicate paid work. Parallel sheet reviewers rely on this.
+              for (let retry = 0; (await refusedBeforeGeneration(response)) && retry < 6; retry++) {
                 await response.body?.cancel();
                 await Bun.sleep(refusalDelay(response, retry));
                 init?.signal?.throwIfAborted();
