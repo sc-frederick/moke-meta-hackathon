@@ -59,7 +59,7 @@
   <div class="decision-actions">
     <button
       type="button"
-      class="save"
+      class="btn"
       disabled={disabled || !changed}
       onclick={() => onSave(verdict === "" ? null : { verdict, reason: reason.trim() })}
       >Save decision</button
@@ -73,53 +73,39 @@
 <style>
   .finding-decision {
     display: grid;
-    gap: 8px;
-    margin: 14px 0;
-    padding: 12px 0 0;
+    gap: var(--space-xs);
+    margin: var(--space-md) 0;
+    padding: var(--space-sm) 0 0;
     border: 0;
-    border-top: 1px solid var(--nd-hairline);
+    border-top: 1px solid var(--color-border);
   }
   legend {
     padding: 0;
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  .finding-decision > :global(.picker) {
+    justify-self: start;
   }
   textarea {
     width: 100%;
-    box-sizing: border-box;
     resize: vertical;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-shell);
-    color: var(--nd-ink);
-    padding: 8px 10px;
-    font-size: 13px;
-    line-height: 1.5;
   }
   .decision-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 10px;
-    font-size: 12px;
-  }
-  .save {
-    display: inline-flex;
-    align-items: center;
-    padding: 7px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--nd-hairline);
-    background: var(--nd-panel);
-    color: inherit;
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .save:not(:disabled):hover {
-    background: var(--nd-raised-hover);
   }
   .muted {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
   }
   .sr-only {
     position: absolute;

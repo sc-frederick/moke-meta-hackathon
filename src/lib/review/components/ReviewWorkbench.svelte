@@ -3048,8 +3048,8 @@
           {#each visiblePacketFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => showPacketFinding(finding.id)}
-              ><span class="finding-title">{packetFindingText(finding).title}</span><span class="outcome tag"
-                >{finding.severity} · {finding.status}</span
+              ><span class="finding-title">{packetFindingText(finding).title}</span><span
+                class="outcome tag">{finding.severity} · {finding.status}</span
               ></button
             >{/each}
           {#each visibleFindings as finding (finding.id)}<button
@@ -4153,6 +4153,11 @@
   }
   .selected-finding p {
     margin: var(--space-xs) 0;
+  }
+  .selected-finding h3 {
+    margin: var(--space-sm) 0 4px;
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .selected-finding details {
     margin: var(--space-xs) 0;

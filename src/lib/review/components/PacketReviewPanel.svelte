@@ -847,7 +847,7 @@
       [data-decision="duplicate"]
     )
     strong {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
     text-decoration: line-through;
   }
   .records {
