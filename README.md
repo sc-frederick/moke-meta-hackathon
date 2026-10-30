@@ -23,8 +23,10 @@ Follow-up requests can deepen the review while retaining earlier issue IDs.
    support the inspection.
 4. **Review the findings and gaps.** Each issue identifies its location, evidence,
    correction and supporting sources or calculations. Unreviewed sheets,
-   inaccessible governing text and missing project inputs remain visible. Ask
-   follow-up questions in the same conversation.
+   inaccessible governing text and missing project inputs remain visible. Mark
+   a finding valid, a false alarm, not applicable or a duplicate, with a reason;
+   follow-up questions in the same conversation read that decision. A firm
+   checklist in Review settings applies the firm's own checks to new reviews.
 5. **Export the report.** The self-contained HTML includes findings, embedded
    evidence, coverage, citation status, calculations and prior-comment tracking.
    Its Completed checkboxes track the user's corrections separately from finding

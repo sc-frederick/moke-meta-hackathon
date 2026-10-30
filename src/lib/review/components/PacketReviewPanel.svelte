@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Match, Schema } from "effect";
-  import { cachedPromptShare, packetFindingText, type PacketReview } from "#lib/review/packet.ts";
+  import {
+    cachedPromptShare,
+    packetFindingText,
+    packetVerdictLabels,
+    type PacketReview,
+  } from "#lib/review/packet.ts";
   import { configurationLabel, packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import ReviewText from "./ReviewText.svelte";
@@ -358,10 +363,15 @@
           type="button"
           class="finding"
           data-testid={`packet-finding-${finding.id}`}
+          data-decision={finding.decision?.verdict}
           onclick={() => onFinding(finding.id)}
           ><span class="severity" data-severity={finding.severity}>{finding.severity}</span><strong
             >{packetFindingText(finding).title}</strong
-          ><span class="finding-status">{finding.status}</span></button
+          ><span class="finding-status"
+            >{finding.decision
+              ? `${finding.status} · ${packetVerdictLabels[finding.decision.verdict]}`
+              : finding.status}</span
+          ></button
         >
       {/each}
     </div>
@@ -428,6 +438,15 @@
               <dd>{value}</dd>{/each}
           </dl>
         </section>{/if}
+      {#if review.jurisdictionLeads}{@const leads = review.jurisdictionLeads}
+        <p class="muted" data-testid="jurisdiction-leads">
+          {leads.reviews.length === 0
+            ? "No earlier review in this workspace matched the jurisdiction."
+            : `Earlier reviews in this jurisdiction: ${leads.reviews.map((item) => `${item.projectName} (same ${item.match === "locality" ? "county or city" : "state"})`).join(", ")}. Offered as leads, not evidence: ${leads.sources} sources, ${leads.citations} citations, ${leads.editions} code editions, ${leads.agencyComments} agency comments.`}
+        </p>{/if}
+      {#if review.firmChecklist}<p class="muted" data-testid="firm-checklist-applied">
+          Firm checklist revision {review.firmChecklist.revision} applied to this review.
+        </p>{/if}
       <p class="muted">
         The requested scope contains {review.sheets.length}
         {review.sheets.length === 1 ? "sheet" : "sheets"} × {disciplineCoverage.length}
@@ -769,6 +788,15 @@
   }
   .finding-status {
     color: var(--nd-ink-muted);
+  }
+  .finding:is(
+      [data-decision="false_alarm"],
+      [data-decision="not_applicable"],
+      [data-decision="duplicate"]
+    )
+    strong {
+    color: var(--nd-ink-muted);
+    text-decoration: line-through;
   }
   .records {
     border-top: 1px solid var(--nd-hairline);

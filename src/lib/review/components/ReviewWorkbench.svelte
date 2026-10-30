@@ -30,10 +30,17 @@
     type ExecutionStatus,
   } from "#lib/review/execution.ts";
   import FindingInspector from "./FindingInspector.svelte";
+  import FindingDecision from "./FindingDecision.svelte";
+  import FirmChecklistSettings from "./FirmChecklistSettings.svelte";
   import PacketReviewPanel from "./PacketReviewPanel.svelte";
   import { ReviewDiscipline } from "#lib/review/disciplines.ts";
   import { SheetId } from "#lib/review/contracts.ts";
-  import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
+  import type {
+    FirmChecklist,
+    PacketFindingVerdict,
+    PacketReview,
+    StartPacketReview,
+  } from "#lib/review/packet.ts";
   import { packetFindingText } from "#lib/review/packet.ts";
   import { inInitialReviewPhase, initialReview } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
@@ -130,6 +137,9 @@
   let callLimit = $state<number | undefined>(undefined);
   let packetReviews = $state.raw<ReadonlyArray<PacketReview>>([]);
   let packetBusy = $state(false);
+  let firmChecklist = $state<typeof FirmChecklist.Type | null>(null);
+  let firmChecklistLoaded = $state(false);
+  let firmChecklistMessage = $state("");
 
   let steeringCommand: {
     commandId: ReturnType<typeof newCommandId>;
@@ -636,6 +646,52 @@
 
     if (result.ok) receivePacketReview(result.value);
     else error = result.error.message;
+  }
+
+  async function decidePacketFinding(
+    review: PacketReview,
+    findingId: string,
+    decision: { verdict: typeof PacketFindingVerdict.Type; reason: string } | null,
+  ) {
+    if (cloudBlocked) return;
+    packetBusy = true;
+
+    const result = await client.decidePacketFinding(
+      review.projectId,
+      review.id,
+      findingId,
+      decision,
+      review.version,
+    );
+
+    packetBusy = false;
+
+    if (result.ok) receivePacketReview(result.value);
+    else error = result.error.message;
+  }
+
+  async function loadFirmChecklist() {
+    const result = await client.firmChecklist();
+
+    if (result.ok) {
+      firmChecklist = result.value;
+      firmChecklistLoaded = true;
+    } else firmChecklistMessage = result.error.message;
+  }
+
+  async function saveFirmChecklist(text: string) {
+    if (cloudBlocked || !firmChecklistLoaded) return;
+    packetBusy = true;
+    const result = await client.saveFirmChecklist(text, firmChecklist?.revision ?? 0);
+    packetBusy = false;
+
+    if (result.ok) {
+      firmChecklist = result.value;
+      firmChecklistMessage = "Saved. New reviews will use this revision.";
+    } else {
+      firmChecklistMessage = result.error.message;
+      void loadFirmChecklist();
+    }
   }
 
   async function openPacketEvidence(
@@ -1512,6 +1568,7 @@
       closeFindings();
       mobileNavigationOpen = false;
       settingsDialog?.showModal();
+      void loadFirmChecklist();
 
       return;
     }
@@ -2062,6 +2119,13 @@
           </p>
         </details>
       </section>
+      <FirmChecklistSettings
+        checklist={firmChecklist}
+        loaded={firmChecklistLoaded}
+        message={firmChecklistMessage}
+        disabled={packetBusy || cloudBlocked}
+        onSave={saveFirmChecklist}
+      />
       <section class="settings-section">
         <h3>Cloud reviews</h3>
         <p>{cloudSetup?.configured ? "Connected" : "Cloud connection needs setup"}</p>
@@ -2747,6 +2811,18 @@
                     }}
                   />Completed · tracks your correction work</label
                 >
+                {#key selectedPacketFinding.id}<FindingDecision
+                    decision={selectedPacketFinding.decision}
+                    disabled={packetBusy || busy || cloudBlocked}
+                    onSave={async (decision) => {
+                      if (displayedPacketReview && selectedPacketFinding)
+                        await decidePacketFinding(
+                          displayedPacketReview,
+                          selectedPacketFinding.id,
+                          decision,
+                        );
+                    }}
+                  />{/key}
               </article>{/if}
             {#if sourceTab === "sheets"}
               <label class="revision-picker"

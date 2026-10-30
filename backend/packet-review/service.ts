@@ -46,6 +46,8 @@ import {
   PacketCitation,
   PacketFinding,
   PacketFindingSummary,
+  FirmChecklist,
+  type PacketFindingDecision,
   PacketPriorComment,
   PacketSheetNotes,
   type PacketPromptUsage,
@@ -80,6 +82,7 @@ import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 import { preparePacketSamRequest, decodePacketSamResponse } from "./sam.ts";
 import { citationHasSourceSupport } from "./citations.ts";
 import { FindingSummaryText, RecordFindingSummary } from "#lib/review/finding-summary.ts";
+import { EarlierReview, jurisdictionHistory, jurisdictionValue } from "./jurisdiction.ts";
 import {
   initializePacketCoverage,
   packetCoverageProgress,
@@ -227,6 +230,12 @@ const Id = Schema.String.check(Schema.isUUID());
 const ToolResult = Schema.Struct({ value: Schema.Json });
 const PriorCommentInput = PacketPriorComment.mapFields(Struct.omit(["revisionTargetSheetIds"]));
 
+const ChecklistRow = Schema.Struct({
+  revision: Schema.Int,
+  text: Schema.String,
+  saved_at: Schema.Finite,
+});
+
 // Both technical text and its display summary use the same missing-content evidence gate.
 const requireAbsenceSupport = (
   review: PacketReview,
@@ -338,6 +347,18 @@ export class PacketReviews extends Context.Service<
       completed: boolean;
       expectedVersion: number;
     }) => Effect.Effect<PacketReview, ExecutionError>;
+    readonly decide: (input: {
+      projectId: typeof ProjectId.Type;
+      reviewId: string;
+      findingId: string;
+      decision: Pick<typeof PacketFindingDecision.Type, "verdict" | "reason"> | null;
+      expectedVersion: number;
+    }) => Effect.Effect<PacketReview, ExecutionError>;
+    readonly checklist: Effect.Effect<typeof FirmChecklist.Type | null, ExecutionError>;
+    readonly saveChecklist: (input: {
+      text: string;
+      expectedRevision: number;
+    }) => Effect.Effect<typeof FirmChecklist.Type, ExecutionError>;
     readonly exportReport: (
       projectId: typeof ProjectId.Type,
       reviewId: string,
@@ -457,6 +478,50 @@ export class PacketReviews extends Context.Service<
               return rows.map((row) => row.payload);
             }),
           );
+
+        const latestChecklist = Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+
+          const rows = yield* Schema.decodeUnknownEffect(Schema.Array(ChecklistRow))(
+            yield* sql`SELECT revision,text,saved_at FROM firm_checklist_revisions ORDER BY revision DESC LIMIT 1`,
+          );
+
+          const row = rows[0];
+
+          return row === undefined
+            ? null
+            : Schema.decodeUnknownSync(FirmChecklist)({
+                revision: row.revision,
+                text: row.text,
+                savedAt: row.saved_at,
+              });
+        });
+
+        const checklist = query(latestChecklist);
+
+        /** Recent reviews from other conversations, without source text or coverage. */
+        const earlierReviews = Effect.fn("PacketReviews.earlier")(function* (
+          reviewId: string,
+          conversationId: string,
+        ) {
+          const sql = yield* SqlClient.SqlClient;
+
+          const rows = yield* sql`SELECT json_object(
+              'id', id,
+              'projectName', json_extract(payload,'$.projectName'),
+              'changedAt', json_extract(payload,'$.changedAt'),
+              'projectConfiguration', json(json_extract(payload,'$.projectConfiguration')),
+              'sources', (SELECT json_group_array(json_object('url',json_extract(value,'$.url'),'title',json_extract(value,'$.title'),'status',json_extract(value,'$.status'),'official',json(CASE WHEN json_extract(value,'$.official') THEN 'true' ELSE 'false' END),'retrievedAt',json_extract(value,'$.retrievedAt'))) FROM json_each(payload,'$.sources')),
+              'citations', (SELECT json_group_array(json_object('jurisdiction',json_extract(value,'$.jurisdiction'),'document',json_extract(value,'$.document'),'edition',json_extract(value,'$.edition'),'section',json_extract(value,'$.section'),'status',json_extract(value,'$.status'))) FROM json_each(payload,'$.citations')),
+              'priorComments', (SELECT json_group_array(json_object('agency',json_extract(value,'$.agency'),'comment',json_extract(value,'$.comment'),'status',json_extract(value,'$.status'))) FROM json_each(payload,'$.priorComments'))
+            ) AS review FROM packet_reviews
+            WHERE id<>${reviewId} AND conversation_id<>${conversationId}
+            ORDER BY rowid DESC LIMIT 200`;
+
+          return yield* Schema.decodeUnknownEffect(
+            Schema.Array(Schema.Struct({ review: Schema.fromJsonString(EarlierReview) })),
+          )(rows).pipe(Effect.map((decoded) => decoded.map((entry) => entry.review)));
+        });
 
         const assertActive = Effect.fn("PacketReviews.admit")(function* (
           row: Row,
@@ -968,20 +1033,43 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_project",
-              "Record project configuration with sources or Needs input: jurisdiction, scope, occupancy, permit stage, governing editions and agencies.",
+              "Record project configuration with sources or Needs input: jurisdiction, scope, occupancy, permit stage, governing editions and agencies. Name the jurisdiction's state and county or city when known. The result may add jurisdictionHistory: sources, citations, code editions and agency comments from earlier reviews in the same state or locality. They are leads, not evidence; read a source again with read_source before citing it.",
               Schema.Struct({ values: Schema.Record(Schema.String, Schema.String) }),
-              async (task, input) =>
-                await recordTool(
+              async (task, input) => {
+                const current = await run(get(row.project_id, row.id));
+                const jurisdiction = jurisdictionValue(input.values);
+
+                // Each review looks up a jurisdiction once; repeated calls only record values.
+                const recalled =
+                  jurisdiction === null || current.jurisdictionLeads?.jurisdiction === jurisdiction
+                    ? null
+                    : jurisdictionHistory(
+                        jurisdiction,
+                        await run(query(earlierReviews(row.id, row.conversation_id))),
+                      );
+
+                return await recordTool(
                   row,
                   task,
                   "project",
-                  (review) =>
-                    new PacketReview({
-                      ...review,
-                      projectConfiguration: { ...review.projectConfiguration, ...input.values },
-                    }),
-                  input.values,
-                ),
+                  (review) => {
+                    const configured = new PacketReview(
+                      Struct.assign(review, {
+                        projectConfiguration: { ...review.projectConfiguration, ...input.values },
+                      }),
+                    );
+
+                    return recalled === null
+                      ? configured
+                      : new PacketReview(
+                          Struct.assign(configured, { jurisdictionLeads: recalled.leads }),
+                        );
+                  },
+                  recalled === null || recalled.leads.reviews.length === 0
+                    ? input.values
+                    : { recorded: input.values, jurisdictionHistory: recalled.history },
+                );
+              },
             ),
             tool(
               "record_coverage",
@@ -1120,9 +1208,9 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_finding",
-              "Save the complete source-specific technical finding, including necessary values, qualifications and evidence. Do not shorten or omit technical facts to fit a display limit. Reuse an existing issue ID for follow-up. The result includes the host-owned summary state and revision; if Pending, use record_finding_summary. Completed is user-owned.",
+              "Save the complete source-specific technical finding, including necessary values, qualifications and evidence. Do not shorten or omit technical facts to fit a display limit. Reuse an existing issue ID for follow-up. The result includes the host-owned summary state and revision; if Pending, use record_finding_summary. Completed and the reviewer's decision are user-owned and cannot be set by this tool.",
               Schema.Struct({
-                ...Struct.omit(PacketFinding.fields, ["summary"]),
+                ...Struct.omit(PacketFinding.fields, ["summary", "decision"]),
                 id: Schema.optionalKey(Id),
                 completed: Schema.optionalKey(Schema.Boolean),
               }),
@@ -1152,13 +1240,19 @@ export class PacketReviews extends Context.Service<
                   task,
                   "finding",
                   (review) => {
-                    const finding = {
+                    const existing = review.findings.find((entry) => entry.id === id);
+
+                    const recorded = {
                       ...input,
                       id,
                       summary,
-                      completed:
-                        review.findings.find((entry) => entry.id === id)?.completed ?? false,
+                      completed: existing?.completed ?? false,
                     };
+
+                    const finding =
+                      existing?.decision === undefined
+                        ? recorded
+                        : { ...recorded, decision: existing.decision };
 
                     if (
                       finding.locations.some(
@@ -1832,6 +1926,7 @@ export class PacketReviews extends Context.Service<
             const prompt = packetReviewPrompt(review.scope, {
               provider: review.provider,
               role: "sheet",
+              firmChecklist: review.firmChecklist,
             });
 
             const reviewSheet = async (sheetId: string) => {
@@ -2010,12 +2105,13 @@ export class PacketReviews extends Context.Service<
                     settled: progress.settled,
                   },
                   findings: review.findings.map(
-                    ({ id, title, severity, discipline, locations }) => ({
+                    ({ id, title, severity, discipline, locations, decision }) => ({
                       id,
                       title,
                       severity,
                       discipline,
                       sheetIds: locations.map((location) => location.sheetId),
+                      decision: decision === undefined ? null : decision,
                     }),
                   ),
                   followUpInstructions: work.input.followUpInstructions,
@@ -2066,7 +2162,11 @@ export class PacketReviews extends Context.Service<
                   role,
                   row.payload.model,
                   row.project_id,
-                  packetReviewPrompt(row.payload.scope, { provider: row.payload.provider, role }),
+                  packetReviewPrompt(row.payload.scope, {
+                    provider: row.payload.provider,
+                    role,
+                    firmChecklist: row.payload.firmChecklist,
+                  }),
                 ),
               ]),
             );
@@ -2366,6 +2466,7 @@ export class PacketReviews extends Context.Service<
                 instructions: packetReviewPrompt(row.payload.scope, {
                   provider: row.payload.provider,
                   role: row.payload.parallel === undefined ? "review" : "coordinator",
+                  firmChecklist: row.payload.firmChecklist,
                 }),
                 thinkingLevel,
               },
@@ -2718,6 +2819,9 @@ export class PacketReviews extends Context.Service<
             (item) => item.conversationId === request.conversationId,
           );
 
+          // The review keeps the checklist it started with, through resumes and cloud runs.
+          const firm = yield* checklist;
+
           const sheets = selectedSheets.map((sheet) => {
             const revision = state.revisions.find((item) => item.id === sheet.revisionId);
 
@@ -2799,11 +2903,20 @@ export class PacketReviews extends Context.Service<
             finished: false,
           });
 
+          const checked =
+            firm === null || firm.text === ""
+              ? unmarked
+              : new PacketReview(
+                  Struct.assign(unmarked, {
+                    firmChecklist: { revision: firm.revision, text: firm.text },
+                  }),
+                );
+
           // A preset's identity is recorded beside the prompt version and instruction revision.
           const planned =
             request.preset === undefined
-              ? unmarked
-              : new PacketReview(Struct.assign(unmarked, { preset: request.preset }));
+              ? checked
+              : new PacketReview(Struct.assign(checked, { preset: request.preset }));
 
           const parallel = config.parallel ?? defaultParallel;
           const unsettled = new Set(packetCoverageProgress(planned).gaps.map((gap) => gap.sheetId));
@@ -3300,6 +3413,78 @@ export class PacketReviews extends Context.Service<
             false,
           );
 
+        const decide = (input: {
+          projectId: typeof ProjectId.Type;
+          reviewId: string;
+          findingId: string;
+          decision: Pick<typeof PacketFindingDecision.Type, "verdict" | "reason"> | null;
+          expectedVersion: number;
+        }) =>
+          DateTime.now.pipe(
+            Effect.flatMap((decided) =>
+              mutate(
+                input.projectId,
+                input.reviewId,
+                (review) => {
+                  if (review.version !== input.expectedVersion)
+                    throw error(
+                      "conflict",
+                      "Review progress changed; refresh the issue before saving your decision.",
+                    );
+
+                  if (!review.findings.some((finding) => finding.id === input.findingId))
+                    throw error("input", "The finding is outside this review.");
+
+                  return new PacketReview({
+                    ...review,
+                    findings: review.findings.map((finding) => {
+                      if (finding.id !== input.findingId) return finding;
+                      const { decision: _, ...undecided } = finding;
+
+                      return input.decision === null
+                        ? undecided
+                        : {
+                            ...finding,
+                            decision: {
+                              verdict: input.decision.verdict,
+                              reason: input.decision.reason,
+                              decidedAt: now(decided),
+                            },
+                          };
+                    }),
+                  });
+                },
+                false,
+              ),
+            ),
+          );
+
+        const saveChecklist = (input: { text: string; expectedRevision: number }) =>
+          query(
+            Effect.gen(function* () {
+              yield* asExecution(config.owner.assertHeld);
+              const sql = yield* SqlClient.SqlClient;
+              const latest = yield* latestChecklist;
+
+              if ((latest?.revision ?? 0) !== input.expectedRevision)
+                return yield* error(
+                  "conflict",
+                  "The firm checklist changed since you opened it. Reopen settings to see the saved revision.",
+                );
+
+              if (latest !== null && latest.text === input.text) return latest;
+              const savedAt = now(yield* DateTime.now);
+              yield* sql`INSERT INTO firm_checklist_revisions(text,saved_at) VALUES (${input.text},${savedAt})`;
+
+              const saved = yield* latestChecklist;
+
+              if (saved === null)
+                return yield* error("unavailable", "The checklist was not saved.");
+
+              return saved;
+            }),
+          );
+
         const exportReport = (
           projectId: typeof ProjectId.Type,
           reviewId: string,
@@ -3446,6 +3631,9 @@ export class PacketReviews extends Context.Service<
           get,
           control,
           complete,
+          decide,
+          checklist,
+          saveChecklist,
           exportReport,
           observe: (projectId) =>
             Stream.unwrap(

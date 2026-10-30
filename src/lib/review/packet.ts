@@ -107,6 +107,29 @@ export const PacketFindingSummary = Schema.Union([
   }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 
+/** The reviewer's call on a finding. Every value except `valid` dismisses it. */
+export const PacketFindingVerdict = Schema.Literals([
+  "valid",
+  "false_alarm",
+  "not_applicable",
+  "duplicate",
+]);
+
+/** Labels shared by the workbench and the HTML report. */
+export const packetVerdictLabels = {
+  valid: "Valid",
+  false_alarm: "False alarm",
+  not_applicable: "Not applicable",
+  duplicate: "Duplicate",
+} as const satisfies Record<typeof PacketFindingVerdict.Type, string>;
+
+/** Reviewer-owned; follow-up reviews read the reason so a dismissed issue is not raised again. */
+export const PacketFindingDecision = Schema.Struct({
+  verdict: PacketFindingVerdict,
+  reason: Text.check(Schema.isMaxLength(2000)),
+  decidedAt: Schema.Finite,
+});
+
 /** General review issues retain evidence and remain distinct from reviewer completion tracking. */
 export const PacketFinding = Schema.Struct({
   id: Id,
@@ -134,6 +157,7 @@ export const PacketFinding = Schema.Struct({
   completed: Schema.Boolean,
   /** Host-owned presentation state; full technical fields above are never shortened. */
   summary: Schema.optionalKey(PacketFindingSummary),
+  decision: Schema.optionalKey(PacketFindingDecision),
   /** Missing-content claims retain the complete source search and contradiction check. */
   absenceCheck: Schema.optionalKey(
     Schema.Struct({
@@ -165,6 +189,30 @@ export const PacketPriorComment = Schema.Struct({
   evidenceIds: Schema.Array(ArtifactId),
   /** Host-owned revision target; unchanged follow-ups cannot replace it with baseline evidence. */
   revisionTargetSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
+});
+
+/** The firm's own review checklist. Each save is a new revision; reviews keep the one they started with. */
+export const FirmChecklist = Schema.Struct({
+  revision: Schema.Int.check(Schema.isGreaterThan(0)),
+  text: Text.check(Schema.isMaxLength(12000)),
+  savedAt: Schema.Finite,
+});
+
+/** Earlier reviews in the same state or locality whose sources and comments were offered as leads. */
+export const PacketJurisdictionLeads = Schema.Struct({
+  jurisdiction: Text,
+  reviews: Schema.Array(
+    Schema.Struct({
+      reviewId: Id,
+      projectName: Schema.String,
+      jurisdiction: Text,
+      match: Schema.Literals(["locality", "state"]),
+    }),
+  ),
+  sources: Schema.Int,
+  citations: Schema.Int,
+  editions: Schema.Int,
+  agencyComments: Schema.Int,
 });
 
 /** Frozen source inventory identifies the exact PDF revision reviewed. */
@@ -317,6 +365,11 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
     Schema.Array(Schema.Struct({ role: Schema.Literals(["reviewer", "application"]), text: Text })),
   ),
   projectConfiguration: Schema.Record(Schema.String, Schema.String),
+  /** The firm checklist in effect when this review started; absent when none was saved. */
+  firmChecklist: Schema.optionalKey(
+    Schema.Struct({ revision: FirmChecklist.fields.revision, text: FirmChecklist.fields.text }),
+  ),
+  jurisdictionLeads: Schema.optionalKey(PacketJurisdictionLeads),
   coverage: Schema.Array(PacketCoverage),
   sources: Schema.Array(PacketSource),
   citations: Schema.Array(PacketCitation),
@@ -408,6 +461,37 @@ export class PacketReviewRpc extends RpcGroup.make(
       expectedVersion: Schema.Int,
     }),
     success: PacketReview,
+    error: ExecutionError,
+  }),
+  Rpc.make("DecidePacketFinding", {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      reviewId: Id,
+      findingId: Id,
+      /** Null clears an earlier decision. */
+      decision: Schema.NullOr(
+        Schema.Struct({
+          verdict: PacketFindingVerdict,
+          reason: PacketFindingDecision.fields.reason,
+        }),
+      ),
+      expectedVersion: Schema.Int,
+    }),
+    success: PacketReview,
+    error: ExecutionError,
+  }),
+  Rpc.make("GetFirmChecklist", {
+    payload: Schema.Struct({}),
+    success: Schema.NullOr(FirmChecklist),
+    error: ExecutionError,
+  }),
+  Rpc.make("SaveFirmChecklist", {
+    payload: Schema.Struct({
+      text: FirmChecklist.fields.text,
+      /** The revision the reviewer edited; 0 before the first save. */
+      expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+    success: FirmChecklist,
     error: ExecutionError,
   }),
 ) {}

@@ -86,7 +86,7 @@
     "heroCase": "docs/fixtures/hero-case.md",
     "primaryDemoPlatform": "linux-x64",
     "promptInstructions": {
-      "version": "moke-packet-review-v4",
+      "version": "moke-packet-review-v5",
       "source": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review",
       "provenance": "backend/review/prompts/provenance.json",
       "scope": "Whole supplied packet or selected discipline with explicit coverage, governing sources, findings and offline HTML report",
@@ -111,6 +111,13 @@
         "https://dev.meta.ai/docs/models",
         "https://www.baseten.co/blog/muse-spark-open-launch/"
       ]
+    },
+    "firmMemory": {
+      "decision": "docs/firm-memory-plan.md",
+      "decidedOn": "2026-10-30",
+      "implemented": ["finding decisions", "firm checklist", "jurisdiction leads"],
+      "deferred": "firm detail library, visual precedent retrieval, learned playbook",
+      "migration": "migrations/0011_firm_checklist.sql"
     }
   },
   "hackathon": {

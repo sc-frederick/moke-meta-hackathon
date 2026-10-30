@@ -42,9 +42,13 @@ a finding shows readable details and source evidence in the central canvas.
 Saved self-contained HTML reports retain focused evidence, project configuration,
 coverage, source status, findings, calculations and prior-comment follow-up.
 Completed checkboxes track user corrections separately from finding status and
-reviewer-verified closure. Unreviewed sheets and unresolved inputs remain visible
-even when execution finishes. Complete packages retain original documents,
-evidence, review records and execution journals.
+reviewer-verified closure. Reviewers can mark a finding valid, a false alarm, not
+applicable or a duplicate, with a reason that follow-up reviews read. A firm's own
+checklist applies to new reviews as firm practice, and earlier reviews in the same
+jurisdiction offer their sources and agency comments as leads, never as evidence.
+Unreviewed sheets and unresolved inputs remain visible even when execution
+finishes. Complete packages retain original documents, evidence, review records
+and execution journals.
 
 Packet reviews default to no application call ceiling. Users can choose an
 operational call budget, pause or cancel work, and explicitly extend an exhausted

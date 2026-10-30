@@ -483,6 +483,8 @@ export class Application extends Context.Service<
             start: (request) => executePublic(packets.start(request)),
             control: (request) => executePublic(packets.control(request)),
             complete: (request) => executePublic(packets.complete(request)),
+            decide: (request) => executePublic(packets.decide(request)),
+            saveChecklist: (request) => executePublic(packets.saveChecklist(request)),
           },
           cloudSync,
           cloud: CloudReviews.of({
@@ -573,6 +575,9 @@ export const BackendHandlers = BackendRpc.toLayer(
       ObservePacketReviews: ({ projectId }) => application.packets.observe(projectId),
       ControlPacketReview: (request) => application.packets.control(request),
       CompletePacketFinding: (request) => application.packets.complete(request),
+      DecidePacketFinding: (request) => application.packets.decide(request),
+      GetFirmChecklist: () => application.packets.checklist,
+      SaveFirmChecklist: (request) => application.packets.saveChecklist(request),
       ExportDatabase: ({ destination }) => application.export(destination),
       RestoreDatabase: ({ source }) => application.restore(source),
       ReviewSnapshot: ({ projectId, afterSequence }) =>

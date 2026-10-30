@@ -129,6 +129,17 @@ test("document QA needs no count check and persisted findings support evidence, 
     await budget.fill("7");
     await expect(budget).toHaveValue("7");
     await budget.fill("");
+    const checklist = settings.getByTestId("firm-checklist");
+    await checklist
+      .getByLabel("Firm checklist", { exact: true })
+      .fill("- Every sheet carries the firm's seal block.");
+    await checklist.getByRole("button", { name: "Save checklist", exact: true }).click();
+    await expect(checklist).toContainText("Revision 1");
+    await expect(checklist).toContainText("Saved. New reviews will use this revision.");
+    await expect(
+      checklist.getByRole("button", { name: "Save checklist", exact: true }),
+    ).toBeDisabled();
+    await settings.screenshot({ path: test.info().outputPath("firm-checklist-settings.png") });
     await page.getByRole("button", { name: "Done", exact: true }).click();
 
     // The request can start without a check, but this offline UI proof saves a note instead of dispatching a provider.
@@ -366,6 +377,18 @@ test("document QA needs no count check and persisted findings support evidence, 
     await completed.click();
     await expect(completed).toBeChecked();
     await expect(page.getByTestId("selected-packet-finding")).toContainText("Needs input");
+    const decision = page.getByTestId("finding-decision");
+    await decision.getByRole("button", { name: /^Decision:/ }).click();
+    await page.getByRole("option", { name: "False alarm", exact: true }).click();
+    await decision
+      .getByLabel("Reason", { exact: true })
+      .fill("The second sheet's schedule already lists these inputs.");
+    await decision.getByRole("button", { name: "Save decision", exact: true }).click();
+    await expect(decision).toContainText("Saved");
+    await expect(page.getByTestId(`packet-finding-${seeded.findingId}`)).toContainText(
+      "False alarm",
+    );
+    await page.screenshot({ path: test.info().outputPath("packet-finding-decision.png") });
     await page.evaluate(() => {
       window.auditRpc.holdRender = true;
     });
@@ -400,8 +423,14 @@ test("document QA needs no count check and persisted findings support evidence, 
     await page.reload();
     monitor();
     await expect(page.getByTestId("packet-review-panel")).toContainText(seeded.findingTitle);
+    await expect(page.getByTestId(`packet-finding-${seeded.findingId}`)).toContainText(
+      "False alarm",
+    );
     await page.getByTestId(`packet-finding-${seeded.findingId}`).click();
     await expect(page.getByTestId("selected-packet-finding").getByRole("checkbox")).toBeChecked();
+    await expect(
+      page.getByTestId("finding-decision").getByLabel("Reason", { exact: true }),
+    ).toHaveValue("The second sheet's schedule already lists these inputs.");
     await page.getByRole("button", { name: "Close source panel", exact: true }).click();
     await expect(page.locator(".reviewer-message")).toContainText(
       "Run a quick QA pass on this drawing set.",

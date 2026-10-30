@@ -14,7 +14,12 @@ import {
   type SheetId,
 } from "#lib/review/contracts.ts";
 import { ReviewDesktopRpc } from "#lib/review/shell.ts";
-import type { PacketReview, StartPacketReview, SteerPacketReview } from "#lib/review/packet.ts";
+import type {
+  PacketFindingVerdict,
+  PacketReview,
+  StartPacketReview,
+  SteerPacketReview,
+} from "#lib/review/packet.ts";
 import {
   CloudReviewError,
   type CloudReviewUpdate,
@@ -155,6 +160,31 @@ export function createReviewClient() {
           }),
         ),
         "The finding completion could not be saved.",
+      ),
+    decidePacketFinding: (
+      projectId: typeof ProjectId.Type,
+      reviewId: string,
+      findingId: string,
+      decision: { verdict: typeof PacketFindingVerdict.Type; reason: string } | null,
+      expectedVersion: number,
+    ) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.DecidePacketFinding({ projectId, reviewId, findingId, decision, expectedVersion }),
+        ),
+        "Your decision on this finding could not be saved.",
+      ),
+    firmChecklist: () =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) => api.GetFirmChecklist({})),
+        "The firm checklist could not be read.",
+      ),
+    saveFirmChecklist: (text: string, expectedRevision: number) =>
+      run(
+        Effect.flatMap(ReviewDesktopApi, (api) =>
+          api.SaveFirmChecklist({ text, expectedRevision }),
+        ),
+        "The firm checklist could not be saved.",
       ),
     choosePacketReport: (projectId: typeof ProjectId.Type, reviewId: string) =>
       run(

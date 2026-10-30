@@ -376,6 +376,10 @@ are fenced while the cloud owns the workspace.
 `workerProtocol: 4`, and the worker fills skipped files from `/cache` before
 restore. Publish a new worker image with `bun run modal:image` before sending
 protocol-4 reviews; a protocol-3 image fails the identity probe before transfer.
+Packet prompt `moke-packet-review-v5` (finding decisions, the firm checklist and
+jurisdiction leads, with migration 0011) also needs a newly published image; a
+protocol-4 image built with v3 or v4 fails the probe. Jobs already sent to a v3
+or v4 worker remain recoverable.
 Receipts already dispatched to protocol-3 workers stay readable and return
 normally. Unmarked receipts may recover protocol-2 or protocol-3 progress, and
 `workerProtocol: 3` receipts accept protocol-3 progress only.

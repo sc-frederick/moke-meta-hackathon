@@ -25,15 +25,15 @@ const UnmarkedCloudWorkerProgress = Schema.Union([
   priorWorkerProgress(2),
 ]);
 
-// Protocol 4 first shipped with v3. Its already-dispatched results must survive
-// the v4 prompt upgrade without admitting an old worker for new reviews.
+// Protocol 4 first shipped with v3, then v4. Already-dispatched results must survive
+// later prompt upgrades without admitting an old worker for new reviews.
 const Protocol4CloudWorkerProgress = Schema.Union([
   CloudWorkerProgress,
   Schema.Struct({
     ...CloudWorkerProgress.fields,
     identity: Schema.Struct({
       ...CloudEngineIdentity.fields,
-      packetPrompt: Schema.Literal("moke-packet-review-v3"),
+      packetPrompt: Schema.Literals(["moke-packet-review-v3", "moke-packet-review-v4"]),
     }),
   }),
 ]);
