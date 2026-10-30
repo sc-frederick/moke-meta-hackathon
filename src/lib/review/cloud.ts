@@ -2,7 +2,13 @@ import { Effect, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { CommandId, FindingId, ProjectId } from "./contracts.ts";
 import { ExecutionStatus, StartExecution } from "./execution.ts";
-import { PacketActivity, PacketReview, StartPacketReview } from "./packet.ts";
+import {
+  PacketActivity,
+  PacketFinding,
+  PacketParallelReview,
+  PacketReview,
+  StartPacketReview,
+} from "./packet.ts";
 
 /** Cloud runs copy a complete workspace and fence its local writes until returned. */
 export const StartCloudReview = Schema.Struct({
@@ -19,6 +25,37 @@ export const StartCloudPacketReview = Schema.Struct({
 
 /** A transfer admits either one selected count check or one drawing-set review. */
 export const CloudReviewRequest = Schema.Union([StartCloudReview, StartCloudPacketReview]);
+
+/** Bounds keep live progress small; the verified result package carries every finding in full. */
+export const cloudFindingPreviewLimits = {
+  findings: 50,
+  title: 200,
+  sheets: 6,
+  sheetLabel: 60,
+  bytes: 32 * 1024,
+} as const;
+
+/** One finding as last recorded in the cloud. It stays read-only until results are imported. */
+export const CloudFindingPreview = Schema.Struct({
+  id: PacketFinding.fields.id,
+  title: Schema.String.check(Schema.isMaxLength(cloudFindingPreviewLimits.title)),
+  severity: PacketFinding.fields.severity,
+  discipline: PacketFinding.fields.discipline,
+  sheets: Schema.Array(
+    Schema.String.check(Schema.isMaxLength(cloudFindingPreviewLimits.sheetLabel)),
+  ).check(Schema.isMaxLength(cloudFindingPreviewLimits.sheets)),
+});
+
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+/** Sheet reviewer states of a parallel review, counted rather than listed. */
+export const CloudSheetReviewProgress = Schema.Struct({
+  stage: PacketParallelReview.fields.stage,
+  queued: Count,
+  running: Count,
+  completed: Count,
+  failed: Count,
+});
 
 /** Bounded drawing-set progress; findings and evidence arrive in the verified result package. */
 export const CloudPacketProgress = Schema.Struct({
@@ -39,6 +76,11 @@ export const CloudPacketProgress = Schema.Struct({
   stage: Schema.optionalKey(Schema.Literals(["reviewing", "preparing-results", "results-ready"])),
   lastOpenedDrawing: Schema.optionalKey(Schema.String),
   activity: Schema.optionalKey(Schema.NullOr(PacketActivity)),
+  /** Most recently recorded findings, newest last. A preview only; nothing here is imported. */
+  findingPreview: Schema.optionalKey(
+    Schema.Array(CloudFindingPreview).check(Schema.isMaxLength(cloudFindingPreviewLimits.findings)),
+  ),
+  sheetReviews: Schema.optionalKey(CloudSheetReviewProgress),
 });
 
 /** Completed package files, including files verified and reused during a download retry. */
@@ -48,6 +90,9 @@ export const CloudTransferProgress = Schema.Struct({
   totalBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   completedFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   totalFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Completed without the network: cloud storage already held them, or a local copy matched. */
+  reusedBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  reusedFiles: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 
 /** Read-only size estimate of referenced workspace files; final preparation enforces exact limits. */
@@ -58,6 +103,9 @@ export const CloudWorkspaceEstimate = Schema.Struct({
   measuredAt: Schema.Finite,
   /** Projects whose active local reviews must finish before the whole workspace can transfer. */
   localReviews: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Source files already synced to cloud storage, which Send does not upload again. */
+  syncedBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  syncedFiles: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 
 /** Stable cloud operation identity; sandbox identifiers stay in the backend. */

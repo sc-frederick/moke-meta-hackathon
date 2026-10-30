@@ -28,6 +28,38 @@ Recorded 2026-10-29 from the project owner:
   review phase. Once a revised set is uploaded it disappears, and the reviewer
   works from typed prompts and suggested prompts.
 
+## Implementation status
+
+Implemented 2026-10-30 (cloud worker protocol 4; publish a new worker image before use):
+
+- **Storage cache.** A per-workspace Modal Volume v2 holds immutable package files by
+  SHA-256. Source PDFs and renders seed in the background after import. Send uploads the
+  database and files the cache lacks; the worker fills the rest from a read-only mount
+  and checks each hash. Uploaded files are copied into the cache from the input
+  snapshot, and result downloads reuse matching local artifacts. See
+  [cloud reviews](../cloud-reviews.md#workspace-cache).
+- **Prompt cache.** Shared `prompt_cache_key` per prefix with 24-hour retention on Meta,
+  `x-session-affinity` on Baseten, shared fields first in sheet inputs, a warmed prefix
+  before fan-out, a stepped image window, and per-review and per-sheet cached share in
+  diagnostics. An offline test asserts each request extends the previous one byte for
+  byte. See [inference](../inference.md#prompt-caching-and-request-images).
+- **Meta Files API.** Live Meta requests reference uploaded images by `file_id`.
+- **Render concurrency.** PDF jobs run up to four at a time (one fewer than the cores).
+- **Progressive findings** in the cloud card, and the **Initial Review** button
+  (`initial-review-v1`).
+
+Live validation on 2026-10-30 is in [fast-initial-review-validation.md](fast-initial-review-validation.md):
+the 29-sheet Brewery set took 14.3 minutes on the Windows app at 91.2% cached and 15.4
+minutes in the cloud at 94.9% cached, and a cloud Send dispatched 5 s after the click.
+It also added two fixes: Meta's intermittent 404 `model_not_found` is resent like a rate
+limit, and result files download eight at a time.
+
+A live probe on 2026-10-30 (one synthetic image, six minimal-reasoning calls, file
+deleted afterwards) answered two open questions below: Meta accepts `file_id` images in
+`function_call_output`, and `prompt_cache_retention: "24h"` is accepted, with the second
+request 99.1% cached. Still open: Meta's cache share on a real packet review, background
+responses, an adaptive rate limiter, and lower per-sheet reasoning effort.
+
 ## Summary
 
 1. **Upload time is set by the uplink, not by Modal.** Sandboxes start in about a

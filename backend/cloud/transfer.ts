@@ -1,7 +1,8 @@
-import { Effect, Schema } from "effect";
-import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { Effect, Schema, Semaphore } from "effect";
+import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { CloudReviewError, type CloudTransferProgress } from "#lib/review/cloud.ts";
 import { PackageManifest, type PackageFile } from "#lib/review/packages.ts";
 
@@ -137,36 +138,57 @@ const fileProgress = (
 ) => {
   let completedBytes = 0;
   let completedFiles = 0;
+  let reusedBytes = 0;
+  let reusedFiles = 0;
   const totalBytes = files.reduce((total, file) => total + file.bytes, Buffer.byteLength(text));
 
   const publish = () =>
-    report({ direction, completedBytes, totalBytes, completedFiles, totalFiles: files.length + 1 });
+    report({
+      direction,
+      completedBytes,
+      totalBytes,
+      completedFiles,
+      totalFiles: files.length + 1,
+      reusedBytes,
+      reusedFiles,
+    });
 
   return {
     publish,
-    complete: (bytes: number) => {
+    complete: (bytes: number, reused = false) => {
       completedBytes += bytes;
       completedFiles += 1;
+
+      if (reused) {
+        reusedBytes += bytes;
+        reusedFiles += 1;
+      }
 
       return publish();
     },
   };
 };
 
-/** Publish only successfully uploaded package files; the request and snapshot are separate stages. */
+/**
+ * Publish only successfully uploaded package files; the request and snapshot are separate stages.
+ * Files the workspace cache already holds are skipped. The database is always uploaded.
+ */
 export const uploadCloudPackage = Effect.fn("uploadCloudPackage")(function* (
   text: string,
   copy: (file: PackageFile) => Effect.Effect<void, CloudReviewError>,
   writeManifest: Effect.Effect<void, CloudReviewError>,
   report: ReportTransfer,
+  cached: (file: PackageFile) => boolean = () => false,
 ) {
-  const { files } = yield* parseCloudManifest(text);
+  const { manifest, files } = yield* parseCloudManifest(text);
   const progress = fileProgress("upload", files, text, report);
   yield* progress.publish();
 
   for (const file of files) {
-    yield* copy(file);
-    yield* progress.complete(file.bytes);
+    const reused = file.path !== manifest.database.path && cached(file);
+
+    if (!reused) yield* copy(file);
+    yield* progress.complete(file.bytes, reused);
   }
 
   yield* writeManifest;
@@ -174,11 +196,18 @@ export const uploadCloudPackage = Effect.fn("uploadCloudPackage")(function* (
 });
 
 /** Resume verified files from the immutable result manifest and report each verified completion. */
+/**
+ * Result files download this many at a time. A 29-sheet result of 435 files took 5.6 minutes
+ * one at a time on 2026-10-30; per-file round trips, not bandwidth, set that time.
+ */
+const downloadConcurrency = 8;
+
 export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* (
   text: string,
   destination: string,
   copy: (file: PackageFile, local: string) => Effect.Effect<void, CloudReviewError>,
   report: ReportTransfer,
+  reuse: (file: PackageFile, local: string) => Effect.Effect<void> = () => Effect.void,
 ) {
   const { files } = yield* parseCloudManifest(text);
   const progress = fileProgress("download", files, text, report);
@@ -192,21 +221,39 @@ export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* 
       }),
   });
 
-  for (const file of files) {
-    const local = join(destination, file.path);
+  // Count files a previous attempt already verified first, so a later failure keeps them counted.
+  const missing: Array<PackageFile> = [];
 
-    if (!(yield* downloadedCloudFileMatches(local, file))) {
-      yield* copy(file, local);
+  for (const file of files)
+    if (yield* downloadedCloudFileMatches(join(destination, file.path), file))
+      yield* progress.complete(file.bytes);
+    else missing.push(file);
 
-      if (!(yield* downloadedCloudFileMatches(local, file)))
-        return yield* new CloudReviewError({
-          reason: "incompatible",
-          message: "A downloaded cloud file does not match the selected result package.",
-        });
-    }
+  // Each completion saves the receipt, so reports stay in order while copies overlap.
+  const reporting = yield* Semaphore.make(1);
 
-    yield* progress.complete(file.bytes);
-  }
+  yield* Effect.forEach(
+    missing,
+    (file) =>
+      Effect.gen(function* () {
+        const local = join(destination, file.path);
+        yield* reuse(file, local);
+        const reused = yield* downloadedCloudFileMatches(local, file);
+
+        if (!reused) {
+          yield* copy(file, local);
+
+          if (!(yield* downloadedCloudFileMatches(local, file)))
+            return yield* new CloudReviewError({
+              reason: "incompatible",
+              message: "A downloaded cloud file does not match the selected result package.",
+            });
+        }
+
+        yield* progress.complete(file.bytes, reused).pipe(Semaphore.withPermit(reporting));
+      }),
+    { concurrency: downloadConcurrency, discard: true },
+  );
 
   yield* clearInterruptedCloudDownloads(destination);
   yield* Effect.tryPromise({
@@ -218,4 +265,82 @@ export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* 
       }),
   });
   yield* progress.complete(Buffer.byteLength(text));
+});
+
+/** Copy through a private scratch name and rename, so readers never see a partial file. */
+const copyAtomically = async (source: string, destination: string) => {
+  await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+  const scratch = `${destination}.${randomUUID()}.part`;
+
+  try {
+    // Clone where the filesystem supports it; otherwise this is an ordinary local copy.
+    await copyFile(source, scratch, constants.COPYFILE_FICLONE);
+    await rename(scratch, destination);
+  } finally {
+    await rm(scratch, { force: true });
+  }
+};
+
+/**
+ * Result artifacts are content-addressed, so a matching local original replaces a download.
+ * The caller verifies the copy against the result manifest; a mismatch is downloaded instead.
+ */
+export const reuseLocalArtifact = (dataDirectory: string) => (file: PackageFile, local: string) =>
+  !/^artifacts\/[a-f0-9]{64}\.(?:pdf|png)$/.test(file.path) ||
+  !file.path.startsWith(`artifacts/${file.sha256}.`)
+    ? Effect.void
+    : Effect.promise(async () => {
+        try {
+          const source = join(dataDirectory, file.path);
+          const info = await lstat(source);
+
+          if (info.isFile() && info.size === file.bytes) await copyAtomically(source, local);
+        } catch {
+          // A missing or unreadable local copy is downloaded normally.
+        }
+      });
+
+/**
+ * The protocol-4 worker fills in package files the desktop did not upload because the workspace
+ * cache already held them. Every file is checked against the manifest before restore.
+ */
+export const materializeCloudInput = Effect.fn("materializeCloudInput")(function* (
+  directory: string,
+  cache: string,
+) {
+  const text = yield* Effect.tryPromise({
+    try: () => readFile(join(directory, "manifest.json"), "utf8"),
+    catch: () =>
+      new CloudReviewError({
+        reason: "incompatible",
+        message: "The cloud package manifest is missing.",
+      }),
+  });
+
+  const { files } = yield* parseCloudManifest(text);
+  let materialized = 0;
+
+  for (const file of files) {
+    const local = join(directory, file.path);
+
+    if (yield* downloadedCloudFileMatches(local, file)) continue;
+
+    yield* Effect.tryPromise({
+      try: () => copyAtomically(join(cache, "sha256", file.sha256), local),
+      catch: () =>
+        new CloudReviewError({
+          reason: "incompatible",
+          message: "A source file is missing from cloud storage. Send the review again.",
+        }),
+    });
+
+    if (!(yield* downloadedCloudFileMatches(local, file)))
+      return yield* new CloudReviewError({
+        reason: "incompatible",
+        message: "A source file in cloud storage does not match this review. Send it again.",
+      });
+    materialized += 1;
+  }
+
+  return { files: files.length, materialized };
 });

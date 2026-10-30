@@ -131,6 +131,7 @@ test("live cloud status and flushed receipts expose completed upload/download fi
         );
       }),
     stop: () => Effect.void,
+    seedCache: () => Effect.succeed([]),
   };
 
   await writeFile(join(source, "manifest.json"), text);
@@ -196,7 +197,20 @@ test("live cloud status and flushed receipts expose completed upload/download fi
     await runtime.runPromise(cloud.refresh(sent.id));
     const importing = runtime.runPromise(cloud.importResults(sent.id));
     await runtime.runPromise(Deferred.await(downloadBlocked).pipe(Effect.timeout("5 seconds")));
-    const download = await runtime.runPromise(cloud.status);
+
+    // Files download concurrently, so the database may report just after the artifact blocks.
+    const [download] = await runtime.runPromise(
+      cloud.observe.pipe(
+        Stream.filter(
+          (status) =>
+            status?.transfer?.direction === "download" && status.transfer.completedFiles >= 1,
+        ),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.timeout("5 seconds"),
+      ),
+    );
+
     expect(download?.transfer).toMatchObject({
       direction: "download",
       completedFiles: 1,

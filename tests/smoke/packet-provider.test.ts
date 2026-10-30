@@ -345,3 +345,162 @@ test("a rate-limit refusal is resent after the provider delay within one admitte
   expect(session.receipts).toHaveLength(1);
   expect(session.endings).toEqual([false]);
 });
+
+test.each([true, false])(
+  "Meta request images are uploaded once and referenced by file ID (upload succeeds: %p)",
+  async (uploads) => {
+    const sent: Array<{ readonly url: string; readonly body: string }> = [];
+    let uploaded = 0;
+
+    const canvas = createCanvas(32, 32);
+    canvas.getContext("2d").fillText("7", 10, 20);
+    const data = canvas.toBuffer("image/png").toString("base64");
+
+    const admitted = createAdmittedModels(
+      {
+        provider: "meta",
+        model: "muse-spark-1.3",
+        apiKey: Redacted.make("packet-meta-fixture-key"),
+        route: "recorded",
+        imageFiles: true,
+        transport: async (input, init) => {
+          const url = input instanceof Request ? input.url : String(input);
+
+          if (url.endsWith("/files")) {
+            uploaded++;
+            expect(new Headers(init?.headers).get("authorization")).toBe(
+              "Bearer packet-meta-fixture-key",
+            );
+
+            return uploads
+              ? Response.json({ id: "file-fixture-7", purpose: "user_data" })
+              : Response.json({ error: { message: "Unavailable" } }, { status: 503 });
+          }
+
+          sent.push({ url, body: Schema.decodeUnknownSync(Schema.String)(init?.body) });
+
+          return response("meta");
+        },
+      },
+      {
+        packetReview: true,
+        maxInputTokens: 1048576,
+        maxOutputTokens: 256000,
+        cacheKey: () => "moke-sheet-fixture",
+        begin: async () => null,
+        send: async () => undefined,
+        complete: async () => undefined,
+        end: async () => undefined,
+      },
+    );
+
+    const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+    if (!model) throw new Error("Fixture model not available");
+
+    const turn = (text: string) => ({
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text },
+        { type: "image" as const, mimeType: "image/png", data },
+      ],
+      timestamp: 0,
+    });
+
+    // Two turns of one conversation carry the same delivered image.
+    for (const messages of [[turn("First turn.")], [turn("First turn."), turn("Second turn.")]])
+      await admitted.telemetry.startSpan(generation, (telemetry) =>
+        admitted.models.completeSimple(model, { messages }, { telemetry }),
+      );
+
+    expect(sent).toHaveLength(2);
+    expect(uploaded).toBe(1);
+
+    const wire = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({ prompt_cache_key: Schema.String, prompt_cache_retention: Schema.String }),
+      ),
+    )(sent[1]?.body);
+
+    expect(wire.prompt_cache_key).toBe("moke-sheet-fixture");
+    expect(wire.prompt_cache_retention).toBe("24h");
+
+    for (const request of sent) {
+      if (uploads) {
+        expect(request.body).not.toContain(data);
+        expect(request.body).toContain('"file_id":"file-fixture-7"');
+      } else {
+        // A failed upload leaves the image inline and is not retried on the next turn.
+        expect(request.body).toContain(data);
+        expect(request.body).not.toContain("file_id");
+      }
+    }
+  },
+);
+
+test.each([
+  ["model_not_found", 0, 2, "stop"],
+  ["unknown_route", 0, 1, "error"],
+  // An unbounded body is never buffered to decide; it fails like any other 404.
+  ["model_not_found", 20_000, 1, "error"],
+] as const)(
+  "a Meta 404 %s refusal with %p padding bytes is resent only when nothing was generated",
+  async (code, padding, requests, stopReason) => {
+    let sent = 0;
+
+    const admitted = createAdmittedModels(
+      {
+        provider: "meta",
+        model: "muse-spark-1.3",
+        apiKey: Redacted.make("packet-meta-fixture-key"),
+        route: "recorded",
+        transport: async () => {
+          sent++;
+
+          if (sent > 1) return response("meta");
+
+          const body = JSON.stringify({
+            error: { code, message: "The requested model was not found." },
+            padding: "x".repeat(padding),
+          });
+
+          // A streamed body has no Content-Length, so only the bytes read can bound it. Chunks
+          // arrive on demand, so an oversized body still has unread chunks when reading stops.
+          const encoded = new TextEncoder().encode(body);
+          let offset = 0;
+
+          return new Response(
+            new ReadableStream({
+              pull(controller) {
+                if (offset >= encoded.length) return controller.close();
+                controller.enqueue(encoded.slice(offset, offset + 1024));
+                offset += 1024;
+              },
+            }),
+            { status: 404, headers: { "retry-after": "1", "content-type": "application/json" } },
+          );
+        },
+      },
+      {
+        packetReview: true,
+        maxInputTokens: 1048576,
+        maxOutputTokens: 256000,
+        begin: async () => null,
+        send: async () => undefined,
+        complete: async () => undefined,
+        end: async () => undefined,
+      },
+    );
+
+    const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+    if (!model) throw new Error("Fixture model not available");
+
+    const answer = await admitted.telemetry.startSpan(generation, (telemetry) =>
+      admitted.models.completeSimple(model, shortContext, { telemetry }),
+    );
+
+    expect(answer.stopReason).toBe(stopReason);
+    expect(sent).toBe(requests);
+  },
+);

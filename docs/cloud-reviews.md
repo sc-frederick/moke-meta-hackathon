@@ -75,8 +75,9 @@ implementation.
 
 The existing portable package contains the **whole application workspace**,
 including every project, original PDF, referenced artifact, message, and closed
-execution journal. Cloud transfers are capped at 256 MiB and 5,000 files. The UI
-discloses this scope before the reviewer sends the request.
+execution journal. Cloud transfers are capped at 1 GiB and 5,000 files. The UI
+discloses this scope before the reviewer sends the request. Files already in the
+[workspace cache](#workspace-cache) are not uploaded again.
 
 Finish or cancel local inspections first and acknowledge unresolved paid
 requests. Cloud review starts a **new run** with the exact saved reviewer message,
@@ -106,6 +107,57 @@ retain their fence and can retry the same downloaded package. Proposed evidence
 remains proposed; transfer never accepts counts, asserts coverage, or closes a
 finding.
 
+## Workspace cache
+
+Upload time is set by the reviewer's uplink, about 1.8 MiB/s on the measured
+development host, so Send no longer uploads files that Modal already holds. See
+[the fast initial review research](research/fast-initial-review.md) for the
+measurements.
+
+Each workspace has its own Modal Volume (v2), named `<appName>-cache-<id>`, where
+`<id>` is a random 16-hex-digit identifier saved in `<dataDirectory>.cloud/cache.json`.
+That file sits beside the ownership record, outside portable packages. Every
+package file except `app.sqlite` is stored once as `/cache/sha256/<sha256>`:
+original PDFs, rendered PNGs and closed journals. Uploads land in `/cache/.staging`
+and become visible only after their bytes match the hash in their name; `sync`
+then commits the Volume.
+
+- **After import.** A PDF or revision import, opening the cloud composer, and each
+  backend launch wake one background seeder. It compares local artifacts with the
+  last cache listing and, if anything is missing, starts a short-lived uploader
+  sandbox: 0.25 CPU, 512 MiB, network blocked, no provider secrets. It uploads the
+  missing files, commits every 64 MiB, and stops early when a Send starts so the
+  review gets the uplink. Seeding never holds the cloud review lock.
+- **At Send.** The review sandbox mounts the Volume read-only at `/cache`. The
+  upload lists `/cache/sha256` once and skips every file whose hash and size match;
+  the database is always uploaded. The manifest still describes the complete
+  package. Before restore, the protocol-4 worker copies each skipped file from
+  `/cache` and checks its size and SHA-256. A missing or mismatched file stops the
+  review before any model call. Transfer progress counts skipped files as
+  completed and reports them as reused.
+- **After Send.** Files uploaded this time are copied into the Volume from the
+  input directory snapshot by an uploader sandbox, inside Modal. They do not cross
+  the uplink twice.
+- **On return.** Result artifacts are content-addressed. Before downloading one,
+  the backend copies the matching file from the local artifact store and verifies
+  it against the result manifest. Only the database, journals and new crops
+  normally download, eight files at a time; files a previous attempt already
+  verified are counted first. A 29-sheet result of 435 files (380 MB) took 60 s this
+  way and 5.6 minutes one file at a time. New cloud-rendered crops are then copied
+  into the Volume from the result snapshot.
+
+**Retention.** The seeder deletes cached files that the workspace no longer
+stores locally and that the latest sent or returned package manifest does not
+list. It prunes only while no cloud review owns the workspace. A running review
+sandbox keeps the Volume view from its start until it stops, so a later prune or
+seed cannot change files it is reading. One Volume per workspace means pruning
+never removes another workspace's files. Deleting `cache.json` starts a new
+Volume; the old one remains until an operator deletes it in Modal.
+
+A failed seed only means more bytes at the next Send. Warm-pool sandboxes have no
+cache mount, so a claimed warm sandbox receives every file. The composer shows
+the estimated upload beside the bytes already synced.
+
 ## Live progress and automatic return
 
 The Bun backend owns synchronization independently of open workbench views.
@@ -120,6 +172,24 @@ the source of truth. It reconciles on initial attachment and every ten seconds
 as well, covering missed events, unsupported watchers, and connection loss.
 The watcher is bounded to thirty seconds and reconnects; local iterator cleanup
 has a two-second bound. No watcher starts model work or an additional sandbox.
+
+A drawing-set worker writes `progress.json` at most once a second. Each write
+keeps only the latest review state, and the final state is always written.
+Besides counts and the current tool, the record carries a **findings preview**:
+the 50 most recently recorded findings with ID, severity, discipline, sheet
+labels (up to six) and a title cut to 200 characters. The preview is kept under
+32 KiB by dropping older entries. It has no observations, corrections, evidence,
+prompts or sources. Parallel reviews also report how many sheet reviewers are
+queued, running, finished and stopped. The backend refuses progress records over
+256 KiB.
+
+The cloud card lists the preview newest first under **Findings so far**, labelled
+as a preview. It is read-only: findings cannot be accepted, edited or completed
+until the result package is imported. The preview is saved with the local
+receipt, so it survives reconnects and restarts. When results are imported, or
+the review is stopped, the preview is removed from the receipt and the imported
+findings replace it. Upload and download progress also shows how many bytes came
+from the cloud cache or a matching local file rather than the network.
 
 When a completed result snapshot is ready, the backend automatically downloads,
 confirms remote stop, validates, and restores it through application maintenance.
@@ -191,8 +261,9 @@ Transfer and setup consume the same deadline used to claim warm capacity.
 Exec timeouts are rounded down to whole seconds, as required by the SDK; a
 transfer leaving less than one minute fails before inference dispatch.
 
-The complete source package reaches an acknowledged external directory snapshot
-before inference dispatch. Completed results reach a separate directory snapshot
+The uploaded part of the source package reaches an acknowledged external directory
+snapshot before inference dispatch; files skipped at Send are already committed in
+the workspace cache Volume. Completed results reach a separate directory snapshot
 before the UI reports them ready. Both snapshots have an explicit **seven-day**
 lifetime. Result download can mount the result snapshot in a short, network-blocked
 reader sandbox, even after the original execution sandbox has stopped. Reader
@@ -221,7 +292,8 @@ This checks the queue and offers one credential-free, single-use sandbox if no
 unexpired candidate is recorded. It has the review limit plus a ten-minute demo
 window, capped at 65 minutes. Claiming is atomic through a Modal Queue; the
 backend checks engine identity, liveness, and enough remaining time for the full
-review before using it. Otherwise it creates a fresh sandbox. A used sandbox is
+review before using it. Otherwise it creates a fresh sandbox with the workspace
+cache mounted. Warm sandboxes have no cache mount and receive every file. A used sandbox is
 never returned to the pool. There is no scheduled replenishment or always-on
 controller. Unclaimed sandboxes still consume credits until their deadline.
 Rejected live candidates are confirmed terminated. A compatible claimed sandbox
@@ -249,6 +321,17 @@ transfer path/size limits. `cloud-workspace.test.ts` uses the real application,
 PDF import, complete-package export/restore, and a local sandbox port to test
 workspace fencing across reopen and importing source-linked results without
 accepting evidence. Existing execution tests cover provider and SAM admission.
+`cloud-cache.test.ts` covers delta upload, worker fill-in with a mismatched or
+missing cache file, local reuse during result download, launch seeding, prune
+scoping and in-cloud copies after Send.
+
+Protocol 4 is not deployed yet. A bounded live probe on 2026-10-30 (random bytes,
+no drawings, secrets or model calls; test Volume and snapshot deleted, sandboxes
+terminated) confirmed the Volume behavior this design relies on: a v2 Volume
+mounted read-write accepts `copyFromLocal`, `sync` commits it, a read-only mount
+rejects writes, `listFiles` on a missing folder raises not-found, a mounted
+`/moke` directory snapshot keeps its `input/` layout, and a running sandbox keeps
+its mount-time view until it reloads.
 
 Live validation is available with `bun scripts/validate-cloud.ts --live --calls 12`
 after configuring the two private connection files. It uses only the authored
@@ -270,6 +353,7 @@ See [the recorded cloud validation](research/cloud-validation.md).
 - [Modal JavaScript/TypeScript SDK](https://modal.com/docs/guide/sdk-javascript-go)
 - [Sandbox API](https://modal.com/docs/sdk/js/latest/Sandbox)
 - [Image API](https://modal.com/docs/sdk/js/latest/Image)
+- [Volumes](https://modal.com/docs/guide/volumes)
 - [Outbound secret injection example](https://modal.com/docs/examples/sandbox_secret_injection)
 - [Warm sandbox pool example](https://modal.com/docs/examples/sandbox_pool)
 - [Parallel evaluation example](https://modal.com/docs/examples/harbor_evals)
@@ -288,7 +372,15 @@ outbound header policies. Packet findings, coverage, evidence and reports return
 through the same complete-package boundary. Packet controls and finding completion
 are fenced while the cloud owns the workspace.
 
-The protocol-3 handshake requires support for explicit revision, selected-sheet
+**Protocol 4** adds the workspace cache: new receipts record the cache Volume and
+`workerProtocol: 4`, and the worker fills skipped files from `/cache` before
+restore. Publish a new worker image with `bun run modal:image` before sending
+protocol-4 reviews; a protocol-3 image fails the identity probe before transfer.
+Receipts already dispatched to protocol-3 workers stay readable and return
+normally. Unmarked receipts may recover protocol-2 or protocol-3 progress, and
+`workerProtocol: 3` receipts accept protocol-3 progress only.
+
+The protocol-3 handshake required support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
 The operator deployment above now supplies that matching worker. Rebuild and
 publish again when worker code, prompts or migrations change. Protocol-2 workers
@@ -310,8 +402,8 @@ validates the worker identity before ownership is recorded; successful compatibi
 is cached by immutable image ID for the runtime. The probe has a one-minute lifetime
 and is released after validation. Cloud setup reports readiness failures explicitly.
 
-Complete cloud packages support up to 1 GiB and 5,000 files. Transfer still copies
-the entire workspace: a project-only package would need a merge protocol before
+Complete cloud packages support up to 1 GiB and 5,000 files. The package still
+describes the entire workspace, although cached files are not uploaded again: a project-only package would need a merge protocol before
 it could safely replace the local database. The selected project, model, scope,
 package bytes and live sheet/finding/coverage totals identify the active job.
 Terminal receipts stay in their originating conversation and can be dismissed.

@@ -46,6 +46,7 @@ import {
   PacketFinding,
   PacketPriorComment,
   PacketSheetNotes,
+  type PacketPromptUsage,
   type PacketSheetReview,
   StartPacketReview,
   selectPacketReviewScope,
@@ -53,11 +54,13 @@ import {
   type PacketActivityStage,
 } from "#lib/review/packet.ts";
 import { reviewModels } from "#lib/review/models.ts";
+import { initialReview } from "#lib/review/initial-review.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
 import type { createReviewOperations } from "../review/operations.ts";
 import { executionPersistence } from "../review/execution-store.ts";
 import {
   createAdmittedModels,
+  promptCacheKey,
   reviewModelCapabilities,
   type ProviderConfiguration,
 } from "../inference/provider.ts";
@@ -95,9 +98,34 @@ interface SheetAssignments {
   readonly requests: Map<number, number>;
   /** Model requests on the wire in this process. They stay uncertain in SQL until they settle. */
   readonly inFlight: Set<string>;
+  /** Settles when a sheet reviewer's first model request ends, so its prompt prefix is cached. */
+  readonly warmed: PromiseWithResolvers<void>;
 }
 
+/**
+ * Sheet reviewers share their instructions, tools and project context. Peers wait this long at
+ * most for the first reviewer's opening request to cache that prefix.
+ */
+const prefixWarmupMs = 90_000;
+
+/** Add one completed response's token usage to a running total. */
+const addPromptUsage = (
+  total: typeof PacketPromptUsage.Type | undefined,
+  usage: { readonly input: number; readonly cacheRead: number; readonly output: number },
+): typeof PacketPromptUsage.Type => ({
+  calls: (total?.calls ?? 0) + 1,
+  input: (total?.input ?? 0) + usage.input,
+  cacheRead: (total?.cacheRead ?? 0) + usage.cacheRead,
+  output: (total?.output ?? 0) + usage.output,
+});
+
 const attemptKey = (taskId: number, attempt: number) => `${taskId}:${attempt}`;
+
+const ReceiptUsage = Schema.fromJsonString(
+  Schema.Struct({
+    usage: Schema.Struct({ input: Schema.Finite, cacheRead: Schema.Finite, output: Schema.Finite }),
+  }),
+);
 
 const UnresolvedAttempts = Schema.Array(
   Schema.Struct({ task_id: Schema.Int, attempt: Schema.Int }),
@@ -120,7 +148,10 @@ const blocksRequest = (
   });
 
 type SheetChange = Partial<
-  Pick<typeof PacketSheetReview.Type, "conversationId" | "state" | "notes" | "providerFailure">
+  Pick<
+    typeof PacketSheetReview.Type,
+    "conversationId" | "state" | "notes" | "providerFailure" | "promptUsage"
+  >
 >;
 
 /** Change one sheet reviewer's record; a review without parallel stages is unchanged. */
@@ -1706,14 +1737,24 @@ export class PacketReviews extends Context.Service<
                   {
                     type: "input",
                     requestId: requestId(`sheet:${sheet.id}`),
+                    // Fields shared by every sheet reviewer come first, most stable first, so
+                    // the provider can serve them from the prefix the first reviewer cached.
                     content: JSON.stringify({
                       stage: "sheet",
+                      request: current.request,
+                      scope: current.scope,
+                      inventory: current.sheets.map(({ id, label, pageIndex, documentName }) => ({
+                        id,
+                        label,
+                        pageIndex,
+                        documentName,
+                      })),
+                      projectConfiguration: current.projectConfiguration,
+                      sources: current.sources.map(({ id, url, title }) => ({ id, url, title })),
                       continuation:
                         entry.conversationId === null
                           ? null
                           : "Continue this sheet from its recorded coverage and findings. Do not repeat completed checks.",
-                      request: current.request,
-                      scope: current.scope,
                       sheet: {
                         id: sheet.id,
                         label: sheet.label,
@@ -1724,14 +1765,6 @@ export class PacketReviews extends Context.Service<
                       requiredChecks: packetCoverageProgress(current)
                         .gaps.filter((gap) => gap.sheetId === sheet.id)
                         .map(({ discipline, pass, reason }) => ({ discipline, pass, reason })),
-                      projectConfiguration: current.projectConfiguration,
-                      sources: current.sources.map(({ id, url, title }) => ({ id, url, title })),
-                      inventory: current.sheets.map(({ id, label, pageIndex, documentName }) => ({
-                        id,
-                        label,
-                        pageIndex,
-                        documentName,
-                      })),
                       previousFindings: current.findings.filter((finding) =>
                         finding.locations.some((location) => location.sheetId === sheet.id),
                       ),
@@ -1778,9 +1811,27 @@ export class PacketReviews extends Context.Service<
                 );
             };
 
-            await Promise.all(
-              Array.from({ length: Math.min(review.parallel.concurrency, queue.length) }, next),
-            );
+            // Started together, every reviewer would miss the cache. One goes first; the rest
+            // start once its opening request settles, reusing the prefix it cached.
+            const first = next();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+
+            await Promise.race([
+              work.assignments.warmed.promise,
+              first,
+              new Promise<void>((resolve) => {
+                timer = setTimeout(resolve, prefixWarmupMs);
+              }),
+            ]);
+            clearTimeout(timer);
+
+            await Promise.all([
+              first,
+              ...Array.from(
+                { length: Math.min(review.parallel.concurrency - 1, queue.length) },
+                next,
+              ),
+            ]);
 
             review = await run(get(row.project_id, row.id));
 
@@ -1850,7 +1901,31 @@ export class PacketReviews extends Context.Service<
               sheets: new Map(),
               requests: new Map(),
               inFlight: new Set(),
+              warmed: Promise.withResolvers(),
             };
+
+            const roleOf = (taskId: number) => {
+              if (row.payload.parallel === undefined) return "review" as const;
+              const conversation = assignments.requests.get(taskId);
+
+              return conversation !== undefined && assignments.sheets.has(conversation)
+                ? ("sheet" as const)
+                : ("coordinator" as const);
+            };
+
+            // One key per shared prefix: every sheet reviewer of a project shares one, and the
+            // coordinator's setup and coordination turns share another.
+            const cacheKeys = new Map(
+              (["review", "coordinator", "sheet"] as const).map((role) => [
+                role,
+                promptCacheKey(
+                  role,
+                  row.payload.model,
+                  row.project_id,
+                  packetReviewPrompt(row.payload.scope, { provider: row.payload.provider, role }),
+                ),
+              ]),
+            );
 
             for (const entry of row.payload.parallel?.sheets ?? [])
               if (entry.conversationId !== null)
@@ -1864,6 +1939,7 @@ export class PacketReviews extends Context.Service<
                 packetReview: true,
                 maxInputTokens: 4 * capabilities.contextWindow,
                 maxOutputTokens: capabilities.maxOutputTokens ?? capabilities.contextWindow,
+                cacheKey: (phase) => cacheKeys.get(roleOf(phase["task.id"])),
                 begin: (phase, fingerprint) =>
                   run(
                     query(
@@ -1993,6 +2069,39 @@ export class PacketReviews extends Context.Service<
                           );
                         const sql = yield* SqlClient.SqlClient;
                         yield* sql`UPDATE packet_review_attempts SET status='completed',response_json=${response} WHERE review_id=${row.id} AND task_id=${phase["task.id"]} AND attempt=${phase.attempt} AND kind='model'`;
+
+                        const { usage } = yield* Schema.decodeUnknownEffect(ReceiptUsage)(
+                          response,
+                        ).pipe(
+                          Effect.mapError(() =>
+                            error("uncertain", "Provider receipt usage could not be read."),
+                          ),
+                        );
+
+                        const conversation = assignments.requests.get(phase["task.id"]);
+
+                        const sheetId =
+                          conversation === undefined
+                            ? undefined
+                            : assignments.sheets.get(conversation);
+
+                        const totals = new PacketReview({
+                          ...current.payload,
+                          promptUsage: addPromptUsage(current.payload.promptUsage, usage),
+                        });
+
+                        yield* save(
+                          current,
+                          sheetId === undefined
+                            ? totals
+                            : changeSheet(totals, sheetId, {
+                                promptUsage: addPromptUsage(
+                                  totals.parallel?.sheets.find((entry) => entry.sheetId === sheetId)
+                                    ?.promptUsage,
+                                  usage,
+                                ),
+                              }),
+                        );
                       }),
                     ),
                   ),
@@ -2005,6 +2114,9 @@ export class PacketReviews extends Context.Service<
 
                   const sheetId =
                     conversation === undefined ? undefined : assignments.sheets.get(conversation);
+
+                  // Waiting peers may start once any sheet reviewer's request has settled.
+                  if (sheetId !== undefined) assignments.warmed.resolve();
 
                   // An unresolved request stops only the sheet reviewer that sent it.
                   if (uncertain && sheetId !== undefined)
@@ -2383,6 +2495,13 @@ export class PacketReviews extends Context.Service<
               "Save the request in this project's conversation before starting review.",
             );
 
+          // A preset identity is recorded only for the exact preset text.
+          if (request.preset !== undefined && message.text !== initialReview.text)
+            return yield* error(
+              "input",
+              "The saved request does not match its Initial Review preset.",
+            );
+
           if (!state.sheets.length)
             return yield* error("input", "Import the drawing packet before starting its review.");
           const model = reviewModels.find((item) => item.id === request.model);
@@ -2475,7 +2594,7 @@ export class PacketReviews extends Context.Service<
             .filter((sheet) => !unchanged.some((previous) => previous.id === sheet.id))
             .map((sheet) => sheet.id);
 
-          const planned = new PacketReview({
+          const unmarked = new PacketReview({
             id: randomUUID(),
             projectId: project.id,
             projectName: project.name,
@@ -2528,6 +2647,12 @@ export class PacketReviews extends Context.Service<
             error: null,
             finished: false,
           });
+
+          // A preset's identity is recorded beside the prompt version and instruction revision.
+          const planned =
+            request.preset === undefined
+              ? unmarked
+              : new PacketReview(Struct.assign(unmarked, { preset: request.preset }));
 
           const parallel = config.parallel ?? defaultParallel;
           const unsettled = new Set(packetCoverageProgress(planned).gaps.map((gap) => gap.sheetId));

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Semaphore } from "effect";
+import { availableParallelism } from "node:os";
 import { DocumentError, Region, ReviewStorageError, Sheet } from "#lib/review/contracts.ts";
 import { artifactPath, readArtifactChunk, storeBytes, storeFile } from "./artifact-store.ts";
 import type { DocumentsConfig } from "./config.ts";
@@ -11,6 +12,12 @@ import {
   workerInspect,
   workerRender,
 } from "./worker-client.ts";
+
+/**
+ * Each PDF job runs in its own worker process, so jobs can overlap. Parallel sheet reviewers
+ * request renders at the same time; one core stays free for the backend and SQL.
+ */
+const pdfJobConcurrency = Math.max(1, Math.min(4, availableParallelism() - 1));
 
 /** PDF import, bounded rendering, and artifact chunk reads for review evidence. */
 export class Documents extends Context.Service<
@@ -37,12 +44,12 @@ export class Documents extends Context.Service<
     ) => Effect.Effect<{ base64: string; totalBytes: number }, DocumentError | ReviewStorageError>;
   }
 >()("documents/Documents") {
-  /** Acquire a scoped worker, serialize PDF jobs, and keep SQL out of this layer. */
+  /** Acquire a scoped worker per job, bound concurrent PDF jobs, and keep SQL out of this layer. */
   static layer(config: DocumentsConfig) {
     return Layer.effect(
       Documents,
       Effect.gen(function* () {
-        const pdfJobs = yield* Semaphore.make(1);
+        const pdfJobs = yield* Semaphore.make(pdfJobConcurrency);
 
         const withPdfJob = <A, E>(operation: (worker: PdfWorkerSession) => Effect.Effect<A, E>) =>
           Effect.scoped(

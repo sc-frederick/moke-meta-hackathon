@@ -1,11 +1,85 @@
-import { Effect, Stream } from "effect";
+import { Effect, Predicate, Stream } from "effect";
 import type { Application } from "../application.ts";
-import type { CloudReviewRequest, CloudReviewError } from "#lib/review/cloud.ts";
+import {
+  cloudFindingPreviewLimits,
+  type CloudFindingPreview,
+  type CloudReviewRequest,
+  type CloudReviewError,
+  type CloudSheetReviewProgress,
+} from "#lib/review/cloud.ts";
+import type { PacketFinding, PacketParallelReview, PacketSheetReview } from "#lib/review/packet.ts";
 import type { CloudWorkerProgress } from "./contracts.ts";
 import { packetCoverageProgress } from "#lib/review/packet-coverage.ts";
 import { cloudPackageLimits } from "./transfer.ts";
 
 type Progress = Omit<typeof CloudWorkerProgress.Type, "id" | "identity">;
+
+/** Shorten to `limit` UTF-16 units without splitting a surrogate pair. */
+const clip = (text: string, limit: number) => {
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit - 1);
+
+  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+};
+
+/**
+ * Newest findings for live progress, without observations, corrections or evidence. Findings
+ * are upserted at the end of the list, so its tail holds the latest changes. Older entries are
+ * dropped until the preview fits its byte bound.
+ */
+export const cloudFindingPreview = (review: {
+  readonly sheets: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly pageIndex: number;
+  }>;
+  readonly findings: ReadonlyArray<
+    Pick<typeof PacketFinding.Type, "id" | "title" | "severity" | "discipline"> & {
+      readonly locations: ReadonlyArray<{ readonly sheetId: string }>;
+    }
+  >;
+}): Array<typeof CloudFindingPreview.Type> => {
+  const labels = new Map(
+    review.sheets.map((sheet) => [sheet.id, sheet.label || `Page ${sheet.pageIndex + 1}`]),
+  );
+
+  const preview = review.findings.slice(-cloudFindingPreviewLimits.findings).map((finding) => ({
+    id: finding.id,
+    title: clip(finding.title, cloudFindingPreviewLimits.title),
+    severity: finding.severity,
+    discipline: finding.discipline,
+    sheets: [...new Set(finding.locations.map((location) => labels.get(location.sheetId) ?? ""))]
+      .filter((label) => label !== "")
+      .slice(0, cloudFindingPreviewLimits.sheets)
+      .map((label) => clip(label, cloudFindingPreviewLimits.sheetLabel)),
+  }));
+
+  while (
+    preview.length > 0 &&
+    Buffer.byteLength(JSON.stringify(preview)) > cloudFindingPreviewLimits.bytes
+  )
+    preview.shift();
+
+  return preview;
+};
+
+/** Count parallel sheet reviewers by state; reviews run as one conversation have none. */
+export const cloudSheetReviewProgress = (review: {
+  readonly parallel?: {
+    readonly stage: (typeof PacketParallelReview.Type)["stage"];
+    readonly sheets: ReadonlyArray<{ readonly state: (typeof PacketSheetReview.Type)["state"] }>;
+  };
+}): typeof CloudSheetReviewProgress.Type | undefined => {
+  if (review.parallel === undefined) return undefined;
+  const counts = { queued: 0, running: 0, completed: 0, failed: 0 };
+
+  for (const sheet of review.parallel.sheets) counts[sheet.state]++;
+
+  return { stage: review.parallel.stage, ...counts };
+};
+
+/** Each progress write wakes the desktop's watcher, so busy parallel reviews write once a second. */
+const progressInterval = "1 second";
 
 /** Run one admitted request, drain its tools, and export before advertising results. */
 export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
@@ -42,12 +116,16 @@ export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
         changedAt: review.changedAt,
         stage,
         activity: review.state === "running" ? (review.activity ?? null) : null,
+        findingPreview: cloudFindingPreview(review),
       };
 
+      const sheetReviews = cloudSheetReviewProgress(review);
+      const staged = sheetReviews === undefined ? packet : { ...packet, sheetReviews };
+
       return lastOpened === undefined
-        ? packet
+        ? staged
         : {
-            ...packet,
+            ...staged,
             lastOpenedDrawing: `${lastOpened.label || `Page ${lastOpened.pageIndex + 1}`} · ${lastOpened.documentName}`,
           };
     };
@@ -70,6 +148,10 @@ export const runCloudReview = Effect.fn("CloudWorker.runReview")(function* (
     yield* application.packets.observe(request.projectId).pipe(
       Stream.filter((review) => review.id === started.id),
       Stream.takeUntil((review) => review.state !== "running"),
+      // Publish only the latest review of each interval; the final one is never dropped.
+      Stream.groupedWithin(10_000, progressInterval),
+      Stream.map((reviews) => reviews.at(-1)),
+      Stream.filter(Predicate.isNotUndefined),
       Stream.runForEach(progress),
       Effect.timeout(timeoutMs),
       Effect.catchTag("TimeoutError", () => application.packets.quiesce),

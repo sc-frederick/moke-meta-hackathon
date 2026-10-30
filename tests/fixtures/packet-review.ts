@@ -344,6 +344,8 @@ export async function until(session: Session, reviewId: string, state: PacketRev
 /** Wire-level model request shape used to inspect the injected external transport. */
 export const Request = Schema.Struct({
   model: Schema.String,
+  prompt_cache_key: Schema.optionalKey(Schema.String),
+  prompt_cache_retention: Schema.optionalKey(Schema.String),
   instructions: Schema.optionalKey(Schema.String),
   input: Schema.optionalKey(Schema.Json),
   messages: Schema.optionalKey(Schema.Json),

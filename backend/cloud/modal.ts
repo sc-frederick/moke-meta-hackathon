@@ -7,9 +7,11 @@ import {
   QueueEmptyError,
   SandboxFilesystemNotFoundError,
   type Sandbox,
+  type SandboxCreateParams,
 } from "modal";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { CloudCachedFile } from "./cache.ts";
 import type { ModalConfiguration } from "#lib/backend-rpc.ts";
 import { CloudReviewError } from "#lib/review/cloud.ts";
 import {
@@ -90,6 +92,64 @@ export const modalReviewResources = {
   memoryMiB: 8192,
   memoryLimitMiB: 8192,
 } as const;
+
+/** Cache files are named by SHA-256 under this folder of the workspace Volume. */
+const cacheFolder = "/cache/sha256";
+
+/** Read back what the cache holds; a sandbox without the mount simply has an empty cache. */
+const listCache = (sandbox: Sandbox) =>
+  Effect.tryPromise({
+    try: async (): Promise<ReadonlyArray<CloudCachedFile>> => {
+      try {
+        return (await sandbox.filesystem.listFiles(cacheFolder))
+          .filter((entry) => entry.type === "file" && /^[a-f0-9]{64}$/.test(entry.name))
+          .map((entry) => ({ sha256: entry.name, bytes: entry.size }));
+      } catch (error) {
+        if (error instanceof SandboxFilesystemNotFoundError) return [];
+        throw error;
+      }
+    },
+    catch: unavailable,
+  });
+
+/**
+ * Staged files become visible only after their bytes match the hash in their name, so a
+ * partial or corrupt upload is discarded. `sync` commits a v2 Volume.
+ */
+const commitCacheScript = `set -eu
+mkdir -p ${cacheFolder} /cache/.staging
+for staged in /cache/.staging/*.part; do
+  [ -e "$staged" ] || continue
+  hash=$(basename "$staged" .part)
+  if [ "$(sha256sum "$staged" | cut -d' ' -f1)" = "$hash" ]; then mv -f "$staged" "${cacheFolder}/$hash"; else rm -f "$staged"; fi
+done
+sync /cache`;
+
+/** Copy uploaded snapshot files the cache lacks into staging. Paths are schema-checked names. */
+const retainScript = (
+  mounts: ReadonlyArray<{
+    readonly root: string;
+    readonly files: ReadonlyArray<{ readonly sha256: string; readonly path: string }>;
+  }>,
+) =>
+  [
+    "set -eu",
+    "mkdir -p /cache/.staging",
+    ...mounts.flatMap(({ root, files }) =>
+      files.map(
+        (file) =>
+          `[ -f '${cacheFolder}/${file.sha256}' ] || cp -- '${root}/${file.path}' '/cache/.staging/${file.sha256}.part' || true`,
+      ),
+    ),
+  ].join("\n");
+
+/** Delete cached files outside the keep list, which the caller writes to /tmp/moke-keep. */
+const pruneCacheScript = `set -eu
+mkdir -p ${cacheFolder}
+ls -1 ${cacheFolder} | sort > /tmp/moke-have
+sort -u /tmp/moke-keep > /tmp/moke-keep-sorted
+comm -23 /tmp/moke-have /tmp/moke-keep-sorted | while read -r hash; do rm -f -- "${cacheFolder}/$hash"; done
+sync /cache`;
 
 /** Official Modal SDK adapter; API keys are injected into outbound HTTPS outside the workload. */
 export const modalSandboxLayer = (
@@ -261,18 +321,35 @@ export const modalSandboxLayer = (
           client.images.fromName(config.imageName, { environment: record.environment }),
         );
 
-        const sandbox = yield* modalCall(() =>
-          client.sandboxes.create(app, image, {
-            command: ["sleep", "infinity"],
-            name: record.sandboxName,
-            ...modalReviewResources,
-            timeoutMs: config.timeoutMinutes * 60_000 + 120_000,
-            experimentalOptions: { enable_exit_snapshot: true },
-            experimentalOutboundPolicy: emptyReviewOutboundPolicy(),
-            readinessProbe: modalReadinessProbe(),
-            tags: { "moke-kind": "review", "moke-job": record.id },
-          }),
-        );
+        // Without the cache mount the upload lists an empty cache and sends every file.
+        const cache =
+          record.cacheVolume === undefined
+            ? null
+            : yield* modalCall(() =>
+                client.volumes.fromName(record.cacheVolume ?? "", {
+                  createIfMissing: true,
+                  version: 2,
+                  environment: record.environment,
+                }),
+              ).pipe(
+                Effect.map((volume) => ({ "/cache": volume.withMountOptions({ readOnly: true }) })),
+                Effect.catch(() => Effect.succeed(null)),
+              );
+
+        const params: SandboxCreateParams = {
+          command: ["sleep", "infinity"],
+          name: record.sandboxName,
+          ...modalReviewResources,
+          timeoutMs: config.timeoutMinutes * 60_000 + 120_000,
+          experimentalOptions: { enable_exit_snapshot: true },
+          experimentalOutboundPolicy: emptyReviewOutboundPolicy(),
+          readinessProbe: modalReadinessProbe(),
+          tags: { "moke-kind": "review", "moke-job": record.id },
+        };
+
+        if (cache !== null) params.volumes = cache;
+
+        const sandbox = yield* modalCall(() => client.sandboxes.create(app, image, params));
 
         yield* identity(sandbox).pipe(
           Effect.tapError(() =>
@@ -467,6 +544,15 @@ export const modalSandboxLayer = (
           Effect.gen(function* () {
             const sandbox = yield* original(record);
             const text = yield* modalCall(() => readFile(join(source, "manifest.json"), "utf8"));
+
+            // The worker copies skipped files from this same read-only view before restore.
+            const cached = new Map(
+              (record.cacheVolume === undefined
+                ? []
+                : yield* listCache(sandbox).pipe(Effect.catch(() => Effect.succeed([])))
+              ).map((file) => [file.sha256, file.bytes]),
+            );
+
             yield* uploadCloudPackage(
               text,
               (file) =>
@@ -478,6 +564,7 @@ export const modalSandboxLayer = (
                 ),
               modalCall(() => sandbox.filesystem.writeText(text, "/moke/input/manifest.json")),
               report,
+              (file) => cached.get(file.sha256) === file.bytes,
             );
             yield* modalCall(() =>
               sandbox.filesystem.writeText(
@@ -613,7 +700,7 @@ export const modalSandboxLayer = (
               return { progress, resultSnapshotId: checkpoint?.imageId ?? null, sourceStopped };
             }),
           ),
-        download: (record, destination, report) =>
+        download: (record, destination, report, reuse) =>
           reading(record, (sandbox) =>
             Effect.gen(function* () {
               const text = yield* modalCall(() =>
@@ -639,7 +726,124 @@ export const modalSandboxLayer = (
                     );
                   }),
                 report,
+                reuse,
               );
+            }),
+          ),
+        seedCache: (request) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const app = yield* modalCall(() =>
+                client.apps.fromName(config.appName, {
+                  createIfMissing: true,
+                  environment: config.environment,
+                }),
+              );
+
+              const image = yield* modalCall(() =>
+                client.images.fromName(config.imageName, { environment: config.environment }),
+              );
+
+              const volume = yield* modalCall(() =>
+                client.volumes.fromName(request.volume, {
+                  createIfMissing: true,
+                  version: 2,
+                  environment: config.environment,
+                }),
+              );
+
+              // Allow the measured ~1.8 MiB/s uplink at half speed and in-cloud copies at
+              // 10 MiB/s, between 5 and 60 minutes.
+              const uploaded = request.local.reduce((total, file) => total + file.bytes, 0);
+
+              const copied = request.snapshots
+                .flatMap((snapshot) => snapshot.files)
+                .reduce((total, file) => total + file.bytes, 0);
+
+              const timeoutMs = Math.min(
+                3_600_000,
+                300_000 +
+                  Math.ceil(uploaded / (900 * 1024)) * 1000 +
+                  Math.ceil(copied / (10 * 1024 * 1024)) * 1000,
+              );
+
+              const uploader = yield* Effect.acquireRelease(
+                modalCall(() =>
+                  client.sandboxes.create(app, image, {
+                    command: ["sleep", "infinity"],
+                    timeoutMs,
+                    blockNetwork: true,
+                    cpu: 0.25,
+                    memoryMiB: 512,
+                    volumes: { "/cache": volume },
+                    tags: { "moke-kind": "cache" },
+                  }),
+                ),
+                (sandbox) => modalCall(() => sandbox.terminate({ wait: true })).pipe(Effect.ignore),
+              );
+
+              const script = (text: string) =>
+                modalCall(async () => {
+                  const process = await uploader.exec(["sh", "-c", text], {
+                    stdout: "ignore",
+                    stderr: "ignore",
+                    timeoutMs: 300_000,
+                  });
+
+                  if ((await process.wait()) !== 0) throw new Error("Cache command failed");
+                });
+
+              const mounts: Array<{
+                readonly root: string;
+                readonly files: (typeof request.snapshots)[number]["files"];
+              }> = [];
+
+              // An expired or deleted snapshot only means its files are uploaded on a later Send.
+              for (const [index, snapshot] of request.snapshots.entries()) {
+                const mounted = yield* modalCall(async () => {
+                  const source = await client.images.fromId(snapshot.imageId);
+                  await uploader.mountImage(`/mnt/source-${index}`, source);
+                }).pipe(
+                  Effect.as(true),
+                  Effect.catch(() => Effect.succeed(false)),
+                );
+
+                if (mounted) mounts.push({ root: `/mnt/source-${index}`, files: snapshot.files });
+              }
+
+              if (mounts.length > 0) yield* script(retainScript(mounts));
+
+              // Commit in batches so a long seed keeps its progress if the desktop closes.
+              let staged = 0;
+
+              for (const file of request.local) {
+                if (yield* request.paused) break;
+                yield* modalCall(() =>
+                  uploader.filesystem.copyFromLocal(
+                    file.path,
+                    `/cache/.staging/${file.sha256}.part`,
+                  ),
+                );
+                staged += file.bytes;
+
+                if (staged >= 64 * 1024 * 1024) {
+                  yield* script(commitCacheScript);
+                  staged = 0;
+                }
+              }
+
+              yield* script(commitCacheScript);
+
+              const keep = request.keep;
+
+              if (keep !== null && !(yield* request.paused)) {
+                yield* modalCall(() =>
+                  uploader.filesystem.writeText(`${keep.join("\n")}\n`, "/tmp/moke-keep"),
+                );
+                yield* script(pruneCacheScript);
+              }
+
+              return yield* listCache(uploader);
             }),
           ),
         stop: (record) =>

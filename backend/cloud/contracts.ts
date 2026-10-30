@@ -18,7 +18,8 @@ import { packageEngineFormat } from "#lib/review/packages.ts";
 
 /** Version handshake covers the worker protocol, engine, and review instructions. */
 export const cloudEngineIdentity = {
-  protocol: 3,
+  // Protocol 4 workers read unchanged source files from the workspace cache Volume.
+  protocol: 4,
   engine: packageEngineFormat,
   prompt: reviewPromptVersion,
   instructions: reviewInstructionRevision,
@@ -59,7 +60,8 @@ export const CloudWorkerProgress = Schema.Struct({
 export const CloudReviewRecord = Schema.Struct({
   id: CloudReviewId,
   // Unmarked receipts predate protocol-aware admission and may name a running v2 worker.
-  workerProtocol: Schema.optionalKey(Schema.Literal(cloudEngineIdentity.protocol)),
+  // Protocol 3 receipts remain readable so already dispatched work can still return.
+  workerProtocol: Schema.optionalKey(Schema.Literals([3, cloudEngineIdentity.protocol])),
   revision: Schema.Int.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   syncFailure: Schema.NullOr(CloudReviewError).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),
@@ -75,6 +77,8 @@ export const CloudReviewRecord = Schema.Struct({
   inputSnapshotId: Schema.NullOr(Schema.String),
   resultSnapshotId: Schema.NullOr(Schema.String),
   sandboxName: Schema.String,
+  /** Workspace cache Volume mounted read-only at /cache; absent before protocol 4. */
+  cacheVolume: Schema.optionalKey(Schema.String),
   appName: Schema.String,
   environment: Schema.String,
   sourceVersion: Schema.Int,

@@ -27,7 +27,11 @@ import {
 } from "../../src/lib/review/execution.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
 import { journalFormat, openReviewJournal } from "../inference/journal.ts";
-import { createAdmittedModels, type ProviderConfiguration } from "../inference/provider.ts";
+import {
+  createAdmittedModels,
+  promptCacheKey,
+  type ProviderConfiguration,
+} from "../inference/provider.ts";
 import { createReviewTools } from "../inference/tools.ts";
 import { ResponseReceipt } from "../inference/response.ts";
 import type { SamInspectionRequest } from "#lib/review/segmentation.ts";
@@ -458,9 +462,13 @@ export class ReviewExecution extends Context.Service<
 
             const selectedProvider = { ...provider, model: run.model };
 
+            // A count check's opening prompt is specific to its finding, so the run is its own prefix.
+            const cacheKey = promptCacheKey("count", run.model, run.run_id);
+
             const admitted = createAdmittedModels(selectedProvider, {
               maxInputTokens: run.max_input_tokens,
               maxOutputTokens: run.max_output_tokens,
+              cacheKey: () => cacheKey,
               begin: async (phase, fingerprint) => {
                 await enter(run);
 

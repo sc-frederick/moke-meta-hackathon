@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Match, Schema } from "effect";
-  import type { PacketReview } from "#lib/review/packet.ts";
+  import { cachedPromptShare, type PacketReview } from "#lib/review/packet.ts";
   import { configurationLabel, packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import ReviewText from "./ReviewText.svelte";
@@ -55,6 +55,23 @@
   let additionalCallsDraft = $state<string | null>(null);
   const additionalCalls = $derived(Number(additionalCallsDraft ?? review.maxCalls ?? 1));
   const extendedBudget = $derived(review.admittedCalls + additionalCalls);
+  const cachedShare = $derived(cachedPromptShare(review.promptUsage));
+
+  // Large reviews run setup, one reviewer per sheet, then cross-sheet coordination.
+  const stageLine = $derived.by(() => {
+    if (review.parallel === undefined || review.state !== "running") return null;
+    const { stage, sheets } = review.parallel;
+
+    if (stage === "setup") return "Recording project facts before sheet reviewers start";
+
+    if (stage === "coordination") return "Comparing sheets for cross-sheet conflicts";
+
+    const count = (state: string) => sheets.filter((entry) => entry.state === state).length;
+
+    return `Sheet reviewers: ${count("running")} running · ${count("completed")} of ${sheets.length} finished${
+      count("failed") > 0 ? ` · ${count("failed")} stopped` : ""
+    }`;
+  });
 
   const validAdditionalCalls = $derived(
     Number.isSafeInteger(additionalCalls) &&
@@ -251,6 +268,7 @@
       ? ` · ${unsettledRecorded} still ${unsettledRecorded === 1 ? "needs" : "need"} input or a reason`
       : ""}
   </p>
+  {#if stageLine}<p class="muted stage-line">{stageLine}</p>{/if}
   {#if review.summary}<div class="summary">
       <ReviewText
         text={review.summary.length > 500 ? review.summary.slice(0, 500) + "…" : review.summary}
@@ -286,7 +304,9 @@
   {/if}
   <div class="actions">
     <button disabled={busy} onclick={onExport}>Export review report</button>
-    {#if review.error}<button onclick={copyDiagnostics}>Copy review diagnostics</button>{/if}
+    {#if review.error || review.state !== "running"}<button onclick={copyDiagnostics}
+        >Copy review diagnostics</button
+      >{/if}
     {#if !historical && onRefresh}<button
         disabled={busy}
         data-testid="refresh-review"
@@ -572,7 +592,11 @@
       <p class="muted">
         {review.admittedCalls} provider calls{review.maxCalls === null
           ? ""
-          : ` of the optional ${review.maxCalls}-call budget`} · {review.promptVersion}
+          : ` of the optional ${review.maxCalls}-call budget`}{cachedShare === null
+          ? ""
+          : ` · ${Math.round(cachedShare * 100)}% of prompt tokens cached`} · {review.promptVersion}{review.preset
+          ? ` · ${review.preset}`
+          : ""}
       </p>
     </div>
   </details>
@@ -621,6 +645,9 @@
   .duration,
   .progress {
     color: var(--nd-ink-muted);
+    font-size: 12px;
+  }
+  .stage-line {
     font-size: 12px;
   }
   .eyebrow {
