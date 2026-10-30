@@ -3620,11 +3620,11 @@
     align-items: center;
     gap: var(--space-md);
     margin: 12vh auto 32px;
-    max-width: 46ch;
+    max-width: 480px;
     text-align: center;
   }
   .chat-empty h1 {
-    margin: var(--space-xs) 0 0;
+    margin: 0;
     font-family: var(--font-display);
     font-size: var(--text-headline-lg);
     font-weight: 600;

@@ -797,9 +797,6 @@
   .finding:hover {
     background: var(--color-wash);
   }
-  .finding:last-child {
-    border-bottom: 1px solid var(--color-border);
-  }
   .finding::after {
     content: "";
     order: 3;

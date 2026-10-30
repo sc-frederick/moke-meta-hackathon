@@ -363,7 +363,27 @@
     margin-left: var(--space-xs);
   }
   .sheet-navigation summary {
-    min-height: 32px;
+    height: 32px;
+    padding: 0 10px 0 var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--text-label-sm);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    transition: border-color var(--duration-fast) var(--ease-out);
+  }
+  .sheet-navigation summary:hover {
+    border-color: var(--color-bone);
+  }
+  .sheet-navigation summary::before {
+    order: 1;
+    -webkit-mask-image: var(--icon-chevron-down);
+    mask-image: var(--icon-chevron-down);
+  }
+  .sheet-navigation details[open] > summary::before {
+    transform: rotate(180deg);
   }
   .sheet-picker {
     position: absolute;
