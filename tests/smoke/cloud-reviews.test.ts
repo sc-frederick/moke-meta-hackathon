@@ -821,14 +821,19 @@ test("dispatched protocol-4 results survive the v4 prompt upgrade without admitt
       ),
     ).toThrow();
 
-    for (const phase of ["dispatching", "running"] as const)
-      expect(
-        (
-          await Effect.runPromise(
-            parseCloudWorkerProgress({ ...recorded, phase }, JSON.stringify(prior)),
-          )
-        ).identity.packetPrompt,
-      ).toBe("moke-packet-review-v3");
+    // Protocol 4 workers also shipped with v4 before the current prompt.
+    for (const packetPrompt of ["moke-packet-review-v3", "moke-packet-review-v4"] as const)
+      for (const phase of ["dispatching", "running"] as const)
+        expect(
+          (
+            await Effect.runPromise(
+              parseCloudWorkerProgress(
+                { ...recorded, phase },
+                JSON.stringify({ ...prior, identity: { ...prior.identity, packetPrompt } }),
+              ),
+            )
+          ).identity.packetPrompt,
+        ).toBe(packetPrompt);
 
     const { workerProtocol, ...unmarked } = recorded;
     expect(workerProtocol).toBe(4);
