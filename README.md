@@ -136,3 +136,8 @@ corrections, and revision tracking built for the hackathon. It does not reuse th
 earlier Moke application. Prompt and dependency provenance live in
 [the project manifest](.project-kit/manifest.json) and
 [the review prompt sources](backend/review/prompts/README.md).
+
+## License
+
+Moke is released under the [MIT License](LICENSE). Vendored code and design
+assets keep their own licenses, which sit beside them in the repository.

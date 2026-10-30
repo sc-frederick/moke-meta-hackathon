@@ -5,6 +5,7 @@
   "description": "A desktop workbench for evidence-backed engineering drawing review",
   "homepage": "https://github.com/sc-frederick/moke-meta-hackathon",
   "author": "Stephen Frederick",
+  "license": "MIT",
   "type": "module",
   "main": "dist/electron/main.mjs",
   "imports": {
