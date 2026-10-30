@@ -354,6 +354,10 @@
     if (activePacketReview?.state === "running" && activePacketReview.preset === initialReview.id)
       return "Initial review running…";
 
+    if (submittingCloud) return "Sending the review to the cloud…";
+
+    if (cloudLocked) return "A cloud review is in progress. Results sync automatically.";
+
     if (executionBlocked) return "Finish or cancel the current review first.";
 
     if (sheets.length === 0) return "Waiting for the imported sheets.";
@@ -1049,6 +1053,8 @@
       text: initialReview.text,
     });
 
+    // The composer shows where this review runs.
+    location = initialReviewPlacement.location;
     // No selection: the first set can span several PDFs, and every one of its sheets is in scope.
     await startDrawingReview(
       command,
