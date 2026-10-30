@@ -241,14 +241,22 @@ const ChecklistRow = Schema.Struct({
 const deviceNoun =
   "(?:receptacles?|outlets?|luminaires?|light(?:ing)? fixtures?|fixtures?|lights?|switch(?:es)?|sprinkler heads?|sprinklers?|diffusers?|detectors?|devices?|water closets?|lavator(?:y|ies)|urinals?|sinks?)";
 
+// "One receptacle" usually identifies a device, so spelled quantities start at two.
+const quantity =
+  "(?:\\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|a dozen)";
+
 // Room, circuit, sheet and code-section numbers before a device noun are identifiers, not counts.
 const deviceCount = new RegExp(
-  `\\b(?:(?:counts?|quantit(?:y|ies)|qty|number) of (?:[\\w-]+ ){0,3}${deviceNoun}|${deviceNoun} (?:counts?|quantit(?:y|ies)|totals?)|(?<!(?:room|rm|circuit|ckt|panel|sheet|detail|note|section|level|floor|unit|suite|type|no)\\.? |[\\d.#-])\\d+ (?:[\\w-]+ ){0,2}${deviceNoun})\\b`,
+  `\\b(?:(?:counts?|quantit(?:y|ies)|qty|number) of (?:[\\w-]+ ){0,3}${deviceNoun}|${deviceNoun} (?:counts?|quantit(?:y|ies)|totals?)|(?<!(?:room|rm|circuit|ckt|panel|sheet|detail|note|section|level|floor|unit|suite|type|no)\\.? |[\\d.#-])${quantity} (?:[\\w-]+ ){0,2}${deviceNoun})\\b`,
   "i",
 );
 
 /** Whether a finding states a drawn device or fixture count, which SAM should help establish. */
 export const claimsDeviceCount = (text: string) => deviceCount.test(text);
+
+/** SAM masks are for the reviewer's view; model-facing findings omit them. */
+const withoutFocus = (findings: PacketReview["findings"]) =>
+  findings.map((finding) => Struct.omit(finding, ["focus"]));
 
 const clip = (region: Region, box: Region) => {
   const x = Math.max(region.x, box.x);
@@ -1237,7 +1245,7 @@ export class PacketReviews extends Context.Service<
 
                 // A sheet reviewer needs its own rows, not the whole ledger.
                 return assigned === undefined
-                  ? review
+                  ? Struct.assign(review, { findings: withoutFocus(review.findings) })
                   : {
                       request: review.request,
                       scope: review.scope,
@@ -1245,8 +1253,10 @@ export class PacketReviews extends Context.Service<
                       projectConfiguration: review.projectConfiguration,
                       sources: review.sources.map(({ id, url, title }) => ({ id, url, title })),
                       coverage: review.coverage.filter((entry) => entry.sheetId === assigned),
-                      findings: review.findings.filter((finding) =>
-                        finding.locations.some((location) => location.sheetId === assigned),
+                      findings: withoutFocus(
+                        review.findings.filter((finding) =>
+                          finding.locations.some((location) => location.sheetId === assigned),
+                        ),
                       ),
                     };
               },
@@ -2208,8 +2218,10 @@ export class PacketReviews extends Context.Service<
                       requiredChecks: packetCoverageProgress(current)
                         .gaps.filter((gap) => gap.sheetId === sheet.id)
                         .map(({ discipline, pass, reason }) => ({ discipline, pass, reason })),
-                      previousFindings: current.findings.filter((finding) =>
-                        finding.locations.some((location) => location.sheetId === sheet.id),
+                      previousFindings: withoutFocus(
+                        current.findings.filter((finding) =>
+                          finding.locations.some((location) => location.sheetId === sheet.id),
+                        ),
                       ),
                       previousComments: current.priorComments.filter((comment) =>
                         (comment.revisionTargetSheetIds ?? []).includes(sheet.id),
@@ -2718,7 +2730,7 @@ export class PacketReviews extends Context.Service<
               conversation: row.payload.conversationContext ?? [],
               inventory: row.payload.sheets,
               scope: row.payload.scope,
-              previousFindings: row.payload.findings,
+              previousFindings: withoutFocus(row.payload.findings),
               previousComments: row.payload.priorComments,
               followUpInstructions: resumedInstructions.map(({ commandId, text }) => ({
                 commandId,

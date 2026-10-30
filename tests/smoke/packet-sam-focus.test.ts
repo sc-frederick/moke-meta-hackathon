@@ -32,6 +32,10 @@ test("device count wording needs a counted noun, not an identifier number", () =
     true,
   );
   expect(claimsDeviceCount("Lighting fixture quantities do not match the schedule")).toBe(true);
+  expect(
+    claimsDeviceCount("The plan shows two duplex receptacles and the schedule lists four"),
+  ).toBe(true);
+  expect(claimsDeviceCount("One receptacle at the counter lacks a GFCI note")).toBe(false);
   expect(claimsDeviceCount("Room 107 receptacles lack GFCI notation")).toBe(false);
   expect(claimsDeviceCount("NEC 210.52 receptacle spacing exceeds 12 ft")).toBe(false);
 });
@@ -119,6 +123,8 @@ test("a device count needs SAM, and each recorded finding gets a SAM zoom of its
           },
         ]);
       case 4:
+        return response([{ name: "inventory_packet", arguments: {} }]);
+      case 5:
         return response([
           {
             name: "finish_review",
@@ -176,6 +182,10 @@ test("a device count needs SAM, and each recorded finding gets a SAM zoom of its
     expect(focus.box.left).toBeGreaterThan(0);
     expect(focus.box.right).toBeLessThan(focus.width);
     expect(modelInputs[4]).toContain(`"samFocus":{"artifactId":"${focus.artifactId}"`);
+    // Stored masks stay out of model context; the inventory still carries the finding.
+    expect(modelInputs[5]).toContain(counted?.id ?? "missing finding");
+    expect(modelInputs.join("\n")).not.toContain("!!!!!&O.lVP");
+    expect(modelInputs[5]).not.toContain('"focus"');
 
     const reportPath = join(directory, "report.html");
     await session.run(session.packets.exportReport(session.projectId, finished.id, reportPath));
