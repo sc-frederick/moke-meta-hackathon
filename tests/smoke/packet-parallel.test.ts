@@ -72,19 +72,34 @@ function calls(input: typeof Schema.Json.Type | undefined) {
 }
 
 /**
- * Scripted coordinator and sheet reviewers. Each sheet reviewer's first request is held until both
- * are on the wire, so they must run concurrently and one in-flight attempt cannot block the other.
+ * Scripted coordinator and sheet reviewers. One sheet reviewer opens first to cache the shared
+ * prompt prefix. Each reviewer's second request is then held until both are on the wire, so they
+ * must run concurrently and one in-flight attempt cannot block the other.
  */
 function script(failing: "none" | "second-sheet" | "second-sheet-without-notes") {
   const arrived = new Set<string>();
   const bothArrived = Promise.withResolvers<void>();
-  const observed = { maxInFlight: 0, rejections: 0, stages: new Array<string>() };
+
+  const observed = {
+    maxInFlight: 0,
+    rejections: 0,
+    stages: new Array<string>(),
+    /** Each sheet reviewer's opening request, and whether another opening was still on the wire. */
+    openings: new Array<{ readonly sheetId: string; readonly overlapped: boolean }>(),
+    cacheKeys: { sheet: new Set<string>(), coordinator: new Set<string>() },
+    retention: new Set<string>(),
+  };
+
   let inFlight = 0;
+  let opening = 0;
 
   const transport: ProviderTransport = async (_url, init) => {
     const request = decodeRequest(init);
     const prompt = systemPrompt(request);
     const made = calls(request.input);
+
+    if (request.prompt_cache_retention !== undefined)
+      observed.retention.add(request.prompt_cache_retention);
 
     if (prompt.includes("## Parallel review: sheet reviewer")) {
       const input = outputs(SheetInput, request).at(0);
@@ -98,7 +113,23 @@ function script(failing: "none" | "second-sheet" | "second-sheet-without-notes")
         text.includes("You review one assigned sheet"),
       ).length;
 
+      if (request.prompt_cache_key !== undefined)
+        observed.cacheKeys.sheet.add(request.prompt_cache_key);
+
       if (made.length === 0) {
+        observed.openings.push({ sheetId: own, overlapped: opening > 0 });
+        opening++;
+        await Bun.sleep(20);
+        opening--;
+
+        if (failing === "second-sheet" && !first)
+          return Response.json({ error: { message: "Internal error" } }, { status: 500 });
+
+        // The first sheet reviewer also tries to open the other sheet, which the host refuses.
+        return response([{ name: "render_sheet", arguments: { sheetId: first ? other : own } }]);
+      }
+
+      if (made.length === 1 && failing === "none") {
         arrived.add(own);
 
         if (arrived.size === 2) bothArrived.resolve();
@@ -106,12 +137,6 @@ function script(failing: "none" | "second-sheet" | "second-sheet-without-notes")
         observed.maxInFlight = Math.max(observed.maxInFlight, inFlight);
         await Promise.race([bothArrived.promise, Bun.sleep(5000)]);
         inFlight--;
-
-        if (failing === "second-sheet" && !first)
-          return Response.json({ error: { message: "Internal error" } }, { status: 500 });
-
-        // The first sheet reviewer also tries to open the other sheet, which the host refuses.
-        return response([{ name: "render_sheet", arguments: { sheetId: first ? other : own } }]);
       }
 
       // A render refused because the review paused is retried after resume, as a model would.
@@ -136,6 +161,9 @@ function script(failing: "none" | "second-sheet" | "second-sheet-without-notes")
 
     if (!stage) throw new Error("Coordinator input is missing its stage");
     observed.stages.push(stage);
+
+    if (request.prompt_cache_key !== undefined)
+      observed.cacheKeys.coordinator.add(request.prompt_cache_key);
 
     if (stage === "setup")
       return made.includes("record_project")
@@ -173,6 +201,18 @@ test("a large packet reviews its sheets in concurrent conversations between coor
     const finished = await until(session, started.id, "completed");
 
     expect(observed.maxInFlight).toBe(2);
+    // The second reviewer opens only after the first one's opening request cached the prefix.
+    expect(observed.openings).toHaveLength(2);
+    expect(observed.openings.some((entry) => entry.overlapped)).toBe(false);
+    // Sheet reviewers share one cache key and the coordinator has its own; both ask for 24h.
+    expect(observed.cacheKeys.sheet.size).toBe(1);
+    expect(observed.cacheKeys.coordinator.size).toBe(1);
+    expect([...observed.cacheKeys.sheet][0]).not.toBe([...observed.cacheKeys.coordinator][0]);
+    expect([...observed.retention]).toEqual(["24h"]);
+    expect(finished.promptUsage?.calls).toBeGreaterThan(0);
+    expect(finished.parallel?.sheets.every((sheet) => (sheet.promptUsage?.calls ?? 0) > 0)).toBe(
+      true,
+    );
     expect(observed.rejections).toBeGreaterThan(0);
     expect(observed.stages[0]).toBe("setup");
     expect(observed.stages.at(-1)).toBe("coordination");
@@ -188,6 +228,87 @@ test("a large packet reviews its sheets in concurrent conversations between coor
     expect(packetCoverageProgress(finished).complete).toBe(true);
     expect(finished.projectConfiguration.jurisdiction).toBe("Needs input");
     expect(finished.finished).toBe(true);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30000);
+
+const WireRequest = Schema.fromJsonString(
+  Schema.Struct({
+    prompt_cache_key: Schema.optionalKey(Schema.String),
+    tools: Schema.optionalKey(Schema.Json),
+    input: Schema.Array(Schema.Json),
+  }),
+);
+
+test("every conversation's next request extends its previous request byte for byte", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-prefix-"));
+  const { transport } = script("none");
+
+  const requests: Array<{ readonly conversation: string; readonly wire: typeof WireRequest.Type }> =
+    [];
+
+  const recording: ProviderTransport = async (url, init) => {
+    const request = decodeRequest(init);
+
+    const conversation = systemPrompt(request).includes("## Parallel review: sheet reviewer")
+      ? (outputs(SheetInput, request).at(0)?.sheet.id ?? "unknown")
+      : "coordinator";
+
+    requests.push({
+      conversation,
+      wire: Schema.decodeUnknownSync(WireRequest)(
+        Schema.decodeUnknownSync(Schema.String)(init?.body),
+      ),
+    });
+
+    return transport(url, init);
+  };
+
+  const session = await open(directory, recording, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    await until(session, started.id, "completed");
+    const conversations = Map.groupBy(requests, (request) => request.conversation);
+    expect(conversations.size).toBe(3);
+    expect(conversations.has("unknown")).toBe(false);
+
+    for (const sequence of conversations.values()) {
+      expect(sequence.length).toBeGreaterThan(1);
+
+      for (let index = 1; index < sequence.length; index++) {
+        const previous = sequence[index - 1]?.wire;
+        const current = sequence[index]?.wire;
+
+        if (previous === undefined || current === undefined) throw new Error("Missing request");
+        expect(current.prompt_cache_key).toBe(previous.prompt_cache_key);
+        expect(JSON.stringify(current.tools)).toBe(JSON.stringify(previous.tools));
+        // No earlier turn is edited, reordered or re-encoded, so the cached prefix stays valid.
+        expect(
+          current.input.slice(0, previous.input.length).map((item) => JSON.stringify(item)),
+        ).toEqual(previous.input.map((item) => JSON.stringify(item)));
+      }
+    }
+
+    // Sheet reviewers' opening requests share tools and every field before their own sheet.
+    const openings = [...conversations].flatMap(([conversation, sequence]) =>
+      conversation === "coordinator" ? [] : [sequence[0]?.wire],
+    );
+
+    const sheetText = (wire: typeof WireRequest.Type | undefined) =>
+      strings(wire?.input ?? []).find((text) => text.startsWith('{"stage":"sheet"')) ?? "";
+
+    const [left, right] = openings.map(sheetText);
+    const shared = left?.indexOf('"continuation"') ?? -1;
+    expect(shared).toBeGreaterThan(0);
+    expect(right?.slice(0, shared)).toBe(left?.slice(0, shared));
+    expect(left?.slice(0, shared)).toContain('"inventory"');
+    expect(JSON.stringify(openings[0]?.tools)).toBe(JSON.stringify(openings[1]?.tools));
   } finally {
     await session.dispose();
     await rm(directory, { recursive: true, force: true });

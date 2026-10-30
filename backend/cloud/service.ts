@@ -1,4 +1,16 @@
-import { Clock, Context, Effect, Layer, PubSub, Semaphore, Stream, SubscriptionRef } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Queue,
+  Semaphore,
+  Stream,
+  Struct,
+  SubscriptionRef,
+} from "effect";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { InferenceConfiguration, ModalConfiguration } from "#lib/backend-rpc.ts";
@@ -14,6 +26,14 @@ import { reviewModels } from "#lib/review/models.ts";
 import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
 import { createCloudDirectory, readCloudState, writeCloudState } from "./files.ts";
 import type { CloudSandboxPort } from "./sandbox-port.ts";
+import {
+  cloudCacheVolumeName,
+  listLocalArtifacts,
+  readCloudCacheState,
+  writeCloudCacheState,
+  type CloudCacheState,
+} from "./cache.ts";
+import { parseCloudManifest, reuseLocalArtifact } from "./transfer.ts";
 
 /** Application-owned sandbox port, implemented by Modal or a local test seam. */
 export class CloudSandbox extends Context.Service<CloudSandbox, CloudSandboxPort>()(
@@ -42,6 +62,8 @@ export interface CloudReviewConfiguration {
   readonly estimate?: Effect.Effect<typeof CloudWorkspaceEstimate.Type, CloudReviewError>;
   readonly restore: (source: string) => Effect.Effect<void, CloudReviewError>;
   readonly restorePending: () => boolean;
+  /** Local artifact store for cache seeding and for reusing result files instead of downloading. */
+  readonly dataDirectory?: string;
 }
 
 const conflict = () =>
@@ -114,6 +136,8 @@ export class CloudReviews extends Context.Service<
     readonly refresh: (id: string) => Effect.Effect<CloudReviewStatus, CloudReviewError>;
     readonly importResults: (id: string) => Effect.Effect<CloudReviewStatus, CloudReviewError>;
     readonly cancel: (id: string) => Effect.Effect<CloudReviewStatus, CloudReviewError>;
+    /** Ask the background seeder to sync new source files to cloud storage. Never fails. */
+    readonly syncCache: Effect.Effect<void>;
   }
 >()("app/CloudReviews") {
   /** Local intents live outside portable packages and survive restoring the application database. */
@@ -140,12 +164,173 @@ export class CloudReviews extends Context.Service<
               "Multiple cloud owners were recorded. Local work remains blocked until ownership is recovered.",
           });
 
+        // Workspace cache: originals, renders and closed journals stored in Modal by SHA-256.
+        // Everything here is best-effort; a cache failure only means more bytes at Send.
+        const cachePath = join(config.directory, "cache.json");
+        let cacheState = yield* readCloudCacheState(cachePath);
+
+        const cacheVolume =
+          config.modal === undefined
+            ? undefined
+            : cloudCacheVolumeName(config.modal.appName, cacheState.id);
+
+        const cacheWakeups = yield* Queue.sliding<void>(1);
+        yield* Effect.addFinalizer(() => Queue.shutdown(cacheWakeups));
+        let starting = false;
+
+        // A Send needs the uplink, and pruning must never race a review that reads the cache.
+        const cachePaused = () =>
+          starting || jobs.some((record) => cloudReviewLocksWorkspace(record.phase));
+
+        const saveCache = (next: CloudCacheState) =>
+          Effect.suspend(() => {
+            cacheState = next;
+
+            return writeCloudCacheState(cachePath, next);
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("cloud_cache_state_unsaved", { reason: error.reason }),
+            ),
+          );
+
+        // The Volume name derives from this id, so keep it stable across launches.
+        if (cacheVolume !== undefined) yield* saveCache(cacheState);
+
+        const seedCache = Effect.gen(function* () {
+          if (cacheVolume === undefined) return;
+
+          const now = yield* Clock.currentTimeMillis;
+          const pending = cacheState.pending.filter((entry) => entry.expiresAt > now);
+
+          const retained = new Set(
+            pending.flatMap((entry) => entry.files.map((file) => file.sha256)),
+          );
+
+          const cached = new Map(cacheState.cached.map((file) => [file.sha256, file.bytes]));
+
+          const local =
+            config.dataDirectory === undefined || cachePaused()
+              ? []
+              : yield* listLocalArtifacts(config.dataDirectory);
+
+          const missing = local.filter(
+            (file) => cached.get(file.sha256) !== file.bytes && !retained.has(file.sha256),
+          );
+
+          const keep = new Set([
+            ...local.map((file) => file.sha256),
+            ...cacheState.referenced,
+            ...retained,
+          ]);
+
+          const prune =
+            local.length > 0 &&
+            !cachePaused() &&
+            cacheState.cached.some((file) => !keep.has(file.sha256));
+
+          if (pending.length === 0 && missing.length === 0 && !prune) {
+            if (pending.length !== cacheState.pending.length)
+              yield* saveCache({ ...cacheState, pending });
+
+            return;
+          }
+
+          const listing = yield* sandbox.seedCache({
+            volume: cacheVolume,
+            snapshots: pending,
+            local: missing,
+            keep: prune ? [...keep] : null,
+            paused: Effect.sync(cachePaused),
+          });
+
+          const processed = new Set(pending.map((entry) => entry.imageId));
+
+          yield* saveCache({
+            ...cacheState,
+            cached: [...listing],
+            pending: cacheState.pending.filter(
+              (entry) => entry.expiresAt > now && !processed.has(entry.imageId),
+            ),
+          });
+          yield* Effect.logDebug("cloud_cache_seeded", {
+            files: listing.length,
+            retainedSnapshots: pending.length,
+            localCandidates: missing.length,
+            pruned: prune,
+          });
+        });
+
+        const syncCache = Queue.offer(cacheWakeups, undefined).pipe(Effect.asVoid);
+
+        /**
+         * Remember a package manifest (sent or returned) and queue its uploaded files for an
+         * in-cloud copy from the given directory snapshot, so they never cross the uplink twice.
+         */
+        const rememberPackage = (
+          manifestPath: string,
+          snapshotId: string | null,
+          root: "input/" | "",
+        ) =>
+          Effect.gen(function* () {
+            if (cacheVolume === undefined) return;
+
+            const text = yield* Effect.tryPromise({
+              try: () => readFile(manifestPath, "utf8"),
+              catch: () =>
+                new CloudReviewError({ reason: "storage", message: "Manifest unavailable." }),
+            });
+
+            const { manifest, files } = yield* parseCloudManifest(text);
+            const stored = files.filter((file) => file.path !== manifest.database.path);
+            const cached = new Map(cacheState.cached.map((file) => [file.sha256, file.bytes]));
+            const now = yield* Clock.currentTimeMillis;
+
+            const retain =
+              snapshotId === null
+                ? []
+                : stored
+                    .filter((file) => cached.get(file.sha256) !== file.bytes)
+                    .map(({ sha256, bytes, path }) => ({ sha256, bytes, path: `${root}${path}` }));
+
+            yield* saveCache({
+              ...cacheState,
+              referenced: [...new Set(stored.map((file) => file.sha256))],
+              pending:
+                snapshotId === null || retain.length === 0
+                  ? cacheState.pending
+                  : [
+                      ...cacheState.pending.slice(-15),
+                      // Review snapshots are kept for seven days.
+                      { imageId: snapshotId, expiresAt: now + 6 * 24 * 60 * 60_000, files: retain },
+                    ],
+            });
+            yield* syncCache;
+          }).pipe(Effect.catchCause(() => Effect.logWarning("cloud_cache_package_unrecorded")));
+
+        yield* Stream.fromQueue(cacheWakeups).pipe(
+          Stream.runForEach(() =>
+            seedCache.pipe(Effect.catchCause(() => Effect.logWarning("cloud_cache_seed_deferred"))),
+          ),
+          Effect.forkScoped,
+        );
+
+        // Seed on launch too, so a workspace opened after imports is ready before the next Send.
+        if (cacheVolume !== undefined) yield* syncCache;
+
         const save = Effect.fn("CloudReviews.save")(function* (record: CloudReviewRecord) {
-          const saved = {
+          const locked = cloudReviewLocksWorkspace(record.phase);
+
+          const stamped = {
             ...record,
             revision: Math.max(0, ...jobs.map((job) => job.revision)) + 1,
-            syncFailure: cloudReviewLocksWorkspace(record.phase) ? record.syncFailure : null,
+            syncFailure: locked ? record.syncFailure : null,
           };
+
+          // Imported findings replace the preview, and terminal receipts must fit the state file.
+          const saved =
+            stamped.packet === undefined || locked
+              ? stamped
+              : { ...stamped, packet: Struct.omit(stamped.packet, ["findingPreview"]) };
 
           const next = jobs.some((job) => job.id === record.id)
             ? jobs.map((job) => (job.id === record.id ? saved : job))
@@ -255,10 +440,34 @@ export class CloudReviews extends Context.Service<
                   )
               : "Set up the cloud and model connections before pushing a review.";
 
+            yield* syncCache;
+
             const estimate =
               config.estimate === undefined
                 ? {}
                 : yield* config.estimate.pipe(
+                    Effect.flatMap((workspaceEstimate) =>
+                      config.dataDirectory === undefined || cacheVolume === undefined
+                        ? Effect.succeed(workspaceEstimate)
+                        : Effect.map(listLocalArtifacts(config.dataDirectory), (local) => {
+                            const cached = new Map(
+                              cacheState.cached.map((file) => [file.sha256, file.bytes]),
+                            );
+
+                            const synced = local.filter(
+                              (file) => cached.get(file.sha256) === file.bytes,
+                            );
+
+                            return {
+                              ...workspaceEstimate,
+                              syncedBytes: Math.min(
+                                workspaceEstimate.bytes,
+                                synced.reduce((total, file) => total + file.bytes, 0),
+                              ),
+                              syncedFiles: synced.length,
+                            };
+                          }),
+                    ),
                     Effect.map((workspaceEstimate) => ({ workspaceEstimate })),
                     Effect.catch((error) =>
                       Effect.succeed({ workspaceEstimateError: error.message }),
@@ -297,6 +506,7 @@ export class CloudReviews extends Context.Service<
           assertLocal,
           start: (request) =>
             Effect.gen(function* () {
+              starting = true;
               const fingerprint = JSON.stringify(request);
 
               const previous = jobs.find(
@@ -368,6 +578,8 @@ export class CloudReviews extends Context.Service<
 
               if (prepared !== undefined) record = { ...record, transferBytes: prepared.bytes };
 
+              if (cacheVolume !== undefined) record = { ...record, cacheVolume };
+
               yield* save(record);
               const sandboxId = yield* sandbox.allocate(record);
               record = { ...record, sandboxId };
@@ -400,9 +612,18 @@ export class CloudReviews extends Context.Service<
                 provider,
                 (config.providers ?? []).filter((item) => item.provider !== provider.provider),
               );
+              yield* rememberPackage(join(input, "manifest.json"), inputSnapshotId, "input/");
 
               return publicStatus(yield* load(id));
-            }).pipe(Semaphore.withPermit(serial), Effect.uninterruptible),
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  starting = false;
+                }),
+              ),
+              Semaphore.withPermit(serial),
+              Effect.uninterruptible,
+            ),
           refresh: (id) => refresh(id).pipe(Semaphore.withPermit(serial)),
           importResults: (id) =>
             Effect.gen(function* () {
@@ -432,18 +653,24 @@ export class CloudReviews extends Context.Service<
                     message:
                       "Local evidence changed after this transfer. Cloud results cannot replace the current workspace.",
                   });
-                yield* sandbox.download(record, output, (transfer) =>
-                  Effect.gen(function* () {
-                    record = {
-                      ...record,
-                      transfer,
-                      message:
-                        transfer.completedFiles === transfer.totalFiles
-                          ? "Result files downloaded and verified. Preparing workspace import."
-                          : "Downloading cloud result files.",
-                    };
-                    yield* save(record);
-                  }),
+                yield* sandbox.download(
+                  record,
+                  output,
+                  (transfer) =>
+                    Effect.gen(function* () {
+                      record = {
+                        ...record,
+                        transfer,
+                        message:
+                          transfer.completedFiles === transfer.totalFiles
+                            ? "Result files downloaded and verified. Preparing workspace import."
+                            : "Downloading cloud result files.",
+                      };
+                      yield* save(record);
+                    }),
+                  config.dataDirectory === undefined
+                    ? undefined
+                    : reuseLocalArtifact(config.dataDirectory),
                 );
                 // A lost connection is never proof that the other owner has stopped.
                 yield* sandbox.stop(record);
@@ -470,12 +697,17 @@ export class CloudReviews extends Context.Service<
                 ),
               );
 
-              return yield* save({
+              const imported = yield* save({
                 ...record,
                 phase: "imported",
                 message:
                   "Cloud results synced. Local editing is available; proposed evidence still needs your review.",
               });
+
+              // New crops rendered in the cloud are copied into the cache from the result snapshot.
+              yield* rememberPackage(join(output, "manifest.json"), record.resultSnapshotId, "");
+
+              return imported;
             }).pipe(Semaphore.withPermit(serial), Effect.uninterruptible),
           cancel: (id) =>
             Effect.gen(function* () {
@@ -498,6 +730,7 @@ export class CloudReviews extends Context.Service<
                   "Cloud execution is confirmed stopped. Local editing is available. Model calls may already have been charged.",
               });
             }).pipe(Semaphore.withPermit(serial), Effect.uninterruptible),
+          syncCache,
         });
       }),
     );
@@ -562,6 +795,13 @@ export const unavailableCloudSandbox = Layer.succeed(
         new CloudReviewError({
           reason: "configuration",
           message: "Restore the cloud connection to confirm this review has stopped.",
+        }),
+      ),
+    seedCache: () =>
+      Effect.fail(
+        new CloudReviewError({
+          reason: "configuration",
+          message: "The cloud connection needs setup.",
         }),
       ),
   }),

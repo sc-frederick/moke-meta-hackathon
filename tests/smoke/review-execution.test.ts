@@ -1185,7 +1185,7 @@ test("progress reconnect drains persisted pages without needing a new operation"
   }
 });
 
-test("recent image window keeps six actual images and metadata without growing a request", async () => {
+test("recent image window drops old images three at a time and keeps metadata without growing a request", async () => {
   const images = Array.from({ length: 8 }, (_, index) => {
     const canvas = createCanvas(32, 32);
     const context = canvas.getContext("2d");
@@ -1209,10 +1209,13 @@ test("recent image window keeps six actual images and metadata without growing a
       transport: async (_input, init) => {
         sends++;
         const body = Schema.decodeUnknownSync(Schema.String)(init?.body);
-        expect(body.split("data:image/png;base64,").length - 1).toBe(6);
-        expect(body).toContain("Earlier image omitted");
-        expect(body).not.toContain(images[0]?.data ?? "invalid");
-        expect(body).toContain(images[7]?.data ?? "invalid");
+        // Eight images exceed the six-image window, so the oldest step of three is omitted together.
+        expect(body.split("data:image/png;base64,").length - 1).toBe(5);
+        expect(body.split("Earlier image omitted").length - 1).toBe(3);
+
+        for (const image of images.slice(0, 3)) expect(body).not.toContain(image.data);
+
+        for (const image of images.slice(3)) expect(body).toContain(image.data);
 
         return response();
       },

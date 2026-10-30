@@ -17,6 +17,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ReviewDesktopRpc, ReviewShellRpc } from "../src/lib/review/shell.ts";
 import { ReviewError, ReviewStorageError } from "../src/lib/review/contracts.ts";
+import { cachedPromptShare } from "../src/lib/review/packet.ts";
 import { BackendApi, type BackendLaunch } from "./backend.ts";
 import { ReviewProxy, ExecutionProxy, PacketProxy, CloudReviewProxy } from "./review-proxy.ts";
 import { readInferenceConfigurations, storeInferenceConfiguration } from "./credentials.ts";
@@ -191,8 +192,22 @@ if (!app.requestSingleInstanceLock()) {
                             state: review.state,
                             error: review.error,
                             providerFailure: review.providerFailure ?? null,
+                            preset: review.preset ?? null,
                             admittedCalls: review.admittedCalls,
                             openedSheets: review.inspectedSheetIds.length,
+                            // Target: at least 90% of prompt tokens served from the provider cache.
+                            promptCache: {
+                              cachedShare: cachedPromptShare(review.promptUsage),
+                              ...review.promptUsage,
+                              sheets: (review.parallel?.sheets ?? []).map((entry) => ({
+                                sheetId: entry.sheetId,
+                                label:
+                                  review.sheets.find((sheet) => sheet.id === entry.sheetId)
+                                    ?.label ?? "",
+                                cachedShare: cachedPromptShare(entry.promptUsage),
+                                calls: entry.promptUsage?.calls ?? 0,
+                              })),
+                            },
                           },
                           null,
                           2,

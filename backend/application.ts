@@ -293,6 +293,7 @@ export class Application extends Context.Service<
 
         const cloudOptions = {
           directory: `${owner.canonicalDirectory}.cloud`,
+          dataDirectory: owner.canonicalDirectory,
           estimate: estimateReviewPackage({
             ...packages,
             assertReadable: Effect.suspend(() =>
@@ -447,8 +448,9 @@ export class Application extends Context.Service<
             review.snapshot(...args).pipe(Semaphore.withPermit(workSlots)),
           command: (...args: Parameters<typeof review.command>) =>
             admit(locally(review.command(...args))),
+          // A new drawing set or revision starts syncing to cloud storage right after import.
           importPdf: (...args: Parameters<typeof review.importPdf>) =>
-            admit(locally(review.importPdf(...args))),
+            admit(locally(review.importPdf(...args))).pipe(Effect.tap(() => cloud.syncCache)),
           suggestSheetLabels: (...args: Parameters<typeof review.suggestSheetLabels>) =>
             admit(locally(review.suggestSheetLabels(...args))),
           render: (...args: Parameters<typeof review.render>) =>

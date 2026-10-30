@@ -84,6 +84,40 @@ and cost can remain unknown.
 The older selected-count execution adapter keeps its narrower admission limits
 for compatibility. Those limits do not define ordinary packet review.
 
+## Prompt caching and request images
+
+Meta and Baseten cache prompt prefixes automatically. Moke routes requests that
+share a prefix to the same cache and keeps earlier turns unchanged, aiming for at
+least 90% of prompt tokens served from cache (`cacheRead / (input + cacheRead)`).
+
+- **One key per shared prefix.** Every sheet reviewer of a review shares one key,
+  and the coordinator's setup and coordination turns share another. The key is a
+  hash of the model, project and instructions; it carries no names or prompt text.
+  Meta receives it as `prompt_cache_key` with `prompt_cache_retention: "24h"`;
+  Baseten receives it as `x-session-affinity`. Each count check uses its own key.
+  Pi's per-conversation session ID is not forwarded, because per-session keys would
+  split reviewers that share a prefix.
+- **Shared fields first.** A sheet reviewer's opening message lists the request,
+  scope, inventory, project configuration and sources before its own sheet, so
+  peers reuse the same prefix.
+- **Warm before fan-out.** One sheet reviewer starts first. The others start when
+  its opening request settles, or after 90 seconds, so they find the prefix cached.
+- **Append-only history.** Meta packet requests keep every image. Baseten packet
+  requests (8 images) and count checks (6 images) drop the oldest images several
+  at a time (4 and 3) instead of one per turn, so an earlier position changes once
+  per step.
+- **Images by reference.** Live Meta requests upload each delivered image once to
+  the [Files API](https://dev.meta.ai/docs/file-handling) (`purpose=user_data`,
+  24-hour expiry) and send its `file_id`, so later turns no longer resend base64.
+  A failed upload leaves that image inline and is not retried for five minutes.
+
+A probe on 2026-10-30 confirmed that Meta accepts `file_id` images inside
+`function_call_output` and reads them, that a base64 request after the matching
+`file_id` request still hit the cache, and that the second of two requests with
+the same key and a 7,216-token prefix was 99.1% cached. Each review records its
+token totals, overall and per sheet reviewer. The packet panel shows the cached
+share, and **Copy review diagnostics** includes it for every finished review.
+
 ## Packaged desktop credentials
 
 Packaged builds use an explicitly selected private credential file or the File

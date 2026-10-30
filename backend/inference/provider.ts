@@ -35,6 +35,11 @@ export interface ProviderConfiguration {
   /** Test/recorded transport; still exercises the published SDK request path. */
   readonly transport?: ProviderTransport;
   readonly timeoutMs?: number;
+  /**
+   * Upload Meta request images to the Files API once and reference them by ID instead of resending
+   * base64 on every turn. Defaults to on for live routes; recorded tests opt in.
+   */
+  readonly imageFiles?: boolean;
 }
 
 /** Meta serves Muse Spark 1.3 with a larger output ceiling than Pi's catalog records (checked 2026-10-29). */
@@ -45,6 +50,24 @@ const packetReasoning = (provider: string) => (provider === "meta" ? "xhigh" : "
 
 /** Meta runs this search server-side and returns cited text; read_source still records evidence. */
 const metaWebSearch = { type: "web_search", search_context_size: "high" } as const;
+
+/** Meta deletes uploaded request images after a day; a reference is reused until an hour before. */
+const imageFileLifetimeSeconds = 24 * 60 * 60;
+
+/** A failed upload falls back to inline base64 and is not retried for five minutes. */
+const imageFileRetryMs = 5 * 60_000;
+
+const MetaFile = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^file-[A-Za-z0-9_-]{1,128}$/)),
+});
+
+/** Fields the adapter adds to or replaces in Meta's Responses payload. */
+interface MetaPayloadChanges {
+  input?: Schema.MutableJson;
+  tools?: Array<Schema.MutableJson>;
+  prompt_cache_key?: string;
+  prompt_cache_retention?: "24h";
+}
 
 /** Provider refusals before generation: rate limits and missing serving capacity. */
 const retryableStatuses = new Set([429, 529]);
@@ -57,6 +80,13 @@ function refusalDelay(response: Response, retry: number) {
   return Number.isFinite(requested) && requested > 0
     ? Math.min(60_000, requested * 1000)
     : backoff / 2 + Math.random() * (backoff / 2);
+}
+
+/** Short, stable routing key for one shared prompt prefix; it carries no names or prompt text. */
+export function promptCacheKey(role: string, ...prefix: ReadonlyArray<string>) {
+  const digest = createHash("sha256").update(JSON.stringify(prefix)).digest("hex");
+
+  return `moke-${role}-${digest.slice(0, 32)}`;
 }
 
 /** Catalog capability for a pinned review model; Open's separate serving output maximum is unpublished. */
@@ -82,6 +112,11 @@ interface ProviderAdmission {
   readonly maxInputTokens: number;
   readonly packetReview?: boolean;
   readonly maxOutputTokens: number;
+  /**
+   * Requests that share a prompt prefix share one key, so the provider routes them to the backend
+   * already holding that prefix. Meta advises one key per shared prefix rather than per session.
+   */
+  readonly cacheKey?: (phase: RequestPhase) => string | undefined;
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
   readonly complete: (phase: RequestPhase, receipt: string) => Promise<void>;
@@ -117,13 +152,17 @@ function requestBounds(body: string) {
 
     if (Array.isArray(value)) return value.map(withoutPixels);
 
-    if (Predicate.isObject(value))
+    if (Predicate.isObject(value)) {
+      // Uploaded images are sent as Files API references; their bytes were bounded before upload.
+      if (value.type === "input_image" && Predicate.isString(value.file_id)) images++;
+
       return Object.fromEntries(
         Object.entries(value).map(([key, child]) => [
           key,
           withoutPixels(Schema.decodeUnknownSync(Schema.MutableJson)(child)),
         ]),
       );
+    }
 
     return value;
   };
@@ -133,33 +172,44 @@ function requestBounds(body: string) {
   return { textBytes, imageBytes, images, requestBytes: Buffer.byteLength(body) };
 }
 
-/** Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts. */
+/**
+ * Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts.
+ * The window drops the oldest images `step` at a time, so an earlier request position changes once
+ * per step instead of on every new image. Each change recomputes the provider's cached prefix.
+ */
 function boundedImageContext(
   transcript: TranscriptContext,
-  limits = { images: 6, imageBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024 },
+  limits = { images: 6, step: 3, imageBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024 },
 ): TranscriptContext {
-  const retained = new Set<ImageContent>();
-  let bytes = 0;
+  const images: Array<{ readonly part: ImageContent; readonly bytes: number }> = [];
 
-  for (const message of transcript.messages.toReversed()) {
+  for (const message of transcript.messages) {
     if (
       (message.role !== "user" && message.role !== "toolResult") ||
       Predicate.isString(message.content)
     )
       continue;
 
-    for (const part of message.content.toReversed()) {
+    for (const part of message.content) {
       if (part.type !== "image") continue;
-      const size = Buffer.byteLength(part.data, "base64");
+      const bytes = Buffer.byteLength(part.data, "base64");
 
-      if (size > limits.imageBytes) throw new Error("Individual source image exceeds its bound");
-
-      if (retained.size < limits.images && bytes + size <= limits.totalBytes) {
-        retained.add(part);
-        bytes += size;
-      }
+      if (bytes > limits.imageBytes) throw new Error("Individual source image exceeds its bound");
+      images.push({ part, bytes });
     }
   }
+
+  let cut =
+    images.length <= limits.images
+      ? 0
+      : Math.ceil((images.length - limits.images) / limits.step) * limits.step;
+
+  const retainedBytes = () => images.slice(cut).reduce((total, image) => total + image.bytes, 0);
+
+  while (cut < images.length - 1 && retainedBytes() > limits.totalBytes)
+    cut = Math.min(images.length - 1, cut + limits.step);
+
+  const retained = new Set(images.slice(cut).map((image) => image.part));
 
   return {
     ...transcript,
@@ -308,6 +358,96 @@ export function createAdmittedModels(
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       };
 
+  const imageFiles =
+    selected.provider === "meta" && (configuration.imageFiles ?? configuration.route === "live")
+      ? new Map<string, { readonly id: Promise<string | null>; readonly reusableUntil: number }>()
+      : undefined;
+
+  /** Upload one delivered image once; concurrent requests for the same bytes share the upload. */
+  const imageFileId = (files: NonNullable<typeof imageFiles>, image: string) => {
+    const sha256 = createHash("sha256").update(image).digest("hex");
+    const known = files.get(sha256);
+
+    if (known !== undefined && known.reusableUntil > Date.now()) return known.id;
+    const mediaType = image.slice("data:".length, image.indexOf(";"));
+
+    const id = (async () => {
+      const form = new FormData();
+      form.append("purpose", "user_data");
+      form.append("expires_after[anchor]", "created_at");
+      form.append("expires_after[seconds]", String(imageFileLifetimeSeconds));
+      form.append(
+        "file",
+        new File(
+          [Buffer.from(image.slice(image.indexOf(",") + 1), "base64")],
+          `${sha256}.${mediaType.slice("image/".length)}`,
+          { type: mediaType },
+        ),
+      );
+
+      const response = await (configuration.transport ?? globalThis.fetch)(`${baseUrl}/files`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${Redacted.value(configuration.apiKey)}` },
+        body: form,
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (!response.ok) {
+        await response.body?.cancel();
+
+        return null;
+      }
+
+      return Option.getOrNull(
+        Option.map(Schema.decodeUnknownOption(MetaFile)(await response.json()), (file) => file.id),
+      );
+    })().catch(() => null);
+
+    files.set(sha256, {
+      id,
+      reusableUntil: Date.now() + (imageFileLifetimeSeconds - 3600) * 1000,
+    });
+    void id.then((uploaded) => {
+      if (uploaded === null)
+        files.set(sha256, { id, reusableUntil: Date.now() + imageFileRetryMs });
+    });
+
+    return id;
+  };
+
+  /** Replace inline images with Files API references; an image whose upload failed stays inline. */
+  const referenceImages = async (value: Schema.MutableJson): Promise<Schema.MutableJson> => {
+    if (imageFiles === undefined) return value;
+
+    if (Array.isArray(value)) return Promise.all(value.map(referenceImages));
+
+    if (!Predicate.isObject(value)) return value;
+
+    const entries = Object.entries(value).map(
+      ([key, child]) => [key, Schema.decodeUnknownSync(Schema.MutableJson)(child)] as const,
+    );
+
+    const image = entries.find(([key]) => key === "image_url")?.[1];
+
+    if (
+      entries.some(([key, child]) => key === "type" && child === "input_image") &&
+      Predicate.isString(image) &&
+      image.startsWith("data:image/")
+    ) {
+      const id = await imageFileId(imageFiles, image);
+
+      return id === null
+        ? value
+        : Object.fromEntries([...entries.filter(([key]) => key !== "image_url"), ["file_id", id]]);
+    }
+
+    return Object.fromEntries(
+      await Promise.all(
+        entries.map(async ([key, child]) => [key, await referenceImages(child)] as const),
+      ),
+    );
+  };
+
   const guarded = (
     model: Model<Api>,
     transcript: TranscriptContext,
@@ -315,6 +455,7 @@ export function createAdmittedModels(
     send: (
       fetch: FetchFunction,
       context: TranscriptContext,
+      cacheKey: string | undefined,
     ) => ReturnType<typeof createAssistantMessageEventStream>,
   ) => {
     const output = createAssistantMessageEventStream();
@@ -347,6 +488,7 @@ export function createAdmittedModels(
           ? selected.provider === "baseten"
             ? boundedImageContext(transcript, {
                 images: 8,
+                step: 4,
                 imageBytes: 10 * 1024 * 1024,
                 totalBytes: 64 * 1024 * 1024,
               })
@@ -445,7 +587,7 @@ export function createAdmittedModels(
         );
 
         // Buffer the final normalized response. No tool can consume a response before its receipt commits.
-        const response = await send(transport, bounded).result();
+        const response = await send(transport, bounded, admission.cacheKey?.(phase)).result();
 
         if (response.stopReason === "error" || response.stopReason === "aborted") {
           // The SDK's deadline abort uses a plain AbortError internally. Its normalized
@@ -527,6 +669,7 @@ export function createAdmittedModels(
   const requestOptions = (
     options: ProviderRequestOptions | undefined,
     fetch: FetchFunction,
+    cacheKey: string | undefined,
   ): SimpleStreamOptions => {
     const effort = packetReasoning(selected.provider);
 
@@ -541,14 +684,30 @@ export function createAdmittedModels(
 
     if (admission.packetReview) result.reasoningEffort = effort;
 
-    if (admission.packetReview && selected.provider === "meta")
-      result.onPayload = (payload) =>
-        Predicate.isObject(payload)
-          ? {
-              ...payload,
-              tools: [...(Array.isArray(payload.tools) ? payload.tools : []), metaWebSearch],
-            }
-          : payload;
+    // Pi's per-conversation session ID is deliberately not forwarded: sheet reviewers share a prefix.
+    if (selected.provider === "meta")
+      result.onPayload = async (payload) => {
+        if (!Predicate.isObject(payload)) return payload;
+        const changes: MetaPayloadChanges = {};
+
+        // The SDK payload holds undefined fields; read it the way the request body serializes it.
+        if (imageFiles !== undefined && payload.input !== undefined)
+          changes.input = await referenceImages(
+            Schema.decodeUnknownSync(Schema.MutableJson)(JSON.parse(JSON.stringify(payload.input))),
+          );
+
+        if (admission.packetReview)
+          changes.tools = [...(Array.isArray(payload.tools) ? payload.tools : []), metaWebSearch];
+
+        if (cacheKey !== undefined) {
+          changes.prompt_cache_key = cacheKey;
+          changes.prompt_cache_retention = "24h";
+        }
+
+        return { ...payload, ...changes };
+      };
+    // Baseten routes cache hits by replica affinity rather than a request field.
+    else if (cacheKey !== undefined) result.headers = { "x-session-affinity": cacheKey };
 
     if (!admission.packetReview || selected.provider !== "baseten")
       result.maxTokens = admission.maxOutputTokens;
@@ -572,16 +731,16 @@ export function createAdmittedModels(
     },
     getModels: () => [selected],
     stream: (model, context, options) =>
-      guarded(model, context, options, (fetch, bounded) =>
-        base.stream<Api>(model, bounded, requestOptions(options, fetch)),
+      guarded(model, context, options, (fetch, bounded, cacheKey) =>
+        base.stream<Api>(model, bounded, requestOptions(options, fetch, cacheKey)),
       ),
     streamSimple: (model, context, options) =>
-      guarded(model, context, options, (fetch, bounded) =>
+      guarded(model, context, options, (fetch, bounded, cacheKey) =>
         // Simple options inject a context-sized output limit. Packet requests on Baseten
         // use the API default; reasoning is already set explicitly in requestOptions.
         admission.packetReview && selected.provider === "baseten"
-          ? base.stream<Api>(model, bounded, requestOptions(options, fetch))
-          : base.streamSimple(model, bounded, requestOptions(options, fetch)),
+          ? base.stream<Api>(model, bounded, requestOptions(options, fetch, cacheKey))
+          : base.streamSimple(model, bounded, requestOptions(options, fetch, cacheKey)),
       ),
   });
 

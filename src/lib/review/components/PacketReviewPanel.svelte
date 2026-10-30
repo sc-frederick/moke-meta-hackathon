@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Match, Schema } from "effect";
-  import type { PacketReview } from "#lib/review/packet.ts";
+  import { cachedPromptShare, type PacketReview } from "#lib/review/packet.ts";
   import { configurationLabel, packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import ReviewText from "./ReviewText.svelte";
@@ -55,6 +55,7 @@
   let additionalCallsDraft = $state<string | null>(null);
   const additionalCalls = $derived(Number(additionalCallsDraft ?? review.maxCalls ?? 1));
   const extendedBudget = $derived(review.admittedCalls + additionalCalls);
+  const cachedShare = $derived(cachedPromptShare(review.promptUsage));
 
   const validAdditionalCalls = $derived(
     Number.isSafeInteger(additionalCalls) &&
@@ -286,7 +287,9 @@
   {/if}
   <div class="actions">
     <button disabled={busy} onclick={onExport}>Export review report</button>
-    {#if review.error}<button onclick={copyDiagnostics}>Copy review diagnostics</button>{/if}
+    {#if review.error || review.state !== "running"}<button onclick={copyDiagnostics}
+        >Copy review diagnostics</button
+      >{/if}
     {#if !historical && onRefresh}<button
         disabled={busy}
         data-testid="refresh-review"
@@ -572,7 +575,11 @@
       <p class="muted">
         {review.admittedCalls} provider calls{review.maxCalls === null
           ? ""
-          : ` of the optional ${review.maxCalls}-call budget`} · {review.promptVersion}
+          : ` of the optional ${review.maxCalls}-call budget`}{cachedShare === null
+          ? ""
+          : ` · ${Math.round(cachedShare * 100)}% of prompt tokens cached`} · {review.promptVersion}{review.preset
+          ? ` · ${review.preset}`
+          : ""}
       </p>
     </div>
   </details>

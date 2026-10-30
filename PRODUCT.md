@@ -78,6 +78,19 @@ from the composer and show their delivery state. Findings open their source
 evidence in a central canvas with zoom, pan and a return to the conversation.
 Reviewers can select source areas visually and expand technical controls when needed.
 
+Until a revised set arrives, an **Initial Review** button sits above the composer.
+One click posts the preset first-submittal request (`initial-review-v1`, in
+`src/lib/review/initial-review.ts`) as the reviewer's message and starts a review
+of every sheet in the first set, with all disciplines and the four passes, on
+Muse Spark 1.3. It runs in the cloud when cloud review is set up and can take the
+workspace, and on this computer otherwise; one line beside the button says which.
+The review records the preset's identity. The button is disabled while a review
+runs in the conversation and can run again during the initial phase, for example
+after sheet corrections. Each PDF import is a revision record, so a first set can
+span several PDFs: the phase ends when a PDF is linked to earlier sheets through
+revision correspondence, or when a PDF is imported after the project's first
+drawing-set review started. After that, reviewers use typed requests.
+
 The original desktop UI study established chat as the main work surface.
 Projects group their conversations in navigation, and selecting a conversation
 updates the project and conversation breadcrumb. Closing the source pane restores

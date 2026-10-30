@@ -33,7 +33,8 @@
   import PacketReviewPanel from "./PacketReviewPanel.svelte";
   import { ReviewDiscipline } from "#lib/review/disciplines.ts";
   import { SheetId } from "#lib/review/contracts.ts";
-  import type { PacketReview } from "#lib/review/packet.ts";
+  import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
+  import { inInitialReviewPhase, initialReview } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import ReviewText from "./ReviewText.svelte";
@@ -318,6 +319,61 @@
       (executionStatus !== null &&
         (["running", "pausing", "paused", "uncertain"].includes(executionStatus.state) ||
           (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged))),
+  );
+
+  const initialReviewModel = "muse-spark-1.3" satisfies typeof ReviewModelId.Type;
+
+  // Shown until a revised set arrives; a first set made of several PDFs keeps it.
+  const initialReviewVisible = $derived(
+    inInitialReviewPhase({
+      revisions,
+      correspondence: snapshot?.sheetCorrespondence ?? [],
+      reviews: packetReviews,
+    }),
+  );
+
+  // Cloud when it is set up and can take this workspace; on this computer otherwise.
+  const initialReviewPlacement = $derived.by(() => {
+    const local = (reason: string) =>
+      ({ location: "local", label: `on this computer: ${reason}` }) as const;
+
+    if (!cloudSetup?.configured) return { location: "local", label: "on this computer" } as const;
+
+    if (cloudSetup.workspaceEstimate === undefined)
+      return local("the cloud size check is unavailable");
+
+    if (cloudEstimateOverLimit) return local("this workspace exceeds the cloud limit");
+
+    if (cloudLocalReviews.length > 0) return local("local reviews are still active");
+
+    return { location: "cloud", label: "in the cloud" } as const;
+  });
+
+  // Why the button cannot run now, or null when it can.
+  const initialReviewBlocker = $derived.by(() => {
+    if (activePacketReview?.state === "running" && activePacketReview.preset === initialReview.id)
+      return "Initial review running…";
+
+    if (executionBlocked) return "Finish or cancel the current review first.";
+
+    if (sheets.length === 0) return "Waiting for the imported sheets.";
+
+    if (!modelOptions.some((model) => model.value === initialReviewModel && !model.disabled))
+      return "Connect Meta in Review settings to run the initial review.";
+
+    if (cloudSetup?.configured && estimatingWorkspace) return "Measuring the workspace for cloud…";
+
+    return null;
+  });
+
+  const initialReviewReady = $derived(
+    initialReviewBlocker === null && !busy && !importing && !cloudBlocked,
+  );
+
+  const initialReviewSummary = $derived(
+    `Whole set · all disciplines · four passes · ${
+      reviewModels.find((model) => model.id === initialReviewModel)?.label ?? initialReviewModel
+    } · ${initialReviewPlacement.label}`,
   );
 
   const visibleFindings = $derived(
@@ -861,86 +917,127 @@
         (cloudEstimateMissing || cloudEstimateOverLimit || cloudLocalReviews.length > 0)
       )
         return;
-      busy = true;
 
-      if (!scopeRevision || !scopeCount || (scopeMode === "discipline" && discipline === "auto")) {
-        busy = false;
-
+      if (!scopeRevision || !scopeCount || (scopeMode === "discipline" && discipline === "auto"))
         return;
-      }
 
-      const selection = {
-        model: selectedModel,
-        discipline,
-        maxCalls: callLimit ?? null,
-        selection: { mode: scopeMode, revisionId: scopeRevision.id, sheetIds: selectedSheetIds },
-      };
-
-      const saved = await client.command(command);
-
-      if (!saved.ok) {
-        error = saved.error.message;
-        busy = false;
-
-        return;
-      }
-
-      draft = "";
-      await refresh(saved.value.projectId);
-
-      const request = {
-        commandId: newCommandId(),
-        projectId: command.projectId,
-        conversationId: command.conversationId,
-        messageId: saved.value.entityId,
-        ...selection,
-      };
-
-      if (location === "cloud") {
-        cloudSubmittedAt = cloudSubmitClock = Date.now();
-        busy = false;
-
-        const result = await client.startCloudPacketReview({
-          ...request,
-          kind: "packet",
-          transferScope: "whole-application",
-        });
-
-        cloudSubmittedAt = null;
-
-        if (result.ok) {
-          cloudStatus = latestCloudReviewStatus(cloudStatus, result.value);
-          executionStatus = null;
-
-          if (
-            selectedProjectId === command.projectId &&
-            selectedConversationId === command.conversationId
-          ) {
-            error = "";
-            notice = "Review pushed to cloud. Progress and results sync automatically.";
-          }
-        } else if (
-          selectedProjectId === command.projectId &&
-          selectedConversationId === command.conversationId
-        )
-          error = `Your message was saved. ${result.error.message}`;
-      } else {
-        const result = await client.startPacketReview(request);
-
-        if (result.ok) {
-          receivePacketReview(result.value);
-          error = "";
-          notice = "Review started.";
-        } else error = `Your message was saved. ${result.error.message}`;
-      }
-
-      await refresh();
-      busy = false;
+      await startDrawingReview(
+        command,
+        {
+          model: selectedModel,
+          discipline,
+          maxCalls: callLimit ?? null,
+          selection: { mode: scopeMode, revisionId: scopeRevision.id, sheetIds: selectedSheetIds },
+        },
+        location,
+        () => {
+          draft = "";
+        },
+      );
     } else if (await runCommand(command)) {
       draft = "";
       notice = "Note saved.";
     }
 
+    await followConversation(command);
+  }
+
+  /** Save the reviewer's message, then start its drawing-set review here or in the cloud. */
+  async function startDrawingReview(
+    command: typeof ReviewCommand.cases.PostMessage.Type,
+    review: Omit<
+      typeof StartPacketReview.Type,
+      "commandId" | "projectId" | "conversationId" | "messageId"
+    >,
+    where: "local" | "cloud",
+    onSaved: () => void,
+  ) {
+    busy = true;
+    const saved = await client.command(command);
+
+    if (!saved.ok) {
+      error = saved.error.message;
+      busy = false;
+
+      return;
+    }
+
+    onSaved();
+    await refresh(saved.value.projectId);
+
+    const request = {
+      commandId: newCommandId(),
+      projectId: command.projectId,
+      conversationId: command.conversationId,
+      messageId: saved.value.entityId,
+      ...review,
+    };
+
+    if (where === "cloud") {
+      cloudSubmittedAt = cloudSubmitClock = Date.now();
+      busy = false;
+
+      const result = await client.startCloudPacketReview({
+        ...request,
+        kind: "packet",
+        transferScope: "whole-application",
+      });
+
+      cloudSubmittedAt = null;
+
+      if (result.ok) {
+        cloudStatus = latestCloudReviewStatus(cloudStatus, result.value);
+        executionStatus = null;
+
+        if (
+          selectedProjectId === command.projectId &&
+          selectedConversationId === command.conversationId
+        ) {
+          error = "";
+          notice = "Review pushed to cloud. Progress and results sync automatically.";
+        }
+      } else if (
+        selectedProjectId === command.projectId &&
+        selectedConversationId === command.conversationId
+      )
+        error = `Your message was saved. ${result.error.message}`;
+    } else {
+      const result = await client.startPacketReview(request);
+
+      if (result.ok) {
+        receivePacketReview(result.value);
+        error = "";
+        notice = "Review started.";
+      } else error = `Your message was saved. ${result.error.message}`;
+    }
+
+    await refresh();
+    busy = false;
+  }
+
+  /** Send the preset initial QA request as the reviewer's message, with its fixed settings. */
+  async function startInitialReview() {
+    if (project === null || activeConversation === null || !initialReviewReady) return;
+
+    const command = ReviewCommand.cases.PostMessage.make({
+      commandId: newCommandId(),
+      projectId: project.id,
+      expectedVersion: project.version,
+      conversationId: activeConversation.id,
+      text: initialReview.text,
+    });
+
+    // No selection: the first set can span several PDFs, and every one of its sheets is in scope.
+    await startDrawingReview(
+      command,
+      { model: initialReviewModel, discipline: "auto", maxCalls: null, preset: initialReview.id },
+      initialReviewPlacement.location,
+      () => undefined,
+    );
+    await followConversation(command);
+  }
+
+  async function followConversation(command: typeof ReviewCommand.cases.PostMessage.Type) {
     await tick();
 
     if (
@@ -1046,7 +1143,12 @@
     panelOpen = true;
     sourceTab = "sheets";
     previewedSheet = null;
-    notice = "PDF imported. Assign sheet disciplines if useful, then choose a review scope.";
+    notice = initialReviewVisible
+      ? "PDF imported. Choose Initial Review, or assign sheet disciplines and choose a review scope."
+      : "PDF imported. Assign sheet disciplines if useful, then choose a review scope.";
+
+    // The Initial Review line names where it runs, which depends on the workspace size.
+    if (cloudSetup?.configured) void refreshWorkspaceEstimate();
     busy = false;
     importing = false;
   }
@@ -2278,6 +2380,20 @@
                   </div>{/if}
               </div>
             {/if}
+            {#if initialReviewVisible}
+              <div class="initial-review">
+                <button
+                  type="button"
+                  class="ghost"
+                  disabled={!initialReviewReady}
+                  aria-describedby="initial-review-summary"
+                  onclick={startInitialReview}>Initial Review</button
+                >
+                <span id="initial-review-summary" class="muted" aria-live="polite"
+                  >{initialReviewBlocker ?? initialReviewSummary}</span
+                >
+              </div>
+            {/if}
             <form class="composer" onsubmit={postMessage}>
               <label class="sr-only" for="chat-message">Message</label><textarea
                 id="chat-message"
@@ -2395,14 +2511,19 @@
             </form>
             {#if reviewMode === "review" && location === "cloud" && !cloudBlocked}
               <div class="cloud-preview" aria-label="Cloud transfer preview">
-                <strong>Cloud sends the whole workspace</strong>
+                <strong>Cloud reviews use the whole workspace</strong>
                 {#if cloudSetup?.workspaceEstimate}
+                  {@const estimate = cloudSetup.workspaceEstimate}
+                  {@const synced = Math.min(estimate.syncedBytes ?? 0, estimate.bytes)}
                   <span>
-                    Estimated {(cloudSetup.workspaceEstimate.bytes / 1024 / 1024).toFixed(1)} MiB ·
-                    {cloudSetup.workspaceEstimate.files} files ·
-                    {cloudSetup.workspaceEstimate.projects}
-                    {cloudSetup.workspaceEstimate.projects === 1 ? "project" : "projects"}. Limit:
-                    1,024 MiB / 5,000 files.
+                    {#if synced > 0}About {((estimate.bytes - synced) / 1024 / 1024).toFixed(1)} MiB to
+                      upload at Send; {(synced / 1024 / 1024).toFixed(1)} MiB of source files are already
+                      in cloud storage ·{:else}Estimated {(estimate.bytes / 1024 / 1024).toFixed(1)} MiB
+                      ·{/if}
+                    {estimate.files} files ·
+                    {estimate.projects}
+                    {estimate.projects === 1 ? "project" : "projects"}. Limit: 1,024 MiB / 5,000
+                    files.
                   </span>
                 {:else}<span>
                     {estimatingWorkspace
@@ -2435,13 +2556,14 @@
                   Math.max(0, cloudSubmitClock - cloudSubmittedAt),
                 )}. Upload progress appears when packaging finishes.{:else if cloudBlocked}{cloudLoaded
                   ? "Cloud review in progress. Results sync automatically; local edits are paused."
-                  : "Connecting to your cloud review…"}{:else if reviewMode === "review" && location === "cloud"}Pushes
-                every project in this workspace, including PDFs and review history (up to 1 GiB /
-                5,000 files). Results sync automatically. Local edits pause until sync completes or
-                you stop the review.{:else if reviewMode === "note"}Notes are saved without starting
-                a review.{:else if activePacketReview?.state === "running"}Follow-ups join this
-                review after its current tool round. Enter sends · Shift+Enter adds a line.{:else if sheets.length === 0}Import
-                the drawing set to start a review.{:else if scopeMode === "discipline" && discipline === "auto"}Choose
+                  : "Connecting to your cloud review…"}{:else if reviewMode === "review" && location === "cloud"}Uses
+                every project in this workspace (up to 1 GiB / 5,000 files). Source PDFs and renders
+                sync to cloud storage after import, so Send uploads the database, review history and
+                any files not yet synced. Results sync automatically. Local edits pause until sync
+                completes or you stop the review.{:else if reviewMode === "note"}Notes are saved
+                without starting a review.{:else if activePacketReview?.state === "running"}Follow-ups
+                join this review after its current tool round. Enter sends · Shift+Enter adds a
+                line.{:else if sheets.length === 0}Import the drawing set to start a review.{:else if scopeMode === "discipline" && discipline === "auto"}Choose
                 a discipline reviewer, then review its assigned sheets.{:else if !scopeCount}No
                 sheets match this scope.
                 <button class="text-button" onclick={() => openSetup("sheets")}
@@ -3227,6 +3349,20 @@
   .scope-select {
     min-width: 0;
     flex: 1;
+  }
+  .initial-review {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    min-width: 0;
+  }
+  .initial-review button {
+    flex-shrink: 0;
+  }
+  .initial-review span {
+    min-width: 0;
+    font-size: 12px;
   }
   .text-button {
     display: inline-flex;

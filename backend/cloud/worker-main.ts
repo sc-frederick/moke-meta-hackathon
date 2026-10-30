@@ -11,6 +11,7 @@ import {
 import { writeCloudFile } from "./files.ts";
 import { CloudReviewError } from "#lib/review/cloud.ts";
 import { runCloudReview } from "./worker-review.ts";
+import { materializeCloudInput } from "./transfer.ts";
 
 const failed = () =>
   new CloudReviewError({
@@ -54,12 +55,23 @@ const main = Effect.scoped(
         JSON.stringify({ id: job.id, identity: cloudEngineIdentity, ...update }),
       );
 
+    let failure = failed().message;
+
     const work = Effect.gen(function* () {
       yield* progress({
         phase: "accepted",
         execution: null,
         message: "The cloud worker accepted this review. Local editing remains paused.",
       });
+
+      // Files the desktop skipped come from the read-only workspace cache, checked by hash.
+      yield* materializeCloudInput("/moke/input", "/cache").pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            failure = `${error.message} No model calls were made.`;
+          }),
+        ),
+      );
 
       const config = new BackendConfig({
         dataDirectory: "/moke/workspace",
@@ -105,9 +117,7 @@ const main = Effect.scoped(
     });
 
     yield* work.pipe(
-      Effect.catchCause(() =>
-        progress({ phase: "failed", execution: null, message: failed().message }),
-      ),
+      Effect.catchCause(() => progress({ phase: "failed", execution: null, message: failure })),
     );
   }),
 );

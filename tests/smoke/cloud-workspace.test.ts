@@ -183,7 +183,10 @@ test.each([
               id: record.id,
               identity: {
                 ...cloudEngineIdentity,
-                protocol: legacyPhase !== null && record.workerProtocol === undefined ? 2 : 3,
+                protocol:
+                  legacyPhase !== null && record.workerProtocol === undefined
+                    ? 2
+                    : cloudEngineIdentity.protocol,
               },
               phase: remotelyReady ? "ready" : "running",
               execution: null,
@@ -224,6 +227,7 @@ test.each([
         Effect.sync(() => {
           stopped = true;
         }),
+      seedCache: () => Effect.succeed([]),
     };
 
     const sandbox = Layer.succeed(CloudSandbox, port);
@@ -636,7 +640,9 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
               identity: {
                 ...cloudEngineIdentity,
                 protocol:
-                  scopeMode === "legacy_worker" && record.workerProtocol === undefined ? 2 : 3,
+                  scopeMode === "legacy_worker" && record.workerProtocol === undefined
+                    ? 2
+                    : cloudEngineIdentity.protocol,
               },
               phase: ready ? "ready" : "running",
             }),
@@ -653,6 +659,7 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
         Effect.sync(() => {
           stopped = true;
         }),
+      seedCache: () => Effect.succeed([]),
     };
 
     const config = new BackendConfig({

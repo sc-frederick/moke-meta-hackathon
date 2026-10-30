@@ -2,53 +2,62 @@ import { Effect, Schema } from "effect";
 import { CloudReviewError } from "#lib/review/cloud.ts";
 import { CloudEngineIdentity, CloudWorkerProgress, type CloudReviewRecord } from "./contracts.ts";
 
-const LegacyCloudWorkerProgress = Schema.Struct({
-  ...CloudWorkerProgress.fields,
-  identity: Schema.Struct({ ...CloudEngineIdentity.fields, protocol: Schema.Literal(2) }),
-});
+/** Workers from earlier protocols, as built with any packet prompt they shipped with. */
+const priorWorkerProgress = (protocol: 2 | 3) =>
+  Schema.Struct({
+    ...CloudWorkerProgress.fields,
+    identity: Schema.Struct({
+      ...CloudEngineIdentity.fields,
+      protocol: Schema.Literal(protocol),
+      packetPrompt: Schema.Literals([
+        "moke-packet-review-v1",
+        "moke-packet-review-v2",
+        "moke-packet-review-v3",
+      ]),
+    }),
+  });
 
-const PriorPacketCloudWorkerProgress = Schema.Struct({
-  ...CloudWorkerProgress.fields,
-  identity: Schema.Struct({
-    ...CloudEngineIdentity.fields,
-    packetPrompt: Schema.Literals(["moke-packet-review-v1", "moke-packet-review-v2"]),
-  }),
-});
+const Protocol3CloudWorkerProgress = priorWorkerProgress(3);
 
-const PriorPacketLegacyCloudWorkerProgress = Schema.Struct({
-  ...PriorPacketCloudWorkerProgress.fields,
-  identity: Schema.Struct({
-    ...PriorPacketCloudWorkerProgress.fields.identity.fields,
-    protocol: Schema.Literal(2),
-  }),
-});
-
-const CurrentProtocolRecovery = Schema.Union([CloudWorkerProgress, PriorPacketCloudWorkerProgress]);
+/** Unmarked receipts were saved by protocol 2 or 3 desktops, never by protocol 4. */
+const UnmarkedCloudWorkerProgress = Schema.Union([
+  Protocol3CloudWorkerProgress,
+  priorWorkerProgress(2),
+]);
 
 const RecoverableCloudWorkerProgress = Schema.Union([
   CloudWorkerProgress,
-  LegacyCloudWorkerProgress,
-  PriorPacketCloudWorkerProgress,
-  PriorPacketLegacyCloudWorkerProgress,
+  UnmarkedCloudWorkerProgress,
 ]);
 
 /** Recovery retains the worker's actual protocol without relaxing new worker admission. */
 export type CloudRecoveredWorkerProgress = typeof RecoverableCloudWorkerProgress.Type;
+
+/** Well above a full finding preview and execution status; anything larger is not a progress record. */
+export const cloudWorkerProgressMaxBytes = 256 * 1024;
 
 /** Parse progress for the saved owner before acknowledging any result checkpoint. */
 export const parseCloudWorkerProgress = Effect.fn("parseCloudWorkerProgress")(function* (
   record: CloudReviewRecord,
   text: string,
 ) {
+  if (Buffer.byteLength(text) > cloudWorkerProgressMaxBytes)
+    return yield* new CloudReviewError({
+      reason: "incompatible",
+      message: "The cloud service returned oversized review progress. Refresh to reconnect.",
+    });
+
   // Old receipts also include v3 jobs saved before this marker was introduced. Only
-  // observation of already dispatched work can accept v2; this never admits a request.
+  // observation of already dispatched work can accept v2 or v3; this never admits a request.
   const dispatched = record.phase === "dispatching" || record.phase === "running";
 
   const schema = !dispatched
     ? CloudWorkerProgress
     : record.workerProtocol === undefined
-      ? RecoverableCloudWorkerProgress
-      : CurrentProtocolRecovery;
+      ? UnmarkedCloudWorkerProgress
+      : record.workerProtocol === 3
+        ? Protocol3CloudWorkerProgress
+        : CloudWorkerProgress;
 
   const progress = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
     Effect.mapError(

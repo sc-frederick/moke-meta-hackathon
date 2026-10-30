@@ -76,6 +76,11 @@
 
   const calls = $derived(status?.packet?.admittedCalls ?? status?.execution?.admittedCalls ?? 0);
 
+  // Newest first. Imported results replace this read-only preview.
+  const findingPreview = $derived((status?.packet?.findingPreview ?? []).toReversed());
+
+  const mebibytes = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+
   const duration = (ms: number) => {
     const seconds = Math.max(0, Math.floor(ms / 1000));
 
@@ -284,13 +289,23 @@
             <div class="transfer" data-testid="cloud-transfer-progress">
               <p>
                 {status.transfer.direction === "upload" ? "Upload" : "Download"}:
-                {(status.transfer.completedBytes / 1024 / 1024).toFixed(1)} / {(
-                  status.transfer.totalBytes /
-                  1024 /
-                  1024
-                ).toFixed(1)} MiB · {status.transfer.completedFiles} / {status.transfer.totalFiles} files
-                complete
+                {mebibytes(status.transfer.completedBytes)} / {mebibytes(
+                  status.transfer.totalBytes,
+                )}
+                MiB · {status.transfer.completedFiles} / {status.transfer.totalFiles} files complete
               </p>
+              {#if (status.transfer.reusedBytes ?? 0) > 0}
+                <p data-testid="cloud-transfer-reused">
+                  {mebibytes(status.transfer.completedBytes - (status.transfer.reusedBytes ?? 0))} MiB
+                  {status.transfer.direction === "upload" ? "uploaded" : "downloaded"} · {mebibytes(
+                    status.transfer.reusedBytes ?? 0,
+                  )} MiB in {status.transfer.reusedFiles ?? 0}
+                  {status.transfer.reusedFiles === 1 ? "file" : "files"}
+                  {status.transfer.direction === "upload"
+                    ? "already in cloud storage"
+                    : "copied from this computer"}
+                </p>
+              {/if}
               <progress
                 aria-label={`${status.transfer.direction === "upload" ? "Upload" : "Download"} completed bytes`}
                 value={status.transfer.completedBytes}
@@ -327,6 +342,15 @@
                 .totalPasses ?? 0} passes recorded
             </p>
           {/if}
+          {#if status.packet?.sheetReviews !== undefined && locked}
+            <p data-testid="cloud-sheet-reviews">
+              Sheet reviewers: {status.packet.sheetReviews.completed} finished · {status.packet
+                .sheetReviews.running} running · {status.packet.sheetReviews.queued} queued{status
+                .packet.sheetReviews.failed > 0
+                ? ` · ${status.packet.sheetReviews.failed} stopped`
+                : ""}.
+            </p>
+          {/if}
           {#if status.packet?.changedAt !== undefined && locked}
             <p>Last review activity {duration(now - status.packet.changedAt)} ago.</p>
           {/if}
@@ -349,6 +373,29 @@
             <button disabled={busy || !acknowledge} onclick={cancel}
               >Stop cloud review and return to local work</button
             >
+          {/if}
+          {#if locked && findingPreview.length > 0}
+            <section
+              class="finding-preview"
+              aria-label="Findings so far"
+              data-testid="cloud-finding-preview"
+            >
+              <p>
+                <strong>Findings so far</strong> · preview only. Final findings sync when the review finishes.
+              </p>
+              <ol>
+                {#each findingPreview as finding (finding.id)}
+                  <li>
+                    <span class="severity" data-severity={finding.severity}>{finding.severity}</span
+                    >
+                    <span class="title">{finding.title}</span>
+                    {#if finding.sheets.length > 0}<span class="sheets"
+                        >{finding.sheets.join(", ")}</span
+                      >{/if}
+                  </li>
+                {/each}
+              </ol>
+            </section>
           {/if}
         </div>
       {/if}
@@ -399,6 +446,38 @@
     gap: 8px;
     max-height: clamp(96px, calc(100vh - 690px), 30vh);
     overflow-y: auto;
+  }
+  .finding-preview {
+    display: grid;
+    gap: 4px;
+  }
+  .finding-preview ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 2px;
+  }
+  .finding-preview li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    padding: 3px 0;
+    border-top: 1px solid var(--nd-hairline);
+    line-height: 1.5;
+  }
+  .finding-preview .title {
+    flex: 1;
+    min-width: 160px;
+    color: var(--nd-ink);
+  }
+  .severity,
+  .sheets {
+    font-size: 11px;
+  }
+  .severity[data-severity="Critical"] {
+    color: var(--nd-warning);
   }
   progress {
     width: min(100%, 420px);

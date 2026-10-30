@@ -9,6 +9,7 @@ import {
   ReviewDisciplineSelection,
 } from "./execution.ts";
 import { ReviewModelId } from "./models.ts";
+import { ReviewPreset } from "./initial-review.ts";
 
 const Text = Schema.Trim.check(Schema.isMaxLength(32000));
 const Required = Text.check(Schema.isMinLength(1));
@@ -217,6 +218,20 @@ export const PacketSheetNotes = Schema.Struct({
   suspectedGaps: Schema.Array(Required).check(Schema.isMaxLength(100)),
 });
 
+/** Prompt tokens across completed model calls. `input` excludes cached tokens. */
+export const PacketPromptUsage = Schema.Struct({
+  calls: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  input: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  cacheRead: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  output: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+
+/** Share of prompt tokens served from the provider cache, or null before any prompt tokens. */
+export const cachedPromptShare = (usage: typeof PacketPromptUsage.Type | undefined) =>
+  usage === undefined || usage.input + usage.cacheRead === 0
+    ? null
+    : usage.cacheRead / (usage.input + usage.cacheRead);
+
 /** One sheet reviewer in a parallel review; notes carry its facts to the cross-sheet coordinator. */
 export const PacketSheetReview = Schema.Struct({
   sheetId: SheetId,
@@ -225,6 +240,7 @@ export const PacketSheetReview = Schema.Struct({
   state: Schema.Literals(["queued", "running", "completed", "failed"]),
   notes: Schema.optionalKey(PacketSheetNotes),
   providerFailure: Schema.optionalKey(ProviderFailure),
+  promptUsage: Schema.optionalKey(PacketPromptUsage),
 });
 
 /** Large reviews split into coordinator setup, concurrent sheet reviewers and cross-sheet coordination. */
@@ -256,8 +272,11 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   activity: Schema.optionalKey(Schema.NullOr(PacketActivity)),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   admittedCalls: Schema.Int,
+  promptUsage: Schema.optionalKey(PacketPromptUsage),
   promptVersion: Schema.String,
   instructionRevision: Schema.String,
+  /** Set when the reviewer's request is a versioned preset, such as the Initial Review button's. */
+  preset: Schema.optionalKey(ReviewPreset),
   sheets: Schema.Array(PacketSheet),
   inspectedSheetIds: Schema.Array(SheetId),
   baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
@@ -306,6 +325,8 @@ export const StartPacketReview = Schema.Struct({
     }),
   ),
   maxCalls: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+  /** The saved message is this preset's exact text; the review records the identity. */
+  preset: Schema.optionalKey(ReviewPreset),
 });
 
 /** An idempotent instruction for the same conversation and its active durable review. */

@@ -222,6 +222,7 @@ async function fixture() {
           ? Effect.void
           : confirmModalSandboxStopped(() => Promise.reject(stopMissing));
       }),
+    seedCache: () => Effect.succeed([]),
   };
 
   const open = () =>
@@ -688,8 +689,9 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
     if (recorded === undefined) throw new Error("Missing admitted receipt");
     expect(recorded.phase).toBe("dispatching");
     const { workerProtocol, ...unmarked } = recorded;
-    expect(workerProtocol).toBe(3);
+    expect(workerProtocol).toBe(cloudEngineIdentity.protocol);
     const legacy = { ...unmarked, phase: "dispatching" as const };
+    const protocol3 = { ...legacy, workerProtocol: 3 as const };
 
     const progress = {
       id: recorded.id,
@@ -724,10 +726,20 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
         (await parse({ ...legacy, phase: "running" }, JSON.stringify(oldProgress))).phase,
       ).toBe(phase);
       expect((await rejected(recorded, JSON.stringify(oldProgress))).reason).toBe("incompatible");
+      expect((await rejected(protocol3, JSON.stringify(oldProgress))).reason).toBe("incompatible");
       const currentProgress = { ...oldProgress, identity: cloudEngineIdentity };
       expect(Schema.is(CloudWorkerProgress)(currentProgress)).toBe(true);
-      expect((await parse(recorded, JSON.stringify(currentProgress))).identity.protocol).toBe(3);
-      expect((await parse(legacy, JSON.stringify(currentProgress))).identity.protocol).toBe(3);
+      expect((await parse(recorded, JSON.stringify(currentProgress))).identity.protocol).toBe(4);
+      // Unmarked and protocol-3 receipts were saved before protocol 4 existed.
+      expect((await rejected(legacy, JSON.stringify(currentProgress))).reason).toBe("incompatible");
+      expect((await rejected(protocol3, JSON.stringify(currentProgress))).reason).toBe(
+        "incompatible",
+      );
+      const priorProgress = { ...oldProgress, identity: { ...cloudEngineIdentity, protocol: 3 } };
+      expect(Schema.is(CloudWorkerProgress)(priorProgress)).toBe(false);
+      expect((await parse(legacy, JSON.stringify(priorProgress))).identity.protocol).toBe(3);
+      expect((await parse(protocol3, JSON.stringify(priorProgress))).identity.protocol).toBe(3);
+      expect((await rejected(recorded, JSON.stringify(priorProgress))).reason).toBe("incompatible");
     }
 
     for (const phase of [
@@ -747,7 +759,10 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
       { ...progress, phase: "complete" },
       { ...progress, execution: {} },
       { ...progress, message: "x".repeat(1001) },
-      ...[1, 4].map((protocol) => ({ ...progress, identity: { ...progress.identity, protocol } })),
+      ...[1, 4, 5].map((protocol) => ({
+        ...progress,
+        identity: { ...progress.identity, protocol },
+      })),
       ...["engine", "prompt", "instructions", "packetPrompt"].map((field) => ({
         ...progress,
         identity: { ...progress.identity, [field]: "unrelated-build" },
@@ -838,10 +853,11 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
     )[0];
 
     if (recorded === undefined) throw new Error("Missing admitted receipt");
+    const protocol3 = { ...recorded, workerProtocol: 3 as const };
 
     const prior = {
       id: recorded.id,
-      identity: { ...cloudEngineIdentity, packetPrompt: "moke-packet-review-v1" },
+      identity: { ...cloudEngineIdentity, protocol: 3, packetPrompt: "moke-packet-review-v1" },
       phase: "ready",
       execution: null,
       message: "Saved result from prior build",
@@ -849,15 +865,20 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
 
     expect(Schema.is(CloudWorkerProgress)(prior)).toBe(false);
     expect(
-      (await Effect.runPromise(parseCloudWorkerProgress(recorded, JSON.stringify(prior)))).identity
+      (await Effect.runPromise(parseCloudWorkerProgress(protocol3, JSON.stringify(prior)))).identity
         .packetPrompt,
     ).toBe("moke-packet-review-v1");
+    // Protocol 4 shipped with the current packet prompt only.
     expect(
       (
         await Effect.runPromise(
-          parseCloudWorkerProgress({ ...recorded, phase: "preparing" }, JSON.stringify(prior)).pipe(
-            Effect.flip,
-          ),
+          parseCloudWorkerProgress(
+            recorded,
+            JSON.stringify({
+              ...prior,
+              identity: { ...prior.identity, protocol: cloudEngineIdentity.protocol },
+            }),
+          ).pipe(Effect.flip),
         )
       ).reason,
     ).toBe("incompatible");
@@ -865,7 +886,17 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
       (
         await Effect.runPromise(
           parseCloudWorkerProgress(
-            recorded,
+            { ...protocol3, phase: "preparing" },
+            JSON.stringify(prior),
+          ).pipe(Effect.flip),
+        )
+      ).reason,
+    ).toBe("incompatible");
+    expect(
+      (
+        await Effect.runPromise(
+          parseCloudWorkerProgress(
+            protocol3,
             JSON.stringify({ ...prior, identity: { ...prior.identity, protocol: 2 } }),
           ).pipe(Effect.flip),
         )
@@ -873,7 +904,7 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
     ).toBe("incompatible");
     const { workerProtocol, ...unmarked } = recorded;
 
-    expect(workerProtocol).toBe(3);
+    expect(workerProtocol).toBe(cloudEngineIdentity.protocol);
     expect(
       (
         await Effect.runPromise(

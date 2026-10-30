@@ -131,6 +131,7 @@ test("live cloud status and flushed receipts expose completed upload/download fi
         );
       }),
     stop: () => Effect.void,
+    seedCache: () => Effect.succeed([]),
   };
 
   await writeFile(join(source, "manifest.json"), text);
