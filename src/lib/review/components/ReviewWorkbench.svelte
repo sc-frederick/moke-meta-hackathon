@@ -551,15 +551,25 @@
     } else error = result.error.message;
   }
 
-  async function refreshWorkspaceEstimate() {
+  async function refreshWorkspaceEstimate(quiet = false) {
     if (estimatingWorkspace) return;
     estimatingWorkspace = true;
     const result = await client.cloudSetup();
     estimatingWorkspace = false;
 
     if (result.ok) cloudSetup = result.value;
-    else error = result.error.message;
+    else if (!quiet) error = result.error.message;
   }
+
+  // Initial Review runs in the cloud when it is set up, so learn that before the reviewer
+  // chooses. A failed check stays quiet; the line then names this computer.
+  let cloudSetupChecked = false;
+
+  $effect(() => {
+    if (!initialReviewVisible || cloudSetupChecked || cloudSetup !== null) return;
+    cloudSetupChecked = true;
+    void refreshWorkspaceEstimate(true);
+  });
 
   async function suggestSheetLabels(): Promise<SheetLabelSuggestions | null> {
     if (!project || !scopeRevision || cloudBlocked) return null;
@@ -2243,7 +2253,11 @@
                     supplied sheets, checks sources and coordination, and prepares findings with
                     clear source evidence.
                   </p>
-                  <p class="muted">For example: “Run a quick QA pass on this drawing set.”</p>{/if}
+                  <p class="muted">
+                    {initialReviewVisible
+                      ? "Start with Initial Review for a complete first pass, or ask for a specific check."
+                      : "For example: “Run a quick QA pass on this drawing set.”"}
+                  </p>{/if}
               </div>
             {/if}
             {#each conversationMessages as message (message.id)}
@@ -2384,7 +2398,7 @@
               <div class="initial-review">
                 <button
                   type="button"
-                  class="ghost"
+                  class="primary"
                   disabled={!initialReviewReady}
                   aria-describedby="initial-review-summary"
                   onclick={startInitialReview}>Initial Review</button
@@ -2533,7 +2547,7 @@
                 <button
                   class="text-button"
                   disabled={estimatingWorkspace || busy}
-                  onclick={refreshWorkspaceEstimate}
+                  onclick={() => refreshWorkspaceEstimate()}
                   >{estimatingWorkspace ? "Measuring…" : "Recheck size"}</button
                 >
                 {#if cloudSetup?.workspaceEstimateError}<p role="alert">
@@ -3359,6 +3373,12 @@
   }
   .initial-review button {
     flex-shrink: 0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-weight: 600;
+  }
+  .initial-review button:disabled {
+    opacity: 0.55;
   }
   .initial-review span {
     min-width: 0;
