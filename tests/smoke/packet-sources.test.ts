@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { Effect, Result } from "effect";
 import { createHash } from "node:crypto";
+import { DocumentError } from "#lib/review/contracts.ts";
 import {
   readSource,
   searchSources,
@@ -12,10 +13,12 @@ const publicDns: NonNullable<SourceLookupOptions["resolve"]> = async () => [
   { address: "1.1.1.1", family: 4 },
 ];
 
+const bytes = (text: string) => new TextEncoder().encode(text);
+
 const html = (body: string): SourceResponse => ({
   status: 200,
   headers: { "content-type": "text/html; charset=utf-8" },
-  body,
+  body: bytes(body),
 });
 
 const fixture = (body: string): SourceLookupOptions => ({
@@ -44,6 +47,8 @@ test("retains actual governing text, canonical source and content hash without e
 test.each([
   ["https://www.floridabuilding.org/rule", true],
   ["https://www.myfloridacfo.com/division/sfm", true],
+  ["https://flrules.org/gateway/ruleNo.asp?id=61G15-23.002", true],
+  ["https://www.leg.state.fl.us/statutes/index.cfm", true],
   ["https://county.gov/permits", true],
   ["https://manufacturer.com/manual", false],
   ["https://floridabuilding.org.example.com/claims", false],
@@ -65,7 +70,7 @@ test("revalidates redirects and retains the destination source identity", async 
         destinations.push(url.href);
 
         return url.pathname === "/old"
-          ? { status: 302, headers: { location: "https://codes.iccsafe.org/new" }, body: "" }
+          ? { status: 302, headers: { location: "https://codes.iccsafe.org/new" }, body: bytes("") }
           : html("<p>Retrieved adopted text</p>");
       },
     }),
@@ -88,7 +93,7 @@ test("never dispatches a redirect into a private destination", async () => {
         return {
           status: 302,
           headers: { location: "https://169.254.169.254/latest/meta-data" },
-          body: "",
+          body: bytes(""),
         };
       },
     }),
@@ -171,8 +176,12 @@ test.each([
 
 test("keeps access denial, PDF and oversized content unverified", async () => {
   for (const response of [
-    { status: 403, headers: { "content-type": "text/html" }, body: "Private error detail" },
-    { status: 200, headers: { "content-type": "application/pdf" }, body: "%PDF-1.7 actual bytes" },
+    { status: 403, headers: { "content-type": "text/html" }, body: bytes("Private error detail") },
+    {
+      status: 200,
+      headers: { "content-type": "application/pdf" },
+      body: bytes("%PDF-1.7 actual bytes"),
+    },
     html("x".repeat(2 * 1024 * 1024 + 1)),
   ]) {
     const source = await Effect.runPromise(
@@ -208,7 +217,9 @@ test("search returns discovery links, decodes RSS text and discards nonpublic li
         return {
           status: 200,
           headers: { "content-type": "application/xml" },
-          body: `<rss><channel><item><title>Code &amp; amendments</title><link>https://www.floridabuilding.org/source?a=1&amp;b=2</link><description><![CDATA[<b>Official</b> source discovery.]]></description></item><item><title>Bad</title><link>https://127.0.0.1/secret</link></item></channel></rss>`,
+          body: bytes(
+            `<rss><channel><item><title>Code &amp; amendments</title><link>https://www.floridabuilding.org/source?a=1&amp;b=2</link><description><![CDATA[<b>Official</b> source discovery.]]></description></item><item><title>Bad</title><link>https://127.0.0.1/secret</link></item></channel></rss>`,
+          ),
         };
       },
     }),
@@ -233,4 +244,83 @@ test("handles unclosed markup without exposing script text or repeated rescans",
 
   expect(source.status).toBe("available");
   expect(source.text).toBe("Visible provision.");
+});
+
+const pdfResponse =
+  (text = "%PDF-1.7 rule text"): NonNullable<SourceLookupOptions["transport"]> =>
+  async () => ({
+    status: 200,
+    headers: { "content-type": "application/pdf" },
+    body: bytes(text),
+  });
+
+test("extracts a retrieved PDF's text from the requested page and says how to continue", async () => {
+  const requests: Array<{ firstPage: number; maxCharacters: number; header: string }> = [];
+
+  const source = await Effect.runPromise(
+    readSource("https://flrules.org/gateway/readFile.asp?file=61G15-23.pdf#page=3", {
+      resolve: publicDns,
+      transport: pdfResponse(),
+      pdfText: (body, firstPage, maxCharacters) => {
+        requests.push({
+          firstPage,
+          maxCharacters,
+          header: new TextDecoder().decode(body.subarray(0, 5)),
+        });
+
+        return Effect.succeed({
+          sha256: "a".repeat(64),
+          pageCount: 9,
+          firstPage,
+          lastPage: 4,
+          text: "[Page 3]\n61G15-23.002 Seals Acceptable to the Board\n\n[Page 4]\nThe seal shall be",
+          truncated: true,
+        });
+      },
+    }),
+  );
+
+  expect(requests).toEqual([{ firstPage: 3, maxCharacters: 31800, header: "%PDF-" }]);
+  expect(source.status).toBe("available");
+  expect(source.official).toBe(true);
+  expect(source.sha256).toBe("a".repeat(64));
+  expect(source.title).toBe("readFile.asp (PDF pages 3-4 of 9)");
+  expect(source.text).toContain("61G15-23.002 Seals Acceptable to the Board");
+  expect(source.text).toContain("Read the same URL with #page=5 to continue.");
+});
+
+test("keeps scanned, missing-page and unreadable PDFs unavailable", async () => {
+  const read = (
+    pdfText: NonNullable<SourceLookupOptions["pdfText"]>,
+    url = "https://county.gov/amendments.pdf",
+  ) =>
+    Effect.runPromise(readSource(url, { resolve: publicDns, transport: pdfResponse(), pdfText }));
+
+  const result =
+    (text: string, pageCount = 2) =>
+    () =>
+      Effect.succeed({
+        sha256: "b".repeat(64),
+        pageCount,
+        firstPage: 1,
+        lastPage: pageCount,
+        text,
+        truncated: false,
+      });
+
+  const scanned = await read(result("  "));
+  expect(scanned.status).toBe("unavailable");
+  expect(scanned.text).toContain("may be scanned");
+
+  const missing = await read(result("text"), "https://county.gov/amendments.pdf#page=7");
+  expect(missing.status).toBe("unavailable");
+  expect(missing.text).toContain("page 7 does not exist");
+
+  const failed = await read(() =>
+    Effect.fail(new DocumentError({ reason: "invalid", message: "The PDF could not be parsed." })),
+  );
+
+  expect(failed.status).toBe("unavailable");
+  expect(failed.sha256).toBeNull();
+  expect(failed.text).toContain("The PDF could not be parsed.");
 });

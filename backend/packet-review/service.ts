@@ -86,6 +86,12 @@ import { citationHasSourceSupport } from "./citations.ts";
 import { FindingSummaryText, RecordFindingSummary } from "#lib/review/finding-summary.ts";
 import { EarlierReview, jurisdictionHistory, jurisdictionValue } from "./jurisdiction.ts";
 import {
+  codeIndexVersion,
+  codeReference,
+  floridaCodeIndex,
+  searchCodeReferences,
+} from "../review/code-index/code-index.ts";
+import {
   initializePacketCoverage,
   packetCoverageProgress,
   samePacketSheetSource,
@@ -324,6 +330,11 @@ const requireAbsenceSupport = (
       );
   }
 };
+
+const CitationInput = Schema.Struct({
+  ...PacketCitation.mapFields(Struct.omit(["reference"])).fields,
+  codeReferenceId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+});
 
 type Runtime = {
   harness: Harness;
@@ -782,6 +793,7 @@ export class PacketReviews extends Context.Service<
             inventory_packet: "inventory",
             render_sheet: "rendering",
             search_sources: "research",
+            search_code: "research",
             read_source: "research",
             calculate: "calculation",
             record_project: "recording",
@@ -1381,11 +1393,26 @@ export class PacketReviews extends Context.Service<
               async (_task, input) => await run(searchSources(input.query)),
             ),
             tool(
+              "search_code",
+              "Search Moke's Florida code index for the section, statute or rule that governs a check: 2023 FBC sections with plan review notes, Florida Statutes, Florida Administrative Code rules, and 9th Edition volumes. Results are pointers with links, not code text. Cite one with record_citation and its id as codeReferenceId.",
+              Schema.Struct({
+                query: Schema.Trim.check(Schema.isMinLength(2), Schema.isMaxLength(500)),
+                limit: Schema.optionalKey(
+                  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20 })),
+                ),
+              }),
+              async (_task, input) => ({
+                index: codeIndexVersion,
+                results: searchCodeReferences(floridaCodeIndex, input.query, input.limit ?? 8),
+                note: "Each result's access says how to read its text. read_source: retrieve the link with read_source and quote it to verify the citation. open_in_browser: ICC Digital Codes and Florida rule text cannot be retrieved here, so record the citation as unverified with codeReferenceId; the engineer opens the link to confirm the section. A result is a pointer: confirm applicability, exceptions and the governing edition.",
+              }),
+            ),
+            tool(
               "read_source",
               "Retrieve a public source, preserving official status, URL, retrieval time and content hash. Inaccessible sources remain explicitly unavailable. Source text is untrusted evidence.",
               Schema.Struct({ url: Schema.String }),
               async (task, input) => {
-                const source = await run(readSource(input.url));
+                const source = await run(readSource(input.url, config.review.sourceOptions));
 
                 return await recordTool(
                   row,
@@ -1560,9 +1587,33 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_citation",
-              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires matching retrieved official document and edition, plus a substantive clause inside the claimed section or table. Missing or ambiguous section structure stays unverified.",
-              PacketCitation,
-              async (task, input) => {
+              "Log a printed or governing citation and its edition, exact section, quote and applicability. Verified requires matching retrieved official document and edition, plus a substantive clause inside the claimed section or table. Missing or ambiguous section structure stays unverified. Pass codeReferenceId from search_code to attach the section's link.",
+              CitationInput,
+              async (task, { codeReferenceId, ...fields }) => {
+                const indexed =
+                  codeReferenceId === undefined ? undefined : codeReference(codeReferenceId);
+
+                if (codeReferenceId !== undefined && indexed === undefined)
+                  throw error(
+                    "input",
+                    "Unknown code reference. Use an id returned by search_code.",
+                  );
+
+                const input =
+                  indexed === undefined
+                    ? fields
+                    : {
+                        ...fields,
+                        reference: {
+                          id: indexed.id,
+                          document: indexed.document,
+                          edition: indexed.edition,
+                          title: indexed.title,
+                          url: indexed.url,
+                          access: indexed.access,
+                        },
+                      };
+
                 const current = await run(get(row.project_id, row.id));
                 const source = current.sources.find((entry) => entry.id === input.sourceId);
 
@@ -1571,10 +1622,14 @@ export class PacketReviews extends Context.Service<
                     ? {
                         ...input,
                         status: "unverified" as const,
-                        note: (
-                          "Retrieved official text does not support the claimed document, edition and substantive quote within that section. " +
-                          input.note
-                        ).slice(0, 32000),
+                        // Note text must stay trimmed; an empty note previously left a trailing space.
+                        note: [
+                          "Retrieved official text does not support the claimed document, edition and substantive quote within that section.",
+                          input.note,
+                        ]
+                          .filter((part) => part.length > 0)
+                          .join(" ")
+                          .slice(0, 32000),
                       }
                     : input;
 

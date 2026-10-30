@@ -384,6 +384,14 @@ Receipts already dispatched to protocol-3 workers stay readable and return
 normally. Unmarked receipts may recover protocol-2 or protocol-3 progress, and
 `workerProtocol: 3` receipts accept protocol-3 progress only.
 
+**Protocol 5** adds the Florida code index to the worker identity, the
+`search_code` tool and PDF text in `read_source`, with packet prompt
+`moke-packet-review-v6`. Publish a new worker image with `bun run modal:image`
+before sending protocol-5 reviews; a protocol-4 image fails the identity probe
+before transfer. New receipts record `workerProtocol: 5`. Receipts already
+dispatched to protocol-4 workers stay readable and accept protocol-4 progress
+with packet prompts v3 to v5 only.
+
 The protocol-3 handshake required support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
 The operator deployment above now supplies that matching worker. Rebuild and

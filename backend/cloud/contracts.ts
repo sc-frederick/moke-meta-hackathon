@@ -15,15 +15,18 @@ import {
   reviewPromptVersion,
 } from "../review/prompts/review-prompt.ts";
 import { packageEngineFormat } from "#lib/review/packages.ts";
+import { codeIndexVersion } from "../review/code-index/code-index.ts";
 
 /** Version handshake covers the worker protocol, engine, and review instructions. */
 export const cloudEngineIdentity = {
   // Protocol 4 workers read unchanged source files from the workspace cache Volume.
-  protocol: 4,
+  // Protocol 5 workers add the Florida code index, code search and PDF source text.
+  protocol: 5,
   engine: packageEngineFormat,
   prompt: reviewPromptVersion,
   instructions: reviewInstructionRevision,
   packetPrompt: packetPromptVersion,
+  codeIndex: codeIndexVersion,
 } as const;
 
 /** A different cloud build is refused before any paid inference is admitted. */
@@ -33,6 +36,7 @@ export const CloudEngineIdentity = Schema.Struct({
   prompt: Schema.Literal(cloudEngineIdentity.prompt),
   instructions: Schema.Literal(cloudEngineIdentity.instructions),
   packetPrompt: Schema.Literal(cloudEngineIdentity.packetPrompt),
+  codeIndex: Schema.Literal(cloudEngineIdentity.codeIndex),
 });
 
 /** Credentials are supplied to the exec process separately from its source package. */
@@ -61,7 +65,7 @@ export const CloudReviewRecord = Schema.Struct({
   id: CloudReviewId,
   // Unmarked receipts predate protocol-aware admission and may name a running v2 worker.
   // Protocol 3 receipts remain readable so already dispatched work can still return.
-  workerProtocol: Schema.optionalKey(Schema.Literals([3, cloudEngineIdentity.protocol])),
+  workerProtocol: Schema.optionalKey(Schema.Literals([3, 4, cloudEngineIdentity.protocol])),
   revision: Schema.Int.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
   syncFailure: Schema.NullOr(CloudReviewError).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),

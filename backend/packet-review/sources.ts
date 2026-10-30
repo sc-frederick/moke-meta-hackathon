@@ -3,10 +3,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import type { DocumentError, ReviewStorageError } from "#lib/review/contracts.ts";
 import { ExecutionError } from "#lib/review/execution.ts";
 import { PacketSource } from "#lib/review/packet.ts";
 
 const maximumBytes = 2 * 1024 * 1024;
+
+// Code amendments and agency checklists are often scanned or illustrated PDFs.
+const maximumPdfBytes = 20 * 1024 * 1024;
 const maximumText = 32000;
 const Address = Schema.Struct({ address: Schema.String, family: Schema.Literals([4, 6]) });
 
@@ -19,8 +23,18 @@ export interface SourceResponse {
   readonly status: number;
   /** Lower-case response headers. */
   readonly headers: Readonly<Record<string, string>>;
-  /** UTF-8 body bounded to two MiB. */
-  readonly body: string;
+  /** Raw body bytes, bounded to two MiB, or twenty MiB for a PDF. */
+  readonly body: Uint8Array;
+}
+
+/** Embedded text extracted from a retrieved PDF, with the stored artifact's content hash. */
+export interface PdfSourceText {
+  readonly sha256: string;
+  readonly pageCount: number;
+  readonly firstPage: number;
+  readonly lastPage: number;
+  readonly text: string;
+  readonly truncated: boolean;
 }
 
 /** DNS and HTTPS seams permit deterministic tests without replacing application modules. */
@@ -33,7 +47,16 @@ export interface SourceLookupOptions {
     address: SourceAddress,
     signal: AbortSignal,
   ) => Promise<SourceResponse>;
+  /** Extract a retrieved PDF's text from a one-based page; without it, PDFs stay unavailable. */
+  readonly pdfText?: (
+    bytes: Uint8Array,
+    firstPage: number,
+    maxCharacters: number,
+  ) => Effect.Effect<PdfSourceText, DocumentError | ReviewStorageError>;
 }
+
+const pdfResponse = (headers: Readonly<Record<string, string>>) =>
+  (headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase() === "application/pdf";
 
 /** Search results are discovery links, never verified governing-source evidence. */
 export const SourceSearchResult = Schema.Struct({
@@ -117,7 +140,7 @@ function officialSource(hostname: string) {
     "iccsafe.org",
     "nfpa.org",
     "leg.state.fl.us",
-    "floridarules.org",
+    "flrules.org",
   ];
 
   return (
@@ -148,7 +171,8 @@ function requestPublic(
         signal,
         headers: {
           "User-Agent": "Moke/0.1 public-source-review",
-          Accept: "text/html,text/plain,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1",
+          Accept:
+            "text/html,text/plain,application/xhtml+xml,application/xml;q=0.9,application/pdf;q=0.8,*/*;q=0.1",
           "Accept-Encoding": "identity",
         },
         // Pin the vetted address so a second DNS response cannot redirect this connection into a private network.
@@ -164,20 +188,20 @@ function requestPublic(
         );
 
         const chunks: Buffer[] = [];
+        const limit = pdfResponse(headers) ? maximumPdfBytes : maximumBytes;
         let size = 0;
         response.on("error", reject);
         response.on("data", (chunk: Buffer) => {
           size += chunk.length;
 
-          if (size > maximumBytes)
-            request.destroy(new Error("Public source exceeded its size bound"));
+          if (size > limit) request.destroy(new Error("Public source exceeded its size bound"));
           else chunks.push(chunk);
         });
         response.on("end", () =>
           resolve({
             status: response.statusCode ?? 0,
             headers,
-            body: Buffer.concat(chunks).toString("utf8"),
+            body: new Uint8Array(Buffer.concat(chunks)),
           }),
         );
       },
@@ -226,7 +250,11 @@ const fetchText = Effect.fn("PacketReview.fetchPublicSource")(function* (
           deadline,
         );
 
-        if (Buffer.byteLength(response.body) > maximumBytes) throw new Error("Source is too large");
+        if (
+          response.body.byteLength >
+          (pdfResponse(response.headers) ? maximumPdfBytes : maximumBytes)
+        )
+          throw new Error("Source is too large");
 
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.location;
@@ -392,6 +420,58 @@ const parseUrl = (url: string) =>
     ),
   );
 
+/** A `#page=N` fragment starts PDF text at that page, as PDF viewers do. */
+const pdfFirstPage = (url: URL) => {
+  const page = Number.parseInt(/(?:^|&)page=(\d+)/.exec(url.hash.slice(1))?.[1] ?? "1", 10);
+
+  return Number.isSafeInteger(page) && page >= 1 && page <= 200 ? page : 1;
+};
+
+/** Extract a retrieved PDF's embedded text; scanned or unreadable PDFs stay unavailable. */
+const readPdfSource = Effect.fnUntraced(function* (
+  base: Omit<typeof PacketSource.Encoded, "status" | "text">,
+  requested: URL,
+  bytes: Uint8Array,
+  options: SourceLookupOptions,
+) {
+  const unavailable = (text: string) =>
+    Schema.decodeUnknownSync(PacketSource)({ ...base, status: "unavailable", text });
+
+  if (options.pdfText === undefined)
+    return unavailable(
+      "This source is a PDF and PDF text extraction is unavailable in this launch. Import its document to inspect it.",
+    );
+
+  const firstPage = pdfFirstPage(requested);
+  const extracted = yield* options.pdfText(bytes, firstPage, maximumText - 200).pipe(Effect.result);
+
+  if (Result.isFailure(extracted))
+    return unavailable(`The PDF could not be read: ${extracted.failure.message}`);
+  const pdf = extracted.success;
+
+  if (firstPage > pdf.pageCount)
+    return unavailable(`The PDF has ${pdf.pageCount} pages; page ${firstPage} does not exist.`);
+
+  if (!pdf.text.trim())
+    return unavailable(
+      "The PDF has no embedded text on the requested pages; it may be scanned. Import it to inspect its pages visually.",
+    );
+  const name = decodeURIComponent(requested.pathname.split("/").at(-1) ?? "") || requested.hostname;
+
+  return Schema.decodeUnknownSync(PacketSource)({
+    ...base,
+    title: `${name} (PDF pages ${pdf.firstPage}-${pdf.lastPage} of ${pdf.pageCount})`.slice(
+      0,
+      1000,
+    ),
+    status: "available",
+    sha256: pdf.sha256,
+    text: pdf.truncated
+      ? `${pdf.text}\n[PDF text continues after page ${pdf.lastPage}. Read the same URL with #page=${pdf.lastPage + 1} to continue.]`
+      : pdf.text,
+  });
+});
+
 /** Fetch public governing text with DNS-pinned TLS; access failures remain unverified source records. */
 export const readSource = Effect.fn("PacketReview.readSource")(function* (
   input: string,
@@ -417,7 +497,8 @@ export const readSource = Effect.fn("PacketReview.readSource")(function* (
       status: "unavailable",
       text: response.failure.message,
     });
-  const { body, headers, status, url } = response.success;
+  const { body: bytes, headers, status, url } = response.success;
+  const body = new TextDecoder().decode(bytes);
   const contentType = (headers["content-type"] ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
   const updated = { ...base, url: url.href, official: officialSource(url.hostname) };
 
@@ -429,11 +510,7 @@ export const readSource = Effect.fn("PacketReview.readSource")(function* (
     });
 
   if (contentType === "application/pdf" || body.startsWith("%PDF-"))
-    return Schema.decodeUnknownSync(PacketSource)({
-      ...updated,
-      status: "unavailable",
-      text: "This source is a PDF. Import its document to inspect it; this lookup did not extract or verify its text.",
-    });
+    return yield* readPdfSource(updated, initial, bytes, options);
 
   if (
     (contentType && !/^(?:text\/|application\/(?:xhtml\+xml|xml|json)$)/.test(contentType)) ||
@@ -499,7 +576,7 @@ export const searchSources = Effect.fn("PacketReview.searchSources")(function* (
     });
   const links: Array<typeof SourceSearchResult.Type> = [];
 
-  for (const body of markupContents(response.body, "item")) {
+  for (const body of markupContents(new TextDecoder().decode(response.body), "item")) {
     const field = (name: string) =>
       decodeEntities(markupContents(body, name)[0] ?? "")
         .replace(/^<!\[CDATA\[|\]\]>$/g, "")

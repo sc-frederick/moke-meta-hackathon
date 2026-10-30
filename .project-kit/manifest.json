@@ -86,7 +86,7 @@
     "heroCase": "docs/fixtures/hero-case.md",
     "primaryDemoPlatform": "linux-x64",
     "promptInstructions": {
-      "version": "moke-packet-review-v5",
+      "version": "moke-packet-review-v6",
       "source": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review",
       "provenance": "backend/review/prompts/provenance.json",
       "scope": "Whole supplied packet or selected discipline with explicit coverage, governing sources, findings and offline HTML report",
@@ -118,6 +118,23 @@
       "implemented": ["finding decisions", "firm checklist", "jurisdiction leads"],
       "deferred": "firm detail library, visual precedent retrieval, learned playbook",
       "migration": "migrations/0011_firm_checklist.sql"
+    },
+    "codeIndex": {
+      "version": "florida-code-index-v1",
+      "module": "backend/review/code-index/code-index.ts",
+      "provenance": "backend/review/code-index/provenance.json",
+      "tool": "search_code",
+      "scope": "Pointers to Florida code sections, statutes and rules with plan review notes and links; contains no copied code text",
+      "textAccess": "ICC Digital Codes and flrules.org text is opened by the engineer; Florida Statutes text is retrieved with read_source",
+      "pdfSourceText": "read_source extracts embedded text from retrieved PDFs through the PDF worker; #page=N selects the first page",
+      "sourcesCheckedOn": "2026-10-30",
+      "sources": [
+        "https://codes.iccsafe.org/codes/united-states/florida",
+        "https://www.leg.state.fl.us/statutes/",
+        "https://flrules.org/",
+        "https://www.floridabuilding.org/fbc/Links_to_Code_Resources.html",
+        "https://iccsafe.org/website-user-agreement/"
+      ]
     }
   },
   "hackathon": {

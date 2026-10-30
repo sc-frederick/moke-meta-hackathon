@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Documents } from "../../backend/documents/documents.ts";
+import { readSource } from "../../backend/packet-review/sources.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { transformPoint } from "#lib/review/geometry.ts";
@@ -117,6 +118,70 @@ function documentsLayer(dataDirectory: string) {
     nativeLibraryPath: resolve(nativeFile),
   });
 }
+
+test("extracts retrieved PDF text by whole pages, from a requested page, and stores the original", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-text-"));
+  const pdf = createHeroPdf("A");
+
+  try {
+    const [whole, fromSecond, bounded, notPdf] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const documents = yield* Documents;
+
+        return [
+          yield* documents.extractText(pdf, 1, 100_000),
+          yield* documents.extractText(pdf, 2, 100_000),
+          yield* documents.extractText(pdf, 1, 400),
+          yield* Effect.exit(documents.extractText(new TextEncoder().encode("<html>"), 1, 100)),
+        ] as const;
+      }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
+    );
+
+    expect(whole.pageCount).toBe(2);
+    expect(whole.text).toContain("[Page 1]\nMOKE COORDINATION LAB");
+    expect(whole.text).toContain("[Page 2]");
+    expect(whole.truncated).toBe(false);
+    expect(fromSecond.text.startsWith("[Page 2]")).toBe(true);
+    expect(fromSecond.text).not.toContain("[Page 1]");
+    // A limit inside page 2 returns page 1 whole, so a continuation starts at page 2.
+    expect(bounded.lastPage).toBe(1);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.text).not.toContain("[Page 2]");
+    expect(Exit.isFailure(notPdf)).toBe(true);
+
+    const stored = await readFile(join(dataDirectory, "artifacts", `${whole.sha256}.pdf`));
+    expect(Buffer.compare(stored, Buffer.from(pdf))).toBe(0);
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+}, 60000);
+
+test("a retrieved PDF without embedded text stays unavailable", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-scanned-"));
+
+  try {
+    const source = await Effect.runPromise(
+      Effect.gen(function* () {
+        const documents = yield* Documents;
+
+        return yield* readSource("https://county.gov/amendments.pdf", {
+          resolve: async () => [{ address: "1.1.1.1", family: 4 }],
+          transport: async () => ({
+            status: 200,
+            headers: { "content-type": "application/pdf" },
+            body: buildMinimalPdf(),
+          }),
+          pdfText: documents.extractText,
+        });
+      }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
+    );
+
+    expect(source.status).toBe("unavailable");
+    expect(source.text).toContain("may be scanned");
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+}, 60000);
 
 test("import stores the original hash and inventories pages", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-"));

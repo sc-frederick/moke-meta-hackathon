@@ -400,6 +400,15 @@
           {#if citation.quote}<blockquote>{citation.quote}</blockquote>{/if}
           <p>{citation.application}</p>
           {#if citation.note}<p class="muted">{citation.note}</p>{/if}
+          {#if citation.reference}
+            {@const reference = citation.reference}
+            <p class="muted">{reference.title} · {reference.document}, {reference.edition}</p>
+            {#if Schema.is(ReviewSourceUrl)(reference.url)}<button
+                onclick={() => onOpenSource(reference.url)}
+                >{reference.access === "open_in_browser"
+                  ? "Open section to confirm"
+                  : "Open section in browser"}</button
+              >{/if}{/if}
         </section>{/each}{#each review.sources as source (source.id)}<p class="muted">
           {source.title || source.url} · {source.status}{source.official
             ? " · official source"

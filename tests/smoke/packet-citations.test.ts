@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { randomUUID } from "node:crypto";
 import { PacketCitation, PacketSource } from "#lib/review/packet.ts";
 import { citationHasSourceSupport } from "../../backend/packet-review/citations.ts";
+import { readSource } from "../../backend/packet-review/sources.ts";
 
 const quote = "Door openings shall have a clear width of at least thirty two inches.";
 
@@ -205,4 +206,39 @@ test("binds table clauses independently of the section with the same number", ()
   expect(citationHasSourceSupport(changedCitation({ section: "Table 403.1" }), sections)).toBe(
     true,
   );
+});
+
+test("verifies a quote from a retrieved Florida Statutes page", async () => {
+  // Reduced from leg.state.fl.us: the page embeds the section's own title before its number.
+  const page = `<html><head><title>Statutes &amp; Constitution :View Statutes : Online Sunshine</title></head><body><h2>The 2026 Florida Statutes</h2><p>Chapter 553</p><p>BUILDING CONSTRUCTION STANDARDS</p><div id="statutes"><html><head><title>F.S. 553.79</title></head><body><div class="Section"><span class="SectionNumber">553.79&#x2003;</span><span class="CatchlineText">Permits; applications; issuance; inspections.</span><span class="EmDash">&#x2014;</span><span class="SectionBody"><div class="Paragraph"><span class="Number">(1)(a)&#x2003;</span><span>Unless otherwise provided by law, it shall be unlawful for any person to construct any building within this state without first obtaining a permit therefor from the appropriate enforcing agency.</span></div></span></div></body></html></div></body></html>`;
+
+  const retrieved = await Effect.runPromise(
+    readSource(
+      "https://www.leg.state.fl.us/statutes/index.cfm?App_mode=Display_Statute&URL=0500-0599/0553/Sections/0553.79.html",
+      {
+        resolve: async () => [{ address: "1.1.1.1", family: 4 }],
+        transport: async () => ({
+          status: 200,
+          headers: { "content-type": "text/html;charset=UTF-8" },
+          body: new TextEncoder().encode(page),
+        }),
+      },
+    ),
+  );
+
+  const statute = Schema.decodeUnknownSync(PacketCitation)({
+    ...citation,
+    sourceId: retrieved.id,
+    jurisdiction: "Florida",
+    document: "Florida Statutes",
+    edition: "2026",
+    section: "553.79",
+    quote:
+      "it shall be unlawful for any person to construct any building within this state without first obtaining a permit",
+    application: "The drawings support a permit application for new construction.",
+  });
+
+  expect(retrieved.official).toBe(true);
+  expect(citationHasSourceSupport(statute, retrieved)).toBe(true);
+  expect(citationHasSourceSupport({ ...statute, section: "553.73" }, retrieved)).toBe(false);
 });

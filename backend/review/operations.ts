@@ -489,5 +489,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
     importPdf,
     suggestSheetLabels,
     port,
+    /** Source options for governing-source lookups; PDFs need configured PDF processing. */
+    sourceOptions: config.documents === undefined ? {} : { pdfText: config.documents.extractText },
   };
 }

@@ -10,6 +10,8 @@ import {
   WorkerRequest,
   WorkerResponse,
   WorkerSuccess,
+  WorkerTextRequest,
+  WorkerTextResult,
 } from "./worker-messages.ts";
 
 /** A scoped subprocess is killed on timeout, cancellation, malformed output, or completion. */
@@ -130,5 +132,16 @@ export function workerRender(
   return worker.call(
     WorkerRenderRequest.make({ ...input, id: worker.nextId() }),
     Schema.decodeUnknownSync(WorkerRenderResult),
+  );
+}
+
+/** Extract embedded page text from a stored PDF, starting at a one-based page. */
+export function workerText(
+  worker: PdfWorkerSession,
+  input: Omit<typeof WorkerTextRequest.Type, "_tag" | "id">,
+) {
+  return worker.call(
+    WorkerTextRequest.make({ ...input, id: worker.nextId() }),
+    Schema.decodeUnknownSync(WorkerTextResult),
   );
 }

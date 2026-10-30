@@ -209,6 +209,37 @@ test("packet report retains actual coverage, source status, calculations, prior 
   expect(html.match(/<script>/g)).toHaveLength(1);
 });
 
+test("packet report links a citation's Florida code section for the engineer to confirm", () => {
+  const url =
+    "https://codes.iccsafe.org/content/FLBC2023P2/chapter-10-means-of-egress#FLBC2023P2_Ch10_Sec1004";
+
+  const base = review();
+
+  const html = renderPacketReport(
+    review({
+      citations: base.citations.map((citation) => ({
+        ...citation,
+        reference: {
+          id: "codes.iccsafe.org/content/FLBC2023P2/chapter-10-means-of-egress#FLBC2023P2_Ch10_Sec1004",
+          document: "FBC Building (Commercial)",
+          edition: "2023 8th Edition",
+          title: "1004 Occupant Load",
+          url,
+          access: "open_in_browser",
+        },
+      })),
+    }),
+    new Map([[identifiers.evidence, pixel]]),
+  );
+
+  expect(html).toContain(
+    "<dt>Code section</dt><dd>1004 Occupant Load · FBC Building (Commercial), 2023 8th Edition<br>",
+  );
+  expect(html).toContain(`<a href="${url}" rel="noopener noreferrer" target="_blank">`);
+  // The link is a pointer for the engineer, not retrieved text, so the citation stays unverified.
+  expect(html).toContain("unverified");
+});
+
 test("packet report escapes model and source text and refuses executable evidence", () => {
   const hostile =
     '</script><img src=x onerror="globalThis.reportInjected=true"><script>alert(1)</script>';
