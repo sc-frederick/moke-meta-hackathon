@@ -1,0 +1,557 @@
+/* Forge design system tokens, base elements and shared controls.
+   Adapted from the licensed reference in design/reference/forge. See design/DESIGN.md. */
+
+:root {
+  --color-ink: #0b0b0c;
+  --color-graphite: #131315;
+  --color-slate: #1b1b1e;
+  --color-filament: #26262a;
+  --color-ember: #f65a1a;
+  --color-spark: #ff7a38;
+  --color-bone: #f2f2f3;
+  --color-ash: #8b8b92;
+  --color-ash-soft: #5a5a60;
+
+  --color-bg: var(--color-ink);
+  --color-surface: var(--color-graphite);
+  --color-surface-sunken: var(--color-slate);
+  --color-border: var(--color-filament);
+  --color-border-strong: #2f2f34;
+  --color-text: var(--color-bone);
+  --color-text-muted: var(--color-ash);
+  --color-accent: var(--color-ember);
+  --color-accent-hover: var(--color-spark);
+  --color-focus: var(--color-ember);
+  --color-error: #e2403a;
+  --color-success: #4fb477;
+
+  --color-edge-highlight: rgb(255 255 255 / 0.03);
+  --color-wash: rgb(255 255 255 / 0.02);
+  --color-ember-wash: rgb(246 90 26 / 0.12);
+  --color-ember-halo: rgb(246 90 26 / 0.24);
+
+  --font-display: "Space Grotesk Variable", "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Inter Variable", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-headline-lg: 32px;
+  --text-headline-md: 24px;
+  --text-title-md: 18px;
+  --text-body-lg: 16px;
+  --text-body-md: 14px;
+  --text-body-sm: 13px;
+  --text-label-sm: 11px;
+  --text-mono-sm: 12px;
+
+  --leading-tight: 1.05;
+  --leading-snug: 1.2;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.12em;
+
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+
+  --shadow-card: inset 0 1px 0 var(--color-edge-highlight);
+  --shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.75), 0 2px 0 0 rgb(0 0 0 / 0.4);
+  --shadow-focus: 0 0 0 2px var(--color-ember-halo);
+  /* Pairs the halo with a 1px ember edge, as Forge inputs do, for borderless controls. */
+  --shadow-focus-ring: 0 0 0 1px var(--color-ember), 0 0 0 3px var(--color-ember-halo);
+
+  --ease-out: cubic-bezier(0.2, 0.65, 0.25, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+
+  /* Official Tabler outline paths (MIT) for controls drawn in CSS. */
+  --icon-chevron-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6l-6 6'/%3E%3C/svg%3E");
+  --icon-chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6l6 -6'/%3E%3C/svg%3E");
+  --icon-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b92' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6l6 -6'/%3E%3C/svg%3E");
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  line-height: var(--leading-normal);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  /* Desktop chrome is not text. Reading content opts back in below. */
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+:is(p, li, dd, dt, td, th, h1, h2, h3, h4, code, pre, blockquote, .selectable) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:is(input, textarea, [contenteditable="true"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+:is(button, summary, label, kbd, progress, [role="button"], [role="option"], [role="tab"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+::selection {
+  background: var(--color-ember);
+  color: var(--color-ink);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* Chromium ignores these pseudo-elements when scrollbar-width or scrollbar-color is set. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-border-strong) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ash-soft);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+:where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+:where(button) {
+  cursor: pointer;
+}
+
+:where(button):disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+}
+
+kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--text-label-sm);
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+}
+
+/* Form fields: Slate well, hairline, ember edge and halo on focus. Component classes override. */
+:where(
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  select,
+  textarea
+) {
+  min-height: 40px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-slate);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+:where(textarea) {
+  padding: var(--space-xs) var(--space-sm);
+  line-height: var(--leading-normal);
+}
+
+:where(select) {
+  appearance: none;
+  padding-right: 32px;
+  background-image: var(--icon-select-chevron);
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
+:where(input, select, textarea):hover:not(:disabled, :focus) {
+  border-color: var(--color-border-strong);
+}
+
+:where(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible,
+:where(input:not([type="checkbox"], [type="radio"]), select, textarea):focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background-color: var(--color-graphite);
+  box-shadow: var(--shadow-focus);
+}
+
+:where(input, textarea)::placeholder {
+  color: var(--color-ash-soft);
+  opacity: 1;
+}
+
+:where(input, select, textarea):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:where(input[type="number"])::-webkit-inner-spin-button,
+:where(input[type="number"])::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+:where(input[type="number"]) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+:where(input[type="search"])::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Checkbox: 18px Slate square, ember fill with a clipped Ink tick when checked. */
+:where(input[type="checkbox"]) {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-slate);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+:where(input[type="checkbox"])::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  transform: scale(0);
+  transition: transform var(--duration-fast) var(--ease-out);
+  background: var(--color-ink);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+:where(input[type="checkbox"]):checked {
+  background: var(--color-ember);
+  border-color: var(--color-ember);
+}
+
+:where(input[type="checkbox"]):checked::before {
+  transform: scale(1);
+}
+
+:where(input[type="checkbox"]):hover:not(:disabled, :checked) {
+  border-color: var(--color-ash-soft);
+}
+
+:where(input[type="checkbox"]):focus-visible {
+  box-shadow: var(--shadow-focus-ring);
+}
+
+:where(input[type="checkbox"]):disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Disclosure rows use a Tabler chevron instead of the platform triangle. */
+:where(summary) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  list-style: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+:where(summary)::-webkit-details-marker {
+  display: none;
+}
+
+:where(summary)::before {
+  content: "";
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: var(--icon-chevron-right) center / 14px 14px no-repeat;
+  mask: var(--icon-chevron-right) center / 14px 14px no-repeat;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+:where(details[open] > summary)::before {
+  transform: rotate(90deg);
+}
+
+:where(summary):hover {
+  color: var(--color-text);
+}
+
+:where(progress) {
+  appearance: none;
+  height: 4px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--color-filament);
+  overflow: hidden;
+}
+
+:where(progress)::-webkit-progress-bar {
+  background: var(--color-filament);
+}
+
+:where(progress)::-webkit-progress-value {
+  background: var(--color-ember);
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+:where(dialog)::backdrop {
+  background: rgb(0 0 0 / 0.75);
+}
+
+/* Buttons. Sizes follow Forge: sm 32px with label-sm type, md 40px. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 32px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--color-bone);
+}
+
+.btn.primary {
+  border-color: var(--color-ember);
+  background: var(--color-ember);
+  color: var(--color-ink);
+}
+
+.btn.primary:hover:not(:disabled) {
+  border-color: var(--color-spark);
+  background: var(--color-spark);
+}
+
+.btn.primary:focus-visible {
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* A faded Ember fill reads as a second, brown accent, so disabled primaries go neutral. */
+.btn.primary:disabled {
+  border-color: var(--color-border);
+  background: var(--color-slate);
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.btn.ghost-btn {
+  border-color: transparent;
+  color: var(--color-text-muted);
+}
+
+.btn.ghost-btn:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--color-text);
+}
+
+.btn.md {
+  min-height: 40px;
+  padding: 0 var(--space-md);
+}
+
+.btn :where(svg) {
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-slate);
+}
+
+/* Tags and status pills: mono uppercase, 2px radius, reflecting real state only. */
+.tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2xs);
+  height: 22px;
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tag.accent {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.tag.success {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.tag.error {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.field-label {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  letter-spacing: var(--tracking-wide);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}

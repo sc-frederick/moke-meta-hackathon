@@ -142,7 +142,7 @@
 <section class="sheet-setup" aria-label="Project sheets">
   <div class="section-heading">
     <h2>Project sheets</h2>
-    <span>{sheets.length} {sheets.length === 1 ? "sheet" : "sheets"}</span>
+    <span class="tag">{sheets.length} {sheets.length === 1 ? "sheet" : "sheets"}</span>
   </div>
   <p class="muted">
     Assign disciplines to focus a review, or review the whole set. No sheet confirmation is needed
@@ -155,6 +155,7 @@
     {#if onSuggestLabels && onApplyLabels}
       <div class="name-tools">
         <button
+          class="btn"
           type="button"
           data-testid="read-sheet-labels"
           disabled={busy || readingLabels || applyingLabels || genericSheets.length === 0}
@@ -175,7 +176,7 @@
           <div class="section-heading">
             <h3>Suggested sheet names</h3>
             <button
-              class="dismiss-suggestions"
+              class="btn ghost-btn dismiss-suggestions"
               type="button"
               disabled={applyingLabels}
               onclick={() => (labelSuggestions = null)}>Dismiss</button
@@ -211,6 +212,7 @@
               {applicableSuggestions.length === 1 ? "generic label" : "generic labels"} will change</small
             >
             <button
+              class="btn"
               type="button"
               data-testid="apply-sheet-labels"
               disabled={busy ||
@@ -289,7 +291,7 @@
                 aria-label={`Preview ${sheet.label}`}
                 onclick={() => onPreview(sheet)}><SheetThumbnail {sheet} {loadThumbnail} /></button
               >{/if}
-            <span class="sheet-identity" title={sheetCaption(sheet)}
+            <span class="sheet-identity selectable" title={sheetCaption(sheet)}
               ><strong>{sheet.label}</strong><small
                 >Original PDF page {sheet.pageIndex + 1}{!sheet.confirmed
                   ? " · label unverified"
@@ -313,7 +315,7 @@
                   >{discipline.label}</option
                 >{/each}
             </select>
-            <button type="button" disabled={busy} onclick={() => onPreview(sheet)}
+            <button class="btn" type="button" disabled={busy} onclick={() => onPreview(sheet)}
               >View sheet</button
             >
           </div>
@@ -351,7 +353,11 @@
                   ><option value="reviewer_complete">The whole sheet</option></select
                 >
               </div>
-              <button type="submit" disabled={busy} data-testid={`confirm-sheet-${sheet.id}`}
+              <button
+                class="btn"
+                type="submit"
+                disabled={busy}
+                data-testid={`confirm-sheet-${sheet.id}`}
                 >{sheet.confirmed
                   ? "Update verification"
                   : "Confirm sheet for count checks"}</button
@@ -443,8 +449,9 @@
         to the same items and area</label
       >
       <div class="actions">
-        <button type="button" onclick={() => (createOpen = false)}>Cancel</button><button
-          class="primary"
+        <button class="btn" type="button" onclick={() => (createOpen = false)}>Cancel</button
+        ><button
+          class="btn primary"
           type="submit"
           data-testid="create-finding-submit"
           disabled={busy}>Create check</button
@@ -457,33 +464,45 @@
 <style>
   .sheet-setup {
     display: grid;
-    gap: 14px;
-    font-size: 13px;
+    gap: var(--space-md);
+    font-size: var(--text-body-sm);
   }
   .section-heading {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--space-sm);
   }
   h2 {
     margin: 0;
-    font-size: 16px;
+    font-family: var(--font-display);
+    font-size: var(--text-title-md);
     font-weight: 600;
+    letter-spacing: var(--tracking-tight);
   }
   p {
     margin: 0;
-    line-height: 1.6;
+    line-height: var(--leading-relaxed);
   }
-  .muted,
-  .section-heading span {
-    color: var(--nd-ink-muted);
+  .muted {
+    color: var(--color-text-muted);
   }
   .bulk-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
     flex-wrap: wrap;
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .bulk-actions > span {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
+  }
+  .bulk-actions select {
+    margin-left: auto;
   }
   .name-tools,
   .name-apply {
@@ -496,26 +515,24 @@
     flex: 1;
     min-width: 180px;
     line-height: 1.5;
+    font-size: var(--text-mono-sm);
   }
   .name-suggestions {
     display: grid;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-panel);
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    box-shadow: var(--shadow-card);
   }
   .name-suggestions h3 {
     margin: 0;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .name-suggestions p {
-    font-size: 12px;
-  }
-  .dismiss-suggestions {
-    padding: 5px 8px;
-    font-size: 11px;
+    font-size: var(--text-mono-sm);
   }
   .suggestion-table {
     overflow-x: auto;
@@ -523,19 +540,25 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--text-body-sm);
     text-align: left;
   }
   th,
   td {
-    padding: 8px;
-    border-bottom: 1px solid var(--nd-hairline);
+    padding: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
     overflow-wrap: anywhere;
   }
   th {
-    color: var(--nd-ink-muted);
-    font-size: 11px;
-    font-weight: 400;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  tbody tr:hover td {
+    background: var(--color-wash);
   }
   td:first-child {
     width: 35%;
@@ -544,15 +567,37 @@
     justify-content: space-between;
   }
   .label-notice {
-    color: var(--nd-ink-muted);
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-size: var(--text-mono-sm);
+  }
+  .sheet-search,
+  label:not(.checkbox),
+  .coverage-field {
+    display: grid;
+    gap: 6px;
+    line-height: 1.5;
+  }
+  label:not(.checkbox),
+  .coverage-field label {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  .sheet-search input,
+  form input:not([type="checkbox"]),
+  form select {
+    width: 100%;
+    min-width: 0;
   }
   .sheet-row {
     display: grid;
     grid-template-columns: 18px minmax(90px, 1fr) minmax(130px, 180px) auto;
     gap: 10px;
     align-items: center;
-    padding: 4px 0;
+    padding: 6px 0;
   }
   .sheet-row span {
     overflow: hidden;
@@ -561,18 +606,20 @@
   }
   .sheet-identity {
     display: grid;
-    gap: 3px;
+    gap: 2px;
   }
   .sheet-identity strong {
     font-weight: 500;
   }
   .sheet-identity small {
-    color: var(--nd-ink-muted);
-    font-size: 11px;
+    color: var(--color-text-muted);
+    font-size: var(--text-mono-sm);
   }
+  /* Row controls stay at the 32px small-button height so each sheet row lines up. */
   .sheet-row select,
-  .sheet-row button {
-    padding: 6px 8px;
+  .bulk-actions select {
+    min-width: 0;
+    min-height: 32px;
   }
   .sheet-row.with-thumbnail {
     grid-template-columns: 18px 32px minmax(90px, 1fr) minmax(110px, 150px) auto;
@@ -580,7 +627,12 @@
   .sheet-row .thumbnail-button {
     padding: 0;
     border: 0;
+    border-radius: var(--radius-sm);
     background: transparent;
+    transition: box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .sheet-row .thumbnail-button:hover:not(:disabled) {
+    box-shadow: 0 0 0 1px var(--color-ember);
   }
   @media (max-width: 720px) {
     .sheet-row,
@@ -607,71 +659,44 @@
     gap: 0;
   }
   .sheet-list li {
-    border-bottom: 1px solid var(--nd-hairline);
-    padding: 4px 0;
-  }
-  details {
-    color: var(--nd-ink-muted);
+    border-bottom: 1px solid var(--color-border);
+    padding: 2px 0 6px;
   }
   summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    min-height: 26px;
-    padding: 2px 0 6px;
-    font-size: 11px;
+    min-height: 24px;
+    font-size: var(--text-mono-sm);
   }
   form {
     display: grid;
-    gap: 12px;
-    padding: 12px;
+    gap: var(--space-sm);
+    padding: var(--space-sm) 0 var(--space-xs) 28px;
+  }
+  form > .btn {
+    justify-self: start;
   }
   .scope-form {
-    border-top: 1px solid var(--nd-hairline);
+    border-top: 1px solid var(--color-border);
     padding: 20px 0 0;
-  }
-  label,
-  .coverage-field {
-    display: grid;
-    gap: 6px;
-    line-height: 1.5;
-  }
-  input,
-  select,
-  button {
-    font: inherit;
-    color: inherit;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    padding: 8px 10px;
-    min-width: 0;
-    background: var(--nd-shell);
   }
   .checkbox {
     display: flex;
-    align-items: start;
-    gap: 8px;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    line-height: 1.5;
   }
   .checkbox input {
-    margin-top: 3px;
+    margin-top: 1px;
+  }
+  .bulk-actions .checkbox {
+    align-items: center;
+  }
+  .bulk-actions .checkbox input {
+    margin-top: 0;
   }
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-xs);
     justify-content: flex-end;
-  }
-  button {
-    background: var(--nd-raised);
-    cursor: pointer;
-  }
-  button.primary {
-    background: var(--nd-ink);
-    color: var(--nd-shell);
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 </style>

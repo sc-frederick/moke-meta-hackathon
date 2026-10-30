@@ -260,8 +260,8 @@
 >
   <header>
     <div>
-      <p class="eyebrow">MOKE · {scope}</p>
       <h2>{stateLabel}</h2>
+      <p class="scope">{scope}</p>
     </div>
     <span class="duration" aria-label="Review elapsed time">{formatElapsed(elapsed)}</span>
   </header>
@@ -308,17 +308,20 @@
     </div>
   {/if}
   <div class="actions">
-    <button disabled={busy} onclick={onExport}>Export review report</button>
-    {#if review.error || review.state !== "running"}<button onclick={copyDiagnostics}
+    <button class="btn" disabled={busy} onclick={onExport}>Export review report</button>
+    {#if review.error || review.state !== "running"}<button class="btn" onclick={copyDiagnostics}
         >Copy review diagnostics</button
       >{/if}
     {#if !historical && onRefresh}<button
+        class="btn"
         disabled={busy}
         data-testid="refresh-review"
         onclick={onRefresh}>Refresh review</button
       >{/if}
-    {#if running && !historical}<button disabled={busy} onclick={() => onControl("pause")}
-        >Pause review</button
+    {#if running && !historical}<button
+        class="btn"
+        disabled={busy}
+        onclick={() => onControl("pause")}>Pause review</button
       >{/if}
     {#if budgetExhausted && !historical}<div class="budget-extension">
         <label
@@ -333,6 +336,7 @@
             }}
           /></label
         ><button
+          class="btn"
           disabled={busy || !validAdditionalCalls}
           onclick={() => onControl("resume", extendedBudget)}>Add calls and resume</button
         >
@@ -341,10 +345,12 @@
             already used.{:else}Enter a positive whole number of additional calls.{/if}
         </p>
       </div>{:else if review.state === "paused" && !historical}<button
+        class="btn"
         disabled={busy}
         onclick={() => onControl("resume")}>Resume review</button
       >{/if}
     {#if !historical && ["running", "paused", "uncertain"].includes(review.state)}<button
+        class="btn"
         disabled={busy}
         onclick={() => onControl("cancel")}>Cancel review</button
       >{/if}
@@ -404,6 +410,7 @@
             {@const reference = citation.reference}
             <p class="muted">{reference.title} · {reference.document}, {reference.edition}</p>
             {#if Schema.is(ReviewSourceUrl)(reference.url)}<button
+                class="btn"
                 onclick={() => onOpenSource(reference.url)}
                 >{reference.access === "open_in_browser"
                   ? "Open section to confirm"
@@ -418,6 +425,7 @@
           <p>{source.url}</p>
           <p class="muted">Retrieved {new Date(source.retrievedAt).toLocaleString()}</p>
           {#if Schema.is(ReviewSourceUrl)(source.url)}<button
+              class="btn"
               onclick={() => onOpenSource(source.url)}>Open source in browser</button
             >{/if}
           <details>
@@ -600,11 +608,13 @@
                 aria-label={`Review records for ${entry.sheet.label}`}
               >
                 <button
+                  class="btn"
                   disabled={currentPage === 0}
                   onclick={() => (coveragePage = currentPage - 1)}>Previous records</button
                 >
                 <span>Page {currentPage + 1} of {pages}</span>
                 <button
+                  class="btn"
                   disabled={currentPage + 1 >= pages}
                   onclick={() => (coveragePage = currentPage + 1)}>Next records</button
                 >
@@ -632,35 +642,48 @@
 
 <style>
   .packet-review {
-    border: 1px solid var(--nd-hairline);
-    border-radius: 14px;
-    padding: 20px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0 var(--space-lg) var(--space-lg);
     margin: 20px 0 28px;
-    color: var(--nd-ink);
-    background: var(--nd-panel);
+    color: var(--color-text);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+    font-size: var(--text-body-sm);
   }
   header {
     display: flex;
-    align-items: start;
+    align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: var(--space-md);
+    margin: 0 calc(var(--space-lg) * -1) var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
   }
   h2 {
-    margin: 4px 0 12px;
-    font-size: 17px;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--text-title-md);
     font-weight: 600;
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
   }
   h3 {
-    font-size: 14px;
-    margin: 18px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--text-body-md);
+    font-weight: 600;
+    margin: var(--space-lg) 0 var(--space-xs);
   }
   h4 {
-    font-size: 13px;
-    margin: 12px 0 5px;
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    margin: var(--space-sm) 0 4px;
   }
   p {
-    line-height: 1.6;
-    margin: 7px 0;
+    line-height: var(--leading-relaxed);
+    margin: 6px 0;
   }
   .summary,
   li,
@@ -668,44 +691,48 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
-  .eyebrow,
+  .scope,
   .muted,
-  .duration,
   .progress {
-    color: var(--nd-ink-muted);
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-size: var(--text-mono-sm);
   }
-  .stage-line {
-    font-size: 12px;
-  }
-  .eyebrow {
-    margin: 0;
+  .scope {
+    margin: 2px 0 0;
     text-transform: capitalize;
   }
   .duration {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .progress {
+    margin-top: 0;
+  }
+  .stage-line {
+    font-size: var(--text-mono-sm);
   }
   .budget-extension {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 8px;
+    gap: var(--space-xs);
     flex-basis: 100%;
   }
   .budget-extension label {
     display: grid;
-    gap: 5px;
-    font-size: 12px;
+    gap: 6px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .budget-extension input {
     width: 130px;
-    padding: 7px 10px;
-    color: inherit;
-    font: inherit;
-    border: 1px solid var(--nd-hairline-strong);
-    background: var(--nd-panel);
-    border-radius: 7px;
   }
   .budget-extension p {
     flex-basis: 100%;
@@ -714,89 +741,106 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 14px;
+    gap: var(--space-xs);
+    margin-top: var(--space-md);
   }
-  button {
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-    font-size: 12px;
-    padding: 7px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--nd-hairline-strong);
-    background: transparent;
-  }
-  button:hover {
-    background: var(--nd-raised-hover);
-  }
-  button:disabled,
-  input:disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
-  button:focus-visible,
-  summary:focus-visible,
-  input:focus-visible,
-  select:focus-visible,
   .coverage-table-scroll:focus-visible {
-    outline: 2px solid var(--nd-ink);
-    outline-offset: 3px;
+    box-shadow: var(--shadow-focus-ring);
   }
   .attention,
   .missing {
-    border-left: 2px solid var(--nd-warning, #b89852);
-    padding-left: 12px;
+    border-left: 2px solid var(--color-accent);
+    padding-left: var(--space-sm);
+  }
+  .attention {
+    color: var(--color-error);
+    border-left-color: var(--color-error);
   }
   .missing h3 {
-    margin-top: 12px;
+    margin-top: var(--space-sm);
   }
   ul {
-    margin: 7px 0;
+    margin: 6px 0;
     padding-left: 20px;
   }
   li {
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-relaxed);
   }
   .findings > h3 span {
-    color: var(--nd-ink-muted);
-    font-weight: 400;
+    min-width: 20px;
+    height: 20px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
   }
   .finding {
     display: flex;
     width: 100%;
     text-align: left;
     border: 0;
-    border-top: 1px solid var(--nd-hairline);
+    border-top: 1px solid var(--color-border);
     border-radius: 0;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 7px;
-    padding: 13px 0;
-    cursor: pointer;
+    gap: 6px var(--space-sm);
+    padding: var(--space-sm) var(--space-xs);
+    background: transparent;
+    color: var(--color-text);
+    transition: background var(--duration-fast) var(--ease-out);
   }
-  .finding::before {
-    content: "›";
-    color: var(--nd-ink-muted);
+  .finding:hover {
+    background: var(--color-wash);
+  }
+  .finding::after {
+    content: "";
+    order: 3;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    background: var(--color-text-muted);
+    -webkit-mask: var(--icon-chevron-right) center / 16px 16px no-repeat;
+    mask: var(--icon-chevron-right) center / 16px 16px no-repeat;
   }
   .finding strong {
+    order: 1;
     flex: 1;
     min-width: 120px;
-    font-size: 13px;
+    font-size: var(--text-body-sm);
+    font-weight: 500;
   }
   .severity,
   .finding-status {
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    white-space: nowrap;
   }
   .severity {
-    color: var(--nd-ink-muted);
+    order: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 var(--space-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
   }
   .severity[data-severity="Critical"] {
-    color: var(--nd-warning);
+    border-color: var(--color-error);
+    color: var(--color-error);
   }
   .finding-status {
-    color: var(--nd-ink-muted);
+    order: 2;
+    color: var(--color-text-muted);
   }
   .finding:is(
       [data-decision="false_alarm"],
@@ -804,19 +848,19 @@
       [data-decision="duplicate"]
     )
     strong {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
     text-decoration: line-through;
   }
   .records {
-    border-top: 1px solid var(--nd-hairline);
-    padding-top: 14px;
-    margin-top: 18px;
-    font-size: 13px;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-sm);
+    margin-top: var(--space-md);
+    font-size: var(--text-body-sm);
   }
-  .records > summary {
-    cursor: pointer;
-    color: var(--nd-ink-muted);
-    font-size: 12px;
+  .records > summary,
+  .coverage > summary {
+    font-size: var(--text-body-sm);
+    font-weight: 500;
   }
   .records p,
   blockquote {
@@ -825,33 +869,28 @@
   }
   .records blockquote {
     margin: 10px 0;
-    padding-left: 12px;
-    border-left: 2px solid var(--nd-hairline-strong);
-  }
-  .records code {
-    font-size: 12px;
+    padding-left: var(--space-sm);
+    border-left: 2px solid var(--color-border-strong);
+    color: var(--color-text-muted);
   }
   .coverage {
-    margin-top: 18px;
-    border-top: 1px solid var(--nd-hairline);
-    padding-top: 14px;
-    font-size: 12px;
-  }
-  .coverage > summary {
-    cursor: pointer;
-    color: var(--nd-ink-muted);
+    margin-top: var(--space-md);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-sm);
+    font-size: var(--text-mono-sm);
   }
   .sheet-coverage {
     padding: 10px 0;
-    border-bottom: 1px solid var(--nd-hairline);
+    border-bottom: 1px solid var(--color-border);
   }
   .sheet-coverage summary {
-    cursor: pointer;
-    line-height: 1.6;
+    flex-wrap: wrap;
+    line-height: var(--leading-relaxed);
+    color: var(--color-text);
   }
   .coverage-table-scroll {
     overflow-x: auto;
-    margin: 16px 0;
+    margin: var(--space-md) 0;
   }
   .discipline-coverage {
     width: 100%;
@@ -860,79 +899,99 @@
   }
   .discipline-coverage caption {
     text-align: left;
-    font-weight: 500;
-    margin-bottom: 8px;
+    font-weight: 600;
+    margin-bottom: var(--space-xs);
   }
   .discipline-coverage th,
   .discipline-coverage td {
-    border-bottom: 1px solid var(--nd-hairline);
-    padding: 7px 8px;
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--space-xs);
     text-align: right;
     white-space: nowrap;
+  }
+  .discipline-coverage td {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+  }
+  .discipline-coverage thead th {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  .discipline-coverage tbody tr:hover > * {
+    background: var(--color-wash);
   }
   .discipline-coverage th:first-child {
     text-align: left;
     padding-left: 0;
   }
-  .discipline-coverage th {
+  .discipline-coverage tbody th {
     font-weight: 500;
   }
   .coverage-filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
-    gap: 10px;
-    padding: 12px 0;
+    gap: var(--space-sm);
+    padding: var(--space-sm) 0;
     margin: 0;
     border: 0;
   }
   .coverage-filters legend {
-    padding: 0;
-    font-weight: 500;
+    padding: 0 0 var(--space-xs);
+    font-weight: 600;
   }
   .coverage-filter {
     display: grid;
-    gap: 5px;
+    gap: 6px;
     min-width: 0;
+  }
+  .coverage-filter label {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .coverage-filters select,
   .coverage-filters input[type="search"] {
     width: 100%;
     min-width: 0;
-    color: inherit;
-    font: inherit;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-panel);
-    padding: 7px 8px;
   }
   .coverage-filters .earlier-coverage {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-xs);
     grid-column: 1 / -1;
-  }
-  .earlier-coverage input {
-    margin: 0;
+    font-size: var(--text-body-sm);
   }
   .coverage-list .sheet-counts {
     margin: 10px 0;
   }
   .coverage-record {
-    padding: 7px 0;
-    border-top: 1px solid var(--nd-hairline);
+    padding: 6px 0;
+    border-top: 1px solid var(--color-border);
   }
   .coverage-pagination {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--space-xs);
     margin-top: 10px;
+  }
+  .coverage-pagination span {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-muted);
   }
   .source-record {
     overflow-wrap: anywhere;
   }
   .coverage-list section {
-    margin-top: 14px;
+    margin-top: var(--space-sm);
   }
   .coverage-list p {
     display: flex;
@@ -948,11 +1007,11 @@
   .configuration {
     display: grid;
     grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
-    gap: 6px 16px;
-    margin: 4px 0 12px;
+    gap: 6px var(--space-md);
+    margin: 4px 0 var(--space-sm);
   }
   .configuration dt {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
   .configuration dd {
     margin: 0;
@@ -960,6 +1019,6 @@
   }
   .coverage-list small {
     flex-basis: 100%;
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
 </style>

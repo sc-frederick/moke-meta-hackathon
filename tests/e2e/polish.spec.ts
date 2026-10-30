@@ -221,7 +221,7 @@ test("project dialogs, selectors, settings, visual evidence selection, and chat 
       await page
         .locator(".reviewer-message")
         .evaluate((element) => parseFloat(getComputedStyle(element).borderTopLeftRadius)),
-    ).toBeGreaterThan(10);
+    ).toBe(4);
     const paused = seedPausedReview(directory);
     const checkMenu = page.getByRole("button", { name: /^Check:/ });
     await checkMenu.click();

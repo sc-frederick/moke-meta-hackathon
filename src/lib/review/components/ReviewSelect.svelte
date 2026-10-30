@@ -29,7 +29,7 @@
   function positionMenu() {
     if (!trigger || !menu) return;
     const anchor = trigger.getBoundingClientRect();
-    const width = Math.min(Math.max(anchor.width, 240), window.innerWidth - 24);
+    const width = Math.min(Math.max(anchor.width, 300), window.innerWidth - 24);
     const height = Math.min(menu.scrollHeight, window.innerHeight - 24, 320);
     menu.style.width = `${width}px`;
     menu.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))}px`;
@@ -106,7 +106,7 @@
   }}
   ><span class="picker-label">{label}</span><span class="picker-value"
     >{selected?.label ?? "Choose…"}</span
-  ><ReviewIcon name="chevron-down" size={13} /></button
+  ><ReviewIcon name="chevron-down" size={14} /></button
 >
 <div
   {id}
@@ -124,6 +124,7 @@
   {#each options as option (option.value)}
     <button
       type="button"
+      class="option"
       role="option"
       aria-selected={value === option.value}
       disabled={option.disabled}
@@ -134,7 +135,7 @@
       ><span
         ><strong>{option.label}</strong>{#if option.description}<small>{option.description}</small
           >{/if}</span
-      >{#if value === option.value}<ReviewIcon name="check" size={15} />{/if}</button
+      >{#if value === option.value}<ReviewIcon name="check" size={16} />{/if}</button
     >
   {/each}
 </div>
@@ -143,76 +144,91 @@
   .picker {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     min-width: 0;
     max-width: 100%;
-    border: 0;
+    height: 28px;
+    border: 1px solid transparent;
     background: transparent;
-    color: var(--nd-ink);
-    font: inherit;
-    font-size: 12px;
-    padding: 7px 8px;
-    border-radius: 7px;
-    cursor: pointer;
+    color: var(--color-text);
+    font-size: var(--text-body-sm);
+    padding: 0 var(--space-xs);
+    border-radius: var(--radius-md);
+    transition:
+      background var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
   }
-  .picker:hover {
-    background: var(--nd-raised-hover);
+  .picker:hover:not(:disabled),
+  .picker[aria-expanded="true"] {
+    background: var(--color-slate);
+  }
+  .picker[aria-expanded="true"] {
+    border-color: var(--color-border-strong);
+  }
+  .picker :global(svg) {
+    color: var(--color-text-muted);
   }
   .picker-label {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .picker-value {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
   }
   .options {
     position: fixed;
     margin: 0;
-    padding: 5px;
+    padding: var(--space-2xs);
     max-height: min(320px, calc(100dvh - 24px));
     overflow-y: auto;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 10px;
-    background: var(--nd-panel);
-    color: var(--nd-ink);
-    box-shadow: 0 12px 32px rgb(0 0 0 / 0.24);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-pop);
   }
   .options button {
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
+    min-height: 36px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     text-align: left;
     background: transparent;
     color: inherit;
-    padding: 9px 10px;
-    font: inherit;
-    cursor: pointer;
+    padding: 6px 10px;
   }
-  .options button:hover,
+  .options button:hover:not(:disabled) {
+    background: var(--color-slate);
+  }
   .options button:focus-visible {
-    background: var(--nd-raised-hover);
+    background: var(--color-slate);
+    box-shadow: inset 2px 0 0 var(--color-ember);
+  }
+  .options button[aria-selected="true"] {
+    color: var(--color-text);
+  }
+  .options button[aria-selected="true"] :global(svg) {
+    color: var(--color-ember);
   }
   strong {
-    font-size: 13px;
+    font-size: var(--text-body-sm);
     font-weight: 500;
   }
   small {
     display: block;
-    font-size: 11px;
-    color: var(--nd-ink-muted);
-    margin-top: 3px;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  button:focus-visible {
-    outline: 1px solid var(--nd-ink-muted);
-    outline-offset: 2px;
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
+    margin-top: 2px;
   }
 </style>

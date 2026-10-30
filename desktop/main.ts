@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   net,
   protocol,
   shell,
@@ -453,9 +454,13 @@ if (!app.requestSingleInstanceLock()) {
       });
 
       const createWindow = async () => {
+        // The renderer is dark only; match native chrome and the first paint to it.
+        nativeTheme.themeSource = "dark";
+
         const window = new BrowserWindow({
           width: 1100,
           height: 760,
+          backgroundColor: "#0b0b0c",
           webPreferences: {
             preload: join(root, "dist/preload/preload.cjs"),
             nodeIntegration: false,

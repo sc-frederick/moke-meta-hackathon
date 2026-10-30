@@ -27,7 +27,6 @@ ignorePatterns = [
   "design/reference/**",
   "backend/review/prompts/assets/**",
   "backend/review/code-index/assets/FBC_2023_plan_review_reference.md",
-  "design/concepts/**",
   ".agents/**",
   ".codex/**",
   ".claude/**",

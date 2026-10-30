@@ -85,6 +85,10 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
         if (!(await findings.isVisible()))
           await page.getByRole("button", { name: "Open findings" }).click();
         await expect(findings).toBeVisible();
+        await expect(page.getByRole("button", { name: "Open findings" })).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
       }
 
       await page.evaluate(() => document.fonts.ready);
@@ -392,12 +396,7 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
 
     await capture("workbench");
 
-    if (screenshots) {
-      await page.getByRole("button", { name: "Use light appearance" }).click();
-      await capture("workbench-light");
-      await page.getByRole("button", { name: "Use dark appearance" }).click();
-      await page.keyboard.press("Escape");
-    }
+    if (screenshots) await page.keyboard.press("Escape");
 
     await page.screenshot({ path: test.info().outputPath("review-workbench.png") });
     const packageParent = test.info().outputPath("packages");

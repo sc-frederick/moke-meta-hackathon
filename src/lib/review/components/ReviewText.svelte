@@ -23,18 +23,31 @@
 <style>
   .review-text {
     overflow-wrap: anywhere;
-    line-height: 1.6;
+    line-height: var(--leading-relaxed);
   }
   p {
-    margin: 5px 0;
+    margin: 4px 0;
     white-space: pre-wrap;
   }
   h4 {
-    font-size: inherit;
-    margin: 14px 0 5px;
+    margin: var(--space-md) 0 4px;
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  code {
+    padding: 1px 4px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-slate);
+    font-size: 0.9em;
   }
   .list-item {
-    padding-left: 16px;
+    padding-left: var(--space-md);
     text-indent: -12px;
+  }
+  .list-item > span {
+    color: var(--color-ember);
   }
 </style>

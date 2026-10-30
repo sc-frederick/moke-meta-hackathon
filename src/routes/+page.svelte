@@ -24,15 +24,11 @@
 {/if}
 
 <style>
-  :global(body) {
-    margin: 0;
-  }
   .boot {
     min-height: 100vh;
     display: grid;
     place-items: center;
-    font-family: system-ui, sans-serif;
-    background: #141414;
-    color: #ededed;
+    color: var(--color-text-muted);
+    font-size: var(--text-body-sm);
   }
 </style>

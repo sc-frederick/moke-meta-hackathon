@@ -1,6 +1,6 @@
 # Moke beta implementation
 
-The beta extends the selected Nightdesk workbench with persisted projects,
+The beta extends the selected workbench design with persisted projects,
 conversations, PDF sources, and bounded drawing inspections. Chat remains the
 main work surface. The product scope is one selected drawn-to-schedule count
 check at a time. A discipline choice supplies relevant instructions within that
@@ -126,20 +126,14 @@ complete review backup. See [data recovery](../data.md) and
 
 ## Existing design and responsive behavior
 
-The [selection record](../../design/selection.json) pins Nightdesk from
-`sc-frederick/uiverse-templates` revision
-`88f6fb4b913606085633292659ac60ec6918cf28`. The
-[selected surface brief](../../design/concepts/DESIGN.md) records its neutral
-surface hierarchy, compact controls, system typography, Tabler outline icons,
-and rounded findings popover. The beta extends that world. The study's sample
-content is not application data.
-
-The workbench CSS defines a dark shell, panel, and raised surface as `#141414`,
-`#1b1b1b`, and `#262626`. Light appearance uses `#fdfdfd`, `#f6f6f6`, and `#ededed`
-for the same roles. Both appearances share the workflow and header toggle.
-Conversation text uses 15px type with a 1.75 line height and a reading width of
-68ch. Controls and supporting text generally use 13px. Focus has a visible
-outline, and the running indicator respects reduced motion.
+The workbench follows the Forge design system recorded in
+[the design notes](../../design/DESIGN.md) and pinned by the
+[selection record](../../design/selection.json). Panels, wells and hairlines use
+Forge's Graphite, Slate and Filament tokens over an Ink canvas, with Ember for
+actions, focus and the current selection. Conversation text uses 14px Inter with
+a 1.6 line height and a reading width of 68ch. Controls and supporting text
+generally use 13px. Keyboard focus shows an Ember ring, and the running
+indicator respects reduced motion.
 
 At widths from 701px through 1180px, opening evidence hides the sidebar to retain
 chat width; the navigation toggle can reveal it as an overlay. At 700px and
@@ -148,13 +142,10 @@ navigation, or the source pane as appropriate; closing the source returns focus
 to Findings. Narrow headers hide secondary context instead of shrinking text.
 These are implemented behaviors, with live responsive acceptance still pending.
 
-The original source [DESIGN.md](../../design/reference/nightdesk/DESIGN.md),
-assets, and [license](../../design/reference/nightdesk/LICENSE.md) are retained
-together in the ignored `design/reference/nightdesk/` directory at the recorded
-revision. The license permits adapted application use and prohibits republishing
-or repackaging the design-system pack. Preserve its attribution and keep the
-reference source outside public distributions. This extension does not replace
-those source materials or create a second UI system.
+The licensed Forge pack stays in the ignored `design/reference/forge/` directory.
+Its license permits adapted application use and prohibits republishing or
+repackaging the design-system pack, so the reference source stays outside public
+distributions.
 
 ## Validation
 

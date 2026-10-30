@@ -42,7 +42,6 @@ jobs:
           "TEMP=$temp" >> $env:GITHUB_ENV
           "TMP=$temp" >> $env:GITHUB_ENV
       - run: bun run check
-      - run: bun run build:concepts
       - if: runner.os != 'Windows'
         run: bun run test
       # Windows runner disk stalls can slow tests tenfold for tens of seconds. Tests with their

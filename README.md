@@ -124,13 +124,13 @@ migrations/   Immutable SQLite migrations
 tests/       Smoke tests, Electron end-to-end flows, and synthetic fixtures
 scripts/      Development, build, packaged checks, and opt-in model experiments
 docs/        Setup, architecture, screenshots, and validation evidence
-design/       Selected Nightdesk design provenance and the original UI study
+design/       Forge design selection, adaptation notes, and icon license
 experiments/  SAM recipes, captured proposals, and research evidence
 ```
 
 The [documentation index](docs/README.md) separates setup and architecture from
-hackathon research and drawing experiments. The original [UI study](design/concepts/DESIGN.md)
-records the Nightdesk reference and third-party asset attribution.
+hackathon research and drawing experiments. The [workbench design notes](design/DESIGN.md)
+record the Forge design system, its adaptations, and third-party asset attribution.
 
 ## Hackathon provenance
 

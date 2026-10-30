@@ -54,12 +54,13 @@
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    border: 1px solid var(--nd-hairline);
-    background: var(--nd-raised);
-    color: var(--nd-ink-muted);
-    border-radius: 3px;
+    border: 1px solid var(--color-border);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+    border-radius: var(--radius-sm);
     overflow: hidden;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
   }
   img {
     width: 100%;

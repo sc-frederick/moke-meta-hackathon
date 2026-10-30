@@ -104,13 +104,14 @@ updates the project and conversation breadcrumb. Closing the source pane restore
 the chat's width. The user referenced T3 Code's information menu and the existing
 result-to-evidence behavior in the aec_pgrep codebase.
 
-The separate design study contains sample content. The application uses persisted
-projects, conversations, review requests, findings and source evidence. Sheet
-confirmation and revision correspondence remain explicit for count checks.
+The application uses persisted projects, conversations, review requests, findings
+and source evidence. Sheet confirmation and revision correspondence remain
+explicit for count checks.
 
 ## Brand Commitments
 
 The user named OpenCode, T3 Code and Cloudflare OS as visual references, with
 particular emphasis on T3 Code's desktop polish. The current workbench adapts the
-Nightdesk template selected from the Uiverse catalog, with light and dark
-appearances, compact navigation and evidence beside the conversation.
+Forge design system selected from the Uiverse catalog: a dark, industrial
+interface with hairline panels, one ember accent, compact navigation and
+evidence beside the conversation.

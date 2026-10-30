@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Revision, RevisionCorrespondence, Sheet } from "#lib/review/contracts.ts";
+  import ReviewIcon from "./ReviewIcon.svelte";
   import SheetThumbnail from "./SheetThumbnail.svelte";
 
   type Choice = {
@@ -117,7 +118,9 @@
 {#if latest && previous}
   <section class="revision-mapping" aria-label="Sheet revision mapping">
     <header class="mapping-heading">
-      <h3>{previous.name} → {latest.name}</h3>
+      <h3>
+        <span>{previous.name}</span><ReviewIcon name="arrow-right" /><span>{latest.name}</span>
+      </h3>
       <p>
         Compare each original sheet with its replacement. Confirm retained sheets, mark removed
         sheets, or leave them unresolved for later review.
@@ -155,7 +158,7 @@
               <small>Original · page {sheet.pageIndex + 1}</small>
             </div>
           </div>
-          <span class="mapping-arrow" aria-hidden="true">→</span>
+          <span class="mapping-arrow"><ReviewIcon name="arrow-right" /></span>
           <div class="sheet-cell new-sheet">
             <div class="page-preview" data-testid={`revision-new-preview-${sheet.id}`}>
               {#if replacement}
@@ -290,7 +293,7 @@
       </section>
     {/if}
     <button
-      class="apply-button"
+      class="btn primary apply-button"
       data-testid="apply-revision"
       disabled={busy || !hasDecision || !valid || pending.length === 0}
       onclick={() => onApply(latest.id, pending)}>Apply revision correspondence</button
@@ -308,7 +311,11 @@
   >
     <header class="comparison-heading">
       <h3 id="revision-preview-title">Compare revision pages</h3>
-      <button aria-label="Close page comparison" onclick={() => previewDialog?.close()}>×</button>
+      <button
+        class="icon-btn"
+        aria-label="Close page comparison"
+        onclick={() => previewDialog?.close()}><ReviewIcon name="x" size={18} /></button
+      >
     </header>
     {#if previewSheet}
       <div class="comparison-pages">
@@ -352,8 +359,8 @@
   .revision-mapping {
     container-type: inline-size;
     display: grid;
-    gap: 12px;
-    font-size: 13px;
+    gap: var(--space-sm);
+    font-size: var(--text-body-sm);
   }
   .mapping-heading {
     display: grid;
@@ -365,14 +372,24 @@
     line-height: 1.5;
   }
   h3 {
-    font-size: 14px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    font-family: var(--font-display);
+    font-size: var(--text-title-md);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+  }
+  h3 :global(svg) {
+    color: var(--color-text-muted);
   }
   .hint,
   small {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
   small {
-    font-size: 11px;
+    font-size: var(--text-mono-sm);
     line-height: 1.45;
   }
   .column-headings,
@@ -380,24 +397,29 @@
     display: grid;
     grid-template-columns: minmax(130px, 1fr) 16px minmax(230px, 1.4fr) minmax(180px, 1fr);
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
   }
   .column-headings {
-    padding: 0 12px;
-    color: var(--nd-ink-muted);
-    font-size: 11px;
+    padding: 0 var(--space-sm);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .mapping-list {
     list-style: none;
     padding: 0;
     margin: 0;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
     overflow: hidden;
   }
   .mapping-row {
-    padding: 12px;
-    border-bottom: 1px solid var(--nd-hairline);
+    padding: var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
   }
   .mapping-row:last-child {
     border-bottom: 0;
@@ -405,7 +427,7 @@
   .sheet-cell {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
     min-width: 0;
   }
   .sheet-meta,
@@ -429,16 +451,19 @@
     width: 56px;
     height: 72px;
     box-sizing: border-box;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 3px;
-    color: var(--nd-ink-muted);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
   }
   .no-page {
     border-style: dashed;
-    font-size: 22px;
+    font-size: 20px;
   }
   .mapping-arrow {
-    color: var(--nd-ink-muted);
+    display: grid;
+    place-items: center;
+    color: var(--color-text-muted);
   }
   strong {
     font-weight: 500;
@@ -446,92 +471,74 @@
   }
   label {
     display: grid;
-    gap: 4px;
+    gap: 6px;
     min-width: 0;
-    font-size: 11px;
-    color: var(--nd-ink-muted);
-  }
-  select,
-  button {
-    font: inherit;
-    color: inherit;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-shell);
-    padding: 7px 8px;
-    min-width: 0;
-    width: 100%;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   select {
-    font-size: 12px;
-    color: var(--nd-ink);
+    min-width: 0;
+    width: 100%;
   }
   .confirmation {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
     min-width: 0;
-    color: var(--nd-ink);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    letter-spacing: normal;
+    text-transform: none;
     line-height: 1.4;
   }
-  .confirmation input {
-    margin: 0;
-    flex-shrink: 0;
-  }
   .saved {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
   .unresolved {
-    font-size: 12px;
-  }
-  button {
-    cursor: pointer;
-    background: var(--nd-raised);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
   }
   .preview-button {
     display: block;
-    width: auto;
     padding: 0;
     border: 0;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     background: transparent;
+    transition: box-shadow var(--duration-fast) var(--ease-out);
   }
   .preview-button:hover {
-    outline: 1px solid var(--nd-hairline-strong);
-    outline-offset: 2px;
-  }
-  button:focus-visible,
-  select:focus-visible {
-    outline: 2px solid var(--nd-focus);
-    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--color-ember);
   }
   .apply-button {
     justify-self: start;
-    width: auto;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   .added-sheets {
     display: grid;
-    gap: 8px;
+    gap: var(--space-xs);
   }
   .added-sheets h4,
   .added-sheets p {
     margin: 0;
   }
   .added-sheets h4 {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .added-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 12px;
-    padding: 12px;
-    border-bottom: 1px solid var(--nd-hairline);
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
   }
   .added-row:last-child {
     border-bottom: 0;
@@ -540,27 +547,21 @@
     width: min(760px, calc(100vw - 48px));
     max-height: calc(100vh - 48px);
     box-sizing: border-box;
-    padding: 20px;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 8px;
-    background: var(--nd-panel);
-    color: var(--nd-ink);
-  }
-  .comparison-dialog::backdrop {
-    background: rgb(0 0 0 / 65%);
+    padding: var(--space-lg);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-pop);
   }
   .comparison-heading {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: var(--space-md);
     margin-bottom: 20px;
-  }
-  .comparison-heading button {
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    font-size: 20px;
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-border);
   }
   .comparison-pages {
     display: grid;
@@ -573,7 +574,7 @@
     display: grid;
     justify-items: center;
     align-content: start;
-    gap: 12px;
+    gap: var(--space-sm);
     min-width: 0;
     margin: 0;
     text-align: center;
@@ -582,16 +583,22 @@
     display: grid;
     gap: 4px;
   }
+  figcaption small {
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
   .comparison-placeholder {
     display: grid;
     place-items: center;
     width: var(--sheet-thumbnail-width);
     height: var(--sheet-thumbnail-height);
     box-sizing: border-box;
-    border: 1px dashed var(--nd-hairline-strong);
-    border-radius: 3px;
-    padding: 12px;
-    color: var(--nd-ink-muted);
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm);
+    color: var(--color-text-muted);
   }
   @container (max-width: 740px) {
     .column-headings {
@@ -609,7 +616,7 @@
       max-width: 180px;
     }
     .sheet-cell {
-      gap: 8px;
+      gap: var(--space-xs);
     }
     .page-preview {
       --sheet-thumbnail-width: 44px;

@@ -11,7 +11,7 @@ Start with [Moke's README](../README.md) for the product, workflow, and screensh
 - [Desktop builds and releases](deployment.md): packaging, CI, credentials, and runtime boundaries.
 - [Data and recovery](data.md): SQLite migrations, consistent backups, complete packages, and restore behavior.
 - [Demonstration fixture](fixtures/hero-case.md): supported issue, correction, unchanged control, and revision recheck.
-- [Design provenance](../design/concepts/DESIGN.md): the selected Nightdesk reference and original UI study.
+- [Workbench design](../design/DESIGN.md): the Forge design system, its desktop adaptations, and asset licenses.
 
 ## Architecture and validation
 

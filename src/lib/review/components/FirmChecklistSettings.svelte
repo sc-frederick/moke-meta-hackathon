@@ -47,11 +47,11 @@
   <div class="checklist-actions">
     <button
       type="button"
-      class="save"
+      class="btn"
       disabled={disabled || !loaded || !changed}
       onclick={() => onSave(draft.trim())}>Save checklist</button
     >
-    {#if checklist}<span class="muted"
+    {#if checklist}<span class="muted stamp"
         >Revision {checklist.revision} · saved {new Date(checklist.savedAt).toLocaleString()}</span
       >{/if}
   </div>
@@ -61,55 +61,37 @@
 <style>
   .settings-section {
     display: grid;
-    gap: 12px;
+    gap: var(--space-sm);
     padding: 20px 0;
-    border-bottom: 1px solid var(--nd-hairline);
+    border-bottom: 1px solid var(--color-border);
   }
   h3 {
-    font-size: 14px;
     margin: 0;
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   p {
-    font-size: 13px;
-    line-height: 1.65;
     margin: 6px 0;
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-relaxed);
   }
   textarea {
     width: 100%;
-    box-sizing: border-box;
     resize: vertical;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-shell);
-    color: var(--nd-ink);
-    padding: 10px 12px;
-    font-size: 13px;
-    line-height: 1.5;
   }
   .checklist-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 10px;
-    font-size: 12px;
-  }
-  .save {
-    display: inline-flex;
-    align-items: center;
-    padding: 7px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--nd-hairline);
-    background: var(--nd-panel);
-    color: inherit;
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .save:not(:disabled):hover {
-    background: var(--nd-raised-hover);
   }
   .muted {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+  }
+  .stamp {
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
   }
   .sr-only {
     position: absolute;
