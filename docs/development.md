@@ -72,24 +72,24 @@ bun run test:screenshots
 
 The Electron flow creates its own two-sheet PDFs and browser profile in a
 temporary data directory.
-It captures the real workbench at 1440 × 1000 in dark and light appearances,
-a corrected finding, and a revision recheck. Screenshots go to `docs/screenshots/`.
+It captures the real workbench at 1440 × 1000, a corrected finding, and a
+revision recheck. Screenshots go to `docs/screenshots/`.
 No model inspection starts. The test refuses screenshot mode with live inference
 enabled, checks renderer errors, and removes its temporary project after closing.
 
-The captures include the [dark workbench](screenshots/workbench.png),
-[light workbench](screenshots/workbench-light.png), [correction history](screenshots/correction.png),
-and [revision history](screenshots/revision.png).
+The captures include the [workbench](screenshots/workbench.png),
+[correction history](screenshots/correction.png), and
+[revision history](screenshots/revision.png).
 
 Inspect the generated PNGs before committing them. Keep historical live-validation
 screenshots under `docs/research/screenshots/` with the original evidence notes.
 
-## Design study and experiments
+## Design and experiments
 
-The selected Nightdesk study is retained for design provenance. Rebuild its
-standalone HTML with `bun run build:concepts` and check it with
-`bun run check:concepts`. Reference source stays under the ignored
-`design/reference/` directory and outside application distributions.
+The workbench uses the Forge design system described in
+[the design notes](../design/DESIGN.md). Run `project-kit design forge .` to
+restore its licensed reference under the ignored `design/reference/` directory.
+Reference source stays outside application distributions.
 
 SAM and adaptive-review commands are separate research tools. Their recipes and
 captured results live under `experiments/`; generated runs and private PDFs are

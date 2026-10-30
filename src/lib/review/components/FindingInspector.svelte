@@ -161,11 +161,13 @@
           </p>
         </details>
         <button
+          class="btn"
           disabled={busy}
           onclick={() => onRequestDetail(proposal.side, proposal.evidence.region)}
           >View proposal evidence</button
         >
         <button
+          class="btn"
           disabled={busy}
           onclick={() => {
             if (proposal.side === "drawn") {
@@ -217,6 +219,7 @@
         data-testid="drawn-statement-input"></textarea></label
     >
     <button
+      class="btn"
       type="button"
       disabled={busy}
       onclick={() =>
@@ -285,6 +288,7 @@
     >
     <div class="operand-actions">
       <button
+        class="btn"
         type="button"
         disabled={busy ||
           drawnSheet === undefined ||
@@ -305,12 +309,14 @@
           })}>Accept drawn count</button
       >
       <button
+        class="btn"
         type="button"
         disabled={busy || !drawnRegionValid}
         data-testid="detail-drawn"
         onclick={() => onRequestDetail("drawn", drawnRegion)}>Enlarge source</button
       >
       {#if drawnFact}<button
+          class="btn"
           type="button"
           disabled={busy}
           data-testid="correct-drawn"
@@ -355,6 +361,7 @@
         data-testid="scheduled-statement-input"></textarea></label
     >
     <button
+      class="btn"
       type="button"
       disabled={busy}
       onclick={() =>
@@ -426,6 +433,7 @@
     >
     <div class="operand-actions">
       <button
+        class="btn"
         type="button"
         disabled={busy ||
           scheduledSheet === undefined ||
@@ -446,12 +454,14 @@
           })}>Accept scheduled count</button
       >
       <button
+        class="btn"
         type="button"
         disabled={busy || !scheduledRegionValid}
         data-testid="detail-scheduled"
         onclick={() => onRequestDetail("scheduled", scheduledRegion)}>Enlarge source</button
       >
       {#if scheduledFact}<button
+          class="btn"
           type="button"
           disabled={busy}
           data-testid="correct-scheduled"
@@ -466,7 +476,7 @@
   <div class="evaluate-row">
     <button
       type="button"
-      class="primary"
+      class="btn primary"
       disabled={busy}
       data-testid="evaluate-finding"
       onclick={onEvaluate}>Compare counts</button
@@ -519,130 +529,175 @@
 </div>
 
 <style>
+  .inspector {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    font-size: var(--text-body-sm);
+  }
+  h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+  }
+  h3 {
+    margin: 0 0 var(--space-2xs);
+    font-size: var(--text-body-md);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  h3 :global(svg) {
+    color: var(--color-text-muted);
+  }
+  p {
+    margin: 0;
+    line-height: var(--leading-relaxed);
+  }
+  .meta {
+    margin: 4px 0 0;
+    color: var(--color-text-muted);
+  }
+  section[aria-label="Proposed observations"] {
+    display: grid;
+    gap: var(--space-xs);
+    justify-items: start;
+  }
   .technical-details {
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
+  }
+  .technical-details > :not(summary) {
+    margin-top: var(--space-xs);
   }
   summary {
-    cursor: pointer;
-    padding: 6px 0;
-  }
-  .technical-details label {
-    margin-top: 10px;
+    min-height: 24px;
   }
   .region-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    border: 1px solid var(--nd-hairline);
+    gap: var(--space-xs);
+    padding: var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
   }
   .region-fields input {
     min-width: 0;
     width: 100%;
   }
-  .inspector {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    font-size: 13px;
-  }
-  h2 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 600;
-  }
-  h3 {
-    margin: 0 0 6px;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .meta {
-    margin: 4px 0 0;
-    color: var(--nd-ink-muted);
-  }
   .operand {
-    padding: 12px;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 8px;
-    background: var(--nd-panel);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    box-shadow: var(--shadow-card);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-sm);
+  }
+  .operand h3 {
+    margin: 0;
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
   }
   label {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .checkbox {
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    letter-spacing: normal;
+    text-transform: none;
   }
   input,
   textarea {
-    font: inherit;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--nd-hairline-strong);
-    background: var(--nd-shell);
-    color: inherit;
+    width: 100%;
+  }
+  input[type="checkbox"] {
+    width: 18px;
+  }
+  textarea {
+    min-height: 64px;
+    resize: vertical;
   }
   .warn {
-    color: var(--nd-warning);
+    color: var(--color-accent);
     margin: 0;
   }
   .sheet-line {
     margin: 0;
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+  }
+  .operand > .btn {
+    align-self: stretch;
   }
   .operand-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-  }
-  button {
-    font: inherit;
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--nd-hairline-strong);
-    background: var(--nd-raised);
-    color: inherit;
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  button.primary {
-    background: var(--nd-ink);
-    color: var(--nd-shell);
-    border-color: transparent;
+    gap: var(--space-xs);
   }
   .evaluate-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--space-sm);
     align-items: center;
   }
+  .history {
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-border);
+  }
+  .history > p {
+    color: var(--color-text-muted);
+  }
   .history ol {
-    margin: 0;
-    padding-left: 18px;
+    margin: var(--space-xs) 0 0;
+    padding: 0;
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 10px;
   }
   .history li {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .history li > details > summary {
+    gap: var(--space-xs);
+    color: var(--color-text);
+  }
+  .history li > details > summary span {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
+  }
+  .history li > details > :not(summary) {
+    margin-top: 6px;
+    padding-left: 20px;
   }
   .fact-id {
     margin: 0;
-    font-size: 11px;
-    color: var(--nd-ink-muted);
-    font-family: ui-monospace, monospace;
+    font-size: var(--text-label-sm);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
   }
 </style>

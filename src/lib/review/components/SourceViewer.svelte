@@ -173,16 +173,18 @@
     <nav class="sheet-navigation" aria-label="Source sheets">
       <button
         type="button"
+        class="icon-btn"
         aria-label="Previous sheet"
         disabled={currentIndex <= 0 || selecting}
-        onclick={() => moveSheet(-1)}>←</button
+        onclick={() => moveSheet(-1)}><ReviewIcon name="chevron-left" /></button
       >
-      <span>{currentIndex + 1} of {sheets.length}</span>
+      <span class="sheet-position">{currentIndex + 1} of {sheets.length}</span>
       <button
         type="button"
+        class="icon-btn"
         aria-label="Next sheet"
         disabled={currentIndex < 0 || currentIndex >= sheets.length - 1 || selecting}
-        onclick={() => moveSheet(1)}>→</button
+        onclick={() => moveSheet(1)}><ReviewIcon name="chevron-right" /></button
       >
       <details>
         <summary>Jump to sheet</summary>
@@ -195,6 +197,7 @@
           />
           {#each matchingSheets as sheet (sheet.id)}<button
               type="button"
+              class="sheet-option"
               disabled={selecting}
               aria-current={sheet.id === currentSheetId ? "page" : undefined}
               onclick={(event) => {
@@ -208,31 +211,32 @@
     </nav>
   {/if}
   <div class="viewer-toolbar">
-    <button type="button" class="icon-button" aria-label="Zoom in" onclick={() => zoom(0.2)}
-      ><ReviewIcon name="zoom-in" size={16} /></button
+    <button type="button" class="icon-btn" aria-label="Zoom in" onclick={() => zoom(0.2)}
+      ><ReviewIcon name="zoom-in" /></button
     >
-    <button type="button" class="icon-button" aria-label="Zoom out" onclick={() => zoom(-0.2)}
-      ><ReviewIcon name="zoom-out" size={16} /></button
+    <button type="button" class="icon-btn" aria-label="Zoom out" onclick={() => zoom(-0.2)}
+      ><ReviewIcon name="zoom-out" /></button
     >
     <button
       type="button"
-      class="icon-button"
+      class="icon-btn"
       aria-label="Rotate clockwise"
       onclick={() => {
         rotation = (rotation + 90) % 360;
-      }}><ReviewIcon name="rotate-clockwise" size={16} /></button
+      }}><ReviewIcon name="rotate-clockwise" /></button
     >
     <button
       type="button"
-      class="icon-button"
+      class="icon-btn"
       aria-label="Reset view"
       title="Fit sheet"
-      onclick={resetView}><ReviewIcon name="refresh" size={16} /></button
+      onclick={resetView}><ReviewIcon name="zoom-reset" /></button
     >
   </div>
   {#if selecting}<p class="selection-help" role="status">
       Drag a box around the area to count. <button
         type="button"
+        class="text-link"
         onclick={() => {
           selecting = false;
           selection = null;
@@ -309,107 +313,115 @@
   .viewer {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-xs);
     min-height: 0;
     flex: 0 0 300px;
     height: 300px;
   }
   .selection-help {
-    font-size: 12px;
+    font-size: var(--text-mono-sm);
     margin: 0;
     line-height: 1.5;
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
-  .selection-help button {
-    color: inherit;
-    background: transparent;
+  .text-link {
+    padding: 0;
     border: 0;
-    text-decoration: underline;
-    cursor: pointer;
+    background: transparent;
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+  .text-link:hover {
+    color: var(--color-accent-hover);
   }
   .viewport.selecting {
     cursor: crosshair;
   }
   .viewer-toolbar {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     flex-shrink: 0;
   }
   .sheet-navigation {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
-    font-size: 12px;
+    gap: 4px;
+    font-size: var(--text-body-sm);
   }
-  .sheet-navigation button,
-  .sheet-picker input {
-    font: inherit;
-    color: inherit;
-    background: var(--nd-raised);
-    border: 1px solid var(--nd-hairline);
-    border-radius: 5px;
-    padding: 5px 8px;
-  }
-  .sheet-navigation button {
-    cursor: pointer;
-  }
-  .sheet-navigation button:disabled {
-    opacity: 0.5;
-    cursor: default;
+  .sheet-position {
+    min-width: 56px;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
+    font-variant-numeric: tabular-nums;
   }
   .sheet-navigation details {
     position: relative;
+    margin-left: var(--space-xs);
   }
   .sheet-navigation summary {
-    cursor: pointer;
+    min-height: 32px;
   }
   .sheet-picker {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 6px);
     left: 0;
     z-index: 2;
     display: grid;
-    gap: 6px;
+    gap: 2px;
     width: min(300px, 60vw);
-    max-height: 220px;
+    max-height: 240px;
     overflow-y: auto;
-    padding: 8px;
-    background: var(--nd-shell);
-    border: 1px solid var(--nd-hairline);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px #0003;
+    padding: var(--space-2xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
   }
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
+  .sheet-picker input {
+    margin-bottom: var(--space-2xs);
+  }
+  .sheet-picker p {
+    margin: 0;
+    padding: 6px var(--space-xs);
+    color: var(--color-text-muted);
+  }
+  .sheet-option {
+    min-height: 32px;
+    padding: 0 var(--space-xs);
     border: 0;
-    border-radius: 6px;
-    background: var(--nd-raised);
-    color: var(--nd-ink-muted);
-    cursor: pointer;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
   }
-  .icon-button:hover {
-    background: var(--nd-raised-hover);
-    color: var(--nd-ink);
+  .sheet-option:hover:not(:disabled) {
+    background: var(--color-slate);
+  }
+  .sheet-option[aria-current="page"] {
+    background: var(--color-slate);
+    box-shadow: inset 2px 0 0 var(--color-ember);
   }
   .viewport {
     position: relative;
     flex: 1;
     min-height: 180px;
     overflow: hidden;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 8px;
-    background: #0d0d0d;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-ink);
     touch-action: none;
     cursor: grab;
   }
   .viewport:active {
     cursor: grabbing;
+  }
+  .viewport:focus-visible {
+    border-color: var(--color-accent);
+    box-shadow: var(--shadow-focus);
   }
   .transform-layer {
     position: relative;
@@ -432,8 +444,8 @@
   }
   .overlay {
     position: absolute;
-    border: 2px solid #f5a623;
-    background: rgb(245 166 35 / 0.12);
+    border: 2px solid var(--color-ember);
+    background: rgb(246 90 26 / 0.06);
     pointer-events: none;
     box-sizing: border-box;
   }

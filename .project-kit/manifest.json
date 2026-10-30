@@ -27,7 +27,7 @@
   "design": {
     "status": "production-workbench",
     "selection": "design/selection.json",
-    "surface": "design/concepts/DESIGN.md"
+    "surface": "design/DESIGN.md"
   },
   "reviewRuntime": {
     "status": "implemented-local-and-cloud-review",

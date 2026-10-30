@@ -62,7 +62,6 @@
 
   let shortcutLabel = $state("Ctrl K");
   let historyReviewId = $state<string | null>(null);
-  let theme = $state<"dark" | "light">("dark");
   let sidebarOpen = $state(true);
   let mobileNavigationOpen = $state(false);
   let popoverOpen = $state(false);
@@ -1873,16 +1872,8 @@
 
 <svelte:window onkeydown={handleKey} onresize={positionFindings} onscroll={positionFindings} />
 
-{#snippet mark(size = 20)}
-  <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true"
-    ><path
-      d="M5 22V7l9 9 9-9v15"
-      stroke="currentColor"
-      stroke-width="3.3"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    /></svg
-  >
+{#snippet mark(size = 24)}
+  <span class="brand-mark" style:--mark-size={`${size}px`} aria-hidden="true">M</span>
 {/snippet}
 
 {#snippet packetPanel(review: PacketReview, historical = false)}
@@ -1913,7 +1904,7 @@
   />
 {/snippet}
 
-<div class="workbench-root" data-theme={theme}>
+<div class="workbench-root">
   <div
     class={[
       "desktop",
@@ -1927,9 +1918,9 @@
   >
     <header class="window-bar">
       <div class="brand-slot">
-        <button class="icon-button" aria-label="Toggle conversation sidebar" onclick={toggleSidebar}
-          ><ReviewIcon name="layout-sidebar" size={17} /></button
-        ><span class="brand-name">MOKE</span>
+        <button class="icon-btn" aria-label="Toggle conversation sidebar" onclick={toggleSidebar}
+          ><ReviewIcon name="layout-sidebar" size={18} /></button
+        >{@render mark()}<span class="brand-name">MOKE</span>
       </div>
       <nav class="breadcrumbs" aria-label="Breadcrumb">
         {#if project}<span class="project-crumb" title={project.name}
@@ -1939,12 +1930,6 @@
         <strong aria-current="page">{activeConversation?.title ?? "Drawing review"}</strong>
       </nav>
       <div class="window-actions">
-        <button
-          class="theme-picker"
-          onclick={() => (theme = theme === "dark" ? "light" : "dark")}
-          aria-label={theme === "dark" ? "Use light appearance" : "Use dark appearance"}
-          >{theme === "dark" ? "Light" : "Dark"}</button
-        >
         {#if project}
           <span class="compact-project" title={project.name}>{project.name}</span>
           <details class="compact-actions">
@@ -1958,41 +1943,43 @@
           </details>
           <button
             type="button"
-            class="ghost"
+            class="btn ghost-btn import-trigger"
             disabled={busy || cloudBlocked}
             data-testid="import-pdf"
+            title="Import PDF"
             aria-busy={importing}
             onclick={importPdf}
-            ><ReviewIcon name="upload" size={15} /><span
+            ><ReviewIcon name="upload" size={16} /><span
               >{importing ? "Importing PDF…" : "Import PDF"}</span
             ></button
           >
           <button
-            class="text-button secondary-count"
+            class="btn ghost-btn secondary-count"
             data-testid="open-create-finding"
             disabled={busy || cloudBlocked}
+            title="New count check"
             onclick={() => openSetup("sheets", true)}
-            ><ReviewIcon name="plus" size={14} />New count check</button
+            ><ReviewIcon name="plus" size={16} /><span>New count check</span></button
           >
           <button
-            class="ghost sheets-trigger"
+            class="btn sheets-trigger"
             aria-expanded={panelOpen && sourceTab === "sheets"}
             onclick={() => openSetup("sheets")}
-            ><ReviewIcon name="file-text" size={15} /><span>Sheets</span><span class="finding-count"
+            ><ReviewIcon name="file-text" size={16} /><span>Sheets</span><span class="finding-count"
               >{sheets.length}</span
             ></button
           >
           <button
-            class={["findings-trigger", { expanded: popoverOpen }]}
+            class={["btn findings-trigger", { expanded: popoverOpen }]}
             disabled={busy || cloudBlocked}
             bind:this={findingsButton}
             aria-label="Open findings"
             aria-expanded={popoverOpen}
             popovertarget="review-findings"
             onclick={positionFindings}
-            ><ReviewIcon name="layout-grid" size={15} /><span>Findings</span><span
+            ><ReviewIcon name="layout-grid" size={16} /><span>Findings</span><span
               class="finding-count">{findings.length + packetFindings.length}</span
-            ><ReviewIcon name="chevron-down" size={13} /></button
+            ><ReviewIcon name="chevron-down" size={14} /></button
           >
         {/if}
       </div>
@@ -2007,10 +1994,10 @@
           <h2 id="project-dialog-title">New project</h2>
           <button
             type="button"
-            class="icon-button"
+            class="icon-btn"
             aria-label="Close new project"
             disabled={busy}
-            onclick={() => projectDialog?.close()}><ReviewIcon name="x" size={17} /></button
+            onclick={() => projectDialog?.close()}><ReviewIcon name="x" size={18} /></button
           >
         </header>
         <p>Keep drawings, conversations, and findings together.</p>
@@ -2026,10 +2013,13 @@
         >
         {#if error}<p class="dialog-error" role="alert">{error}</p>{/if}
         <footer>
-          <button type="button" class="ghost" disabled={busy} onclick={() => projectDialog?.close()}
-            >Cancel</button
+          <button
+            type="button"
+            class="btn md"
+            disabled={busy}
+            onclick={() => projectDialog?.close()}>Cancel</button
           ><button
-            class="primary"
+            class="btn md primary"
             type="submit"
             disabled={busy || !newProjectName.trim()}
             data-testid="create-project-button">{busy ? "Creating…" : "Create project"}</button
@@ -2053,10 +2043,10 @@
       <header>
         <h2 id="import-dialog-title">{revisions.length ? "Import revision" : "Import drawings"}</h2>
         <button
-          class="icon-button"
+          class="icon-btn"
           disabled={importing}
           aria-label="Close PDF import"
-          onclick={() => importDialog?.close()}><ReviewIcon name="x" size={17} /></button
+          onclick={() => importDialog?.close()}><ReviewIcon name="x" size={18} /></button
         >
       </header>
       {#if revisions.length}<label class="import-label"
@@ -2082,7 +2072,7 @@
         <ReviewIcon name="upload" size={28} /><strong
           >{droppedPdf?.name ?? "Drop a PDF here"}</strong
         ><span>or choose a file from your computer</span><button
-          class="ghost"
+          class="btn"
           disabled={importing ||
             pendingDropImport !== null ||
             (revisions.length > 0 && !revisionLabel.trim())}
@@ -2094,10 +2084,10 @@
           Retry uses the same import request. Drop the PDF again or cancel to start a new request.
         </p>{/if}
       <footer>
-        <button class="ghost" disabled={importing} onclick={() => importDialog?.close()}
+        <button class="btn md" disabled={importing} onclick={() => importDialog?.close()}
           >Cancel</button
         >{#if droppedPdf}<button
-            class="primary"
+            class="btn md primary"
             disabled={importing || (revisions.length > 0 && !revisionLabel.trim())}
             onclick={() => performImport(true)}>{importing ? "Importing…" : "Import PDF"}</button
           >{/if}
@@ -2112,9 +2102,9 @@
         <h2 id="settings-dialog-title">Review settings</h2>
         <button
           type="button"
-          class="icon-button"
+          class="icon-btn"
           aria-label="Close review settings"
-          onclick={() => settingsDialog?.close()}><ReviewIcon name="x" size={17} /></button
+          onclick={() => settingsDialog?.close()}><ReviewIcon name="x" size={18} /></button
         >
       </header>
       <section class="settings-section">
@@ -2200,13 +2190,13 @@
           </p>
         </details>
       </section>
-      <footer><button class="ghost" onclick={() => settingsDialog?.close()}>Done</button></footer>
+      <footer><button class="btn md" onclick={() => settingsDialog?.close()}>Done</button></footer>
     </dialog>
     <div class="app-body">
       {#if sidebarOpen}
         <aside class="sidebar" aria-label="Conversation navigation">
           <button
-            class="new-chat"
+            class="btn new-chat"
             data-testid="new-conversation"
             onclick={project ? createConversation : openProjectDialog}
             disabled={busy || cloudBlocked}
@@ -2260,7 +2250,7 @@
           <div class="sidebar-footer">
             {#if project}
               <button class="nav-action" onclick={openProjectDialog} disabled={busy || cloudBlocked}
-                ><ReviewIcon name="folder" size={16} /><span>New project</span></button
+                ><ReviewIcon name="folder-plus" size={16} /><span>New project</span></button
               >
             {/if}
             <button
@@ -2274,6 +2264,7 @@
             >
             <div class="package-actions">
               <button
+                class="nav-action"
                 disabled={busy || cloudBlocked || !project}
                 onclick={async () => {
                   busy = true;
@@ -2281,15 +2272,19 @@
                   busy = false;
                   if (!result.ok) error = result.error.message;
                   else if (result.value) notice = "Complete review package exported.";
-                }}>Export complete package</button
+                }}
+                ><ReviewIcon name="package-export" size={16} /><span>Export complete package</span
+                ></button
               ><button
+                class="nav-action"
                 disabled={busy || cloudBlocked}
                 onclick={async () => {
                   busy = true;
                   const result = await client.chooseReviewRestore();
                   busy = false;
                   if (!result.ok) error = result.error.message;
-                }}>Restore package</button
+                }}
+                ><ReviewIcon name="package-import" size={16} /><span>Restore package</span></button
               >
             </div>
           </div>
@@ -2298,7 +2293,7 @@
       <section class="chat" class:canvas-covered={panelOpen} aria-label="Conversation">
         {#if error}<div class="banner" role="alert">
             <span>{error}</span><button
-              class="icon-button"
+              class="icon-btn"
               aria-label="Dismiss error"
               onclick={() => (error = "")}><ReviewIcon name="x" size={16} /></button
             >
@@ -2317,9 +2312,9 @@
           </div>{/if}
         {#if notice}<div class="notice" role="status">
             <span>{notice}</span><button
-              class="icon-button"
+              class="icon-btn"
               aria-label="Dismiss notification"
-              onclick={() => (notice = "")}><ReviewIcon name="x" size={15} /></button
+              onclick={() => (notice = "")}><ReviewIcon name="x" size={16} /></button
             >
           </div>{/if}
         <div
@@ -2340,21 +2335,23 @@
           <div class="conversation-content">
             {#if !ready}<div class="chat-empty"><p role="status">Opening workspace…</p></div>
             {:else if project === null}<div class="chat-empty">
-                {@render mark(28)}
+                {@render mark(40)}
                 <h1>Start a drawing review</h1>
                 <p>Create a project, import its drawings, and ask MOKE to review them.</p>
-                <button class="ghost" onclick={openProjectDialog}>Create a project</button>
+                <button class="btn md primary" onclick={openProjectDialog}
+                  ><ReviewIcon name="folder-plus" size={16} />Create a project</button
+                >
               </div>
             {:else if conversationMessages.length === 0}
               <div class="chat-empty">
-                {@render mark(28)}
+                {@render mark(40)}
                 <h1>What should MOKE review?</h1>
                 {#if sheets.length === 0}<p>
                     Import a drawing PDF to begin. Your source sheets and review history stay with
                     this project.
                   </p>
-                  <button class="ghost" disabled={busy} onclick={importPdf}
-                    ><ReviewIcon name="upload" size={15} />Import drawings</button
+                  <button class="btn md primary" disabled={busy} onclick={importPdf}
+                    ><ReviewIcon name="upload" size={16} />Import drawings</button
                   >
                 {:else}<p>
                     Ask for a whole-set QA pass or select a discipline reviewer. MOKE reads the
@@ -2382,9 +2379,9 @@
                     Worked for {formatElapsed(message.origin.elapsedMs)}
                   </p>{/if}
                 <div class="byline">
-                  {#if message.role === "reviewer"}<span class="user-mark">S</span>{:else}<span
-                      class="moke-mark">{@render mark(16)}</span
-                    >{/if}<strong>{message.role === "reviewer" ? "You" : "MOKE"}</strong
+                  {#if message.role === "reviewer"}<span class="user-mark">S</span
+                    >{:else}{@render mark(20)}{/if}<strong
+                    >{message.role === "reviewer" ? "You" : "MOKE"}</strong
                   >{#if message.origin}<span class="message-provenance"
                       >Inspection · {message.origin.discipline?.replaceAll("_", " ") ??
                         "general"}</span
@@ -2517,7 +2514,7 @@
               <div class="initial-review">
                 <button
                   type="button"
-                  class="primary"
+                  class="btn primary"
                   disabled={!initialReviewReady}
                   aria-describedby="initial-review-summary"
                   onclick={startInitialReview}>Initial Review</button
@@ -2638,7 +2635,7 @@
                       : location === "cloud"
                         ? "Push review to cloud"
                         : "Send and start document review"
-                    : "Save note"}><ReviewIcon name="arrow-up" size={17} /></button
+                    : "Save note"}><ReviewIcon name="arrow-up" size={16} stroke={1.8} /></button
                 >
               </div>
             </form>
@@ -2722,8 +2719,10 @@
               >{sourceTab === "evidence"
                 ? (selectedFinding?.title ?? "Evidence")
                 : (project?.name ?? "Project")}</strong
-            ><button class="icon-button" aria-label="Close source panel" onclick={closeSource}
-              >Back to conversation<ReviewIcon name="x" size={17} /></button
+            ><button
+              class="btn ghost-btn source-close"
+              aria-label="Close source panel"
+              onclick={closeSource}>Back to conversation<ReviewIcon name="x" size={16} /></button
             >
           </header>
           <div class="source-tabs">
@@ -2792,7 +2791,7 @@
                       {focus.segments.length === 1 ? "segment" : "segments"}</button
                     >{/if}
                   {#each selectedPacketFinding.locations as location, index (index)}<button
-                      class="ghost"
+                      class="evidence-action"
                       disabled={busy || sourceLoading || cloudBlocked}
                       onclick={async () => {
                         const sheet = sheets.find((item) => item.id === location.sheetId);
@@ -2979,8 +2978,10 @@
                   >{/if}
               </div>
             {:else if sourceTab === "revision"}
-              <button class="ghost" disabled={busy || cloudBlocked} onclick={importPdf}
-                >Import revision</button
+              <button
+                class="btn import-revision"
+                disabled={busy || cloudBlocked}
+                onclick={importPdf}><ReviewIcon name="upload" size={16} />Import revision</button
               >
               <RevisionMapping
                 {revisions}
@@ -3004,7 +3005,7 @@
       ontoggle={(event) => (popoverOpen = event.newState === "open")}
     >
       {#if project}<div class="bubble-context">
-          <ReviewIcon name="folder" size={17} /><strong>{project.name}</strong>
+          <ReviewIcon name="folder" size={16} /><strong>{project.name}</strong>
         </div>
         <div class="bubble-results">
           {#each packetFindings as finding (finding.id)}<button
@@ -3012,7 +3013,7 @@
               onclick={() => showPacketFinding(finding.id)}
               ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
                 >{packetFindingText(finding).title}</span
-              ><span class="outcome">{finding.severity}</span></button
+              ><span class="outcome tag">{finding.severity}</span></button
             >{/each}
           {#if findings.length > 0}<p class="menu-section-label">Count comparisons</p>{/if}
           {#each findings as finding (finding.id)}<button
@@ -3022,9 +3023,9 @@
               title={findingSubtitle(finding, sheets)}
               ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
                 >{finding.title}</span
-              ><span class="outcome">{formatOutcome(finding.outcome)}</span><ReviewIcon
+              ><span class="outcome tag">{formatOutcome(finding.outcome)}</span><ReviewIcon
                 name="chevron-right"
-                size={14}
+                size={16}
               /></button
             >{/each}
           {#if packetFindings.length === 0 && findings.length === 0}<p class="menu-empty">
@@ -3034,29 +3035,29 @@
     </section>
     {#if searchOpen}<section class="search-panel" aria-label="Search findings">
         <div class="search-field">
-          <ReviewIcon name="search" size={18} /><input
+          <ReviewIcon name="search" size={16} /><input
             aria-label="Search findings"
             placeholder={`Search this conversation in ${project?.name ?? "this project"}`}
             bind:this={searchInput}
             bind:value={findQuery}
-          /><button
-            class="icon-button"
-            aria-label="Close search"
-            onclick={() => (searchOpen = false)}><ReviewIcon name="x" size={16} /></button
+          /><button class="icon-btn" aria-label="Close search" onclick={() => (searchOpen = false)}
+            ><ReviewIcon name="x" size={16} /></button
           >
         </div>
         <div class="search-results">
           {#each visiblePacketFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => showPacketFinding(finding.id)}
-              >{packetFindingText(finding).title}<span class="outcome"
+              ><span class="finding-title">{packetFindingText(finding).title}</span><span class="outcome tag"
                 >{finding.severity} · {finding.status}</span
               ></button
             >{/each}
           {#each visibleFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => openFinding(finding)}
-              >{finding.title}<span class="outcome">{formatOutcome(finding.outcome)}</span></button
+              ><span class="finding-title">{finding.title}</span><span class="outcome tag"
+                >{formatOutcome(finding.outcome)}</span
+              ></button
             >{/each}
           {#if visiblePacketFindings.length === 0 && visibleFindings.length === 0}<p
               class="menu-empty"
@@ -3071,88 +3072,19 @@
 </div>
 
 <style>
-  .workbench-root,
-  .workbench-root :global(*) {
-    box-sizing: border-box;
-  }
   .workbench-root {
-    font-family:
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
-    font-size: 13px;
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
   }
   .desktop {
-    --nd-shell: #141414;
-    --nd-panel: #1b1b1b;
-    --nd-raised: #262626;
-    --nd-raised-hover: #303030;
-    --nd-hairline: #2c2c2c;
-    --nd-hairline-strong: #424242;
-    --nd-ink: #ededed;
-    --nd-ink-muted: #aaa;
-    --nd-focus: #d8d8d8;
-    --nd-warning: #edbc68;
-    --sidebar-width: 224px;
+    --sidebar-width: 232px;
     --source-width: min(420px, 40vw);
     height: 100dvh;
     overflow: hidden;
-    background: var(--nd-shell);
-    color: var(--nd-ink);
+    background: var(--color-bg);
+    color: var(--color-text);
     display: flex;
     flex-direction: column;
-    color-scheme: dark;
-  }
-  .workbench-root[data-theme="light"] .desktop {
-    --nd-shell: #fdfdfd;
-    --nd-panel: #f6f6f6;
-    --nd-raised: #ededed;
-    --nd-raised-hover: #e7e7e7;
-    --nd-hairline: #e2e2e2;
-    --nd-hairline-strong: #cecece;
-    --nd-ink: #252525;
-    --nd-ink-muted: #626262;
-    --nd-focus: #444;
-    --nd-warning: #885509;
-    color-scheme: light;
-  }
-  .desktop :global(::selection) {
-    background: var(--nd-hairline-strong);
-    color: var(--nd-ink);
-  }
-  .desktop :global(*) {
-    scrollbar-width: thin;
-    scrollbar-color: var(--nd-hairline-strong) transparent;
-  }
-  .desktop :global(:focus-visible) {
-    outline: 2px solid var(--nd-focus);
-    outline-offset: 3px;
-  }
-  .desktop :global(input),
-  .desktop :global(select),
-  .desktop :global(textarea) {
-    font: inherit;
-    color: inherit;
-  }
-  .desktop :global(button:disabled) {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .desktop :global(button:not(:disabled):hover) {
-    filter: brightness(1.12);
-  }
-  .desktop :global(input),
-  .desktop :global(select),
-  .desktop :global(textarea) {
-    accent-color: var(--nd-ink-muted);
-    caret-color: var(--nd-ink);
-  }
-  .desktop :global(input::placeholder),
-  .desktop :global(textarea::placeholder) {
-    color: var(--nd-ink-muted);
-    opacity: 1;
   }
   .desktop :global(p) {
     overflow-wrap: anywhere;
@@ -3162,9 +3094,10 @@
     min-height: 52px;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding-right: 16px;
-    border-bottom: 1px solid var(--nd-hairline);
+    gap: var(--space-md);
+    padding-right: var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
   }
   .brand-slot {
     width: var(--sidebar-width);
@@ -3172,55 +3105,39 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding-left: 14px;
-    background: var(--nd-panel);
-    border-right: 1px solid var(--nd-hairline);
+    padding-left: 10px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
     align-self: stretch;
   }
-  .brand-name {
-    font-size: 14px;
-    font-weight: 650;
-  }
-  button {
-    cursor: pointer;
-    font: inherit;
-    color: inherit;
-  }
-  .icon-button,
-  .ghost,
-  .findings-trigger,
-  .theme-picker,
-  .text-button {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-  }
-  .icon-button {
-    display: inline-flex;
+  .brand-mark {
+    --mark-size: 24px;
+    width: var(--mark-size);
+    height: var(--mark-size);
     flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-    color: var(--nd-ink-muted);
+    display: inline-grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    background: var(--color-ember);
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: calc(var(--mark-size) * 0.5);
+    font-weight: 700;
+    line-height: 1;
   }
-  .icon-button:hover,
-  .ghost:hover,
-  .findings-trigger:hover,
-  .nav-action:hover,
-  .project-heading:hover,
-  .threads button:hover {
-    background: var(--nd-raised-hover);
+  .brand-name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
   .breadcrumbs {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     min-width: 0;
+    font-size: var(--text-body-md);
   }
   .breadcrumbs strong,
   .project-crumb > span:last-child {
@@ -3233,76 +3150,83 @@
   }
   .project-crumb {
     display: inline-flex;
-    gap: 7px;
+    gap: var(--space-xs);
     align-items: center;
-    color: var(--nd-ink-muted);
-    max-width: 200px;
+    color: var(--color-text-muted);
+    max-width: 220px;
     min-width: 40px;
   }
   .project-monogram {
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     display: grid;
     place-items: center;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 4px;
-    font-size: 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
     font-weight: 600;
   }
   .breadcrumb-divider {
-    color: var(--nd-ink-muted);
+    color: var(--color-ash-soft);
   }
   .window-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-xs);
     align-items: center;
     flex-shrink: 0;
   }
-  .theme-picker {
-    color: var(--nd-ink-muted);
-    padding: 7px 5px;
+  .finding-count {
+    min-width: 18px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
   }
-  .ghost,
-  .findings-trigger {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    padding: 7px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--nd-hairline);
-    background: var(--nd-panel);
-    font-size: 13px;
+  .findings-trigger.expanded,
+  .sheets-trigger[aria-expanded="true"] {
+    border-color: var(--color-ember);
+  }
+  .findings-trigger.expanded .finding-count,
+  .sheets-trigger[aria-expanded="true"] .finding-count {
+    background: var(--color-ember);
+    color: var(--color-ink);
   }
   .previous-reviews {
-    color: var(--nd-ink-muted);
-    font-size: 12px;
-    margin: 16px 0 28px;
-  }
-  .previous-reviews summary {
-    cursor: pointer;
+    color: var(--color-text-muted);
+    font-size: var(--text-mono-sm);
+    margin: var(--space-md) 0 28px;
   }
   .previous-reviews > div {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 8px;
-    margin-top: 10px;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid var(--color-border);
   }
   .menu-section-label {
-    color: var(--nd-ink-muted);
-    font-size: 11px;
-    padding: 8px 12px 0;
+    margin: var(--space-xs) 0 0;
+    padding: var(--space-sm) var(--space-sm) var(--space-2xs);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
   }
   .review-scope {
-    font-size: 12px;
-  }
-  .finding-count {
-    background: var(--nd-raised);
-    padding: 1px 6px;
-    border-radius: 5px;
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
+    font-size: var(--text-mono-sm);
   }
   .app-body {
     flex: 1;
@@ -3320,12 +3244,12 @@
     grid-template-columns: minmax(0, 1fr) var(--source-width);
   }
   .sidebar {
-    background: var(--nd-panel);
-    border-right: 1px solid var(--nd-hairline);
-    padding: 20px 12px 12px;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    padding: var(--space-md) 10px 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 2px;
     min-height: 0;
     min-width: 0;
     overflow-y: auto;
@@ -3336,7 +3260,11 @@
   .threads {
     min-width: 0;
   }
-  .new-chat,
+  .new-chat {
+    width: 100%;
+    justify-content: flex-start;
+    margin-bottom: var(--space-xs);
+  }
   .project-heading,
   .threads button,
   .nav-action {
@@ -3344,87 +3272,88 @@
     text-align: left;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    min-height: 34px;
-    border-radius: 7px;
+    gap: var(--space-xs);
+    padding: 0 var(--space-xs);
+    min-height: 32px;
     border: 0;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
+    color: var(--color-text-muted);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background var(--duration-fast) var(--ease-out);
   }
-  .new-chat {
-    border: 1px solid var(--nd-hairline-strong);
-    margin-bottom: 3px;
-  }
-  .nav-action {
-    color: var(--nd-ink-muted);
+  .project-heading:hover:not(:disabled),
+  .threads button:hover:not(:disabled),
+  .nav-action:hover:not(:disabled) {
+    background: var(--color-slate);
+    color: var(--color-text);
   }
   .nav-action kbd {
     margin-left: auto;
-    font: inherit;
-    font-size: 11px;
     white-space: nowrap;
   }
   .projects {
-    margin-top: 20px;
+    margin-top: var(--space-md);
     display: grid;
-    gap: 20px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-md);
   }
   .project-heading {
     padding-left: 4px;
-    color: var(--nd-ink-muted);
+  }
+  .project-heading[aria-expanded="true"] {
+    color: var(--color-text);
   }
   .project-heading span,
-  .threads button span {
+  .threads button span,
+  .nav-action span:not(.connection-dot) {
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .project-heading :global(svg),
-  .threads :global(svg) {
-    flex-shrink: 0;
-  }
   .threads {
-    margin: 3px 0 0 9px;
-    padding-left: 10px;
-    border-left: 1px solid var(--nd-hairline);
+    margin: 2px 0 0 10px;
+    padding-left: var(--space-xs);
+    border-left: 1px solid var(--color-border);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }
   .threads button.current {
-    background: var(--nd-raised);
+    background: var(--color-slate);
+    color: var(--color-text);
+    box-shadow: inset 2px 0 0 var(--color-ember);
   }
   .sidebar-footer {
     margin-top: auto;
-    padding-top: 24px;
+    padding-top: var(--space-lg);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
   .connection-dot {
     margin-left: auto;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
-    border: 1px solid var(--nd-ink-muted);
+    flex-shrink: 0;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-ash);
   }
   .connection-dot.connected {
-    background: var(--nd-ink-muted);
+    border-color: var(--color-success);
+    background: var(--color-success);
   }
   .package-actions {
-    border-top: 1px solid var(--nd-hairline);
-    margin-top: 10px;
-    padding-top: 8px;
+    border-top: 1px solid var(--color-border);
+    margin-top: var(--space-xs);
+    padding-top: var(--space-xs);
     display: grid;
-  }
-  .package-actions button {
-    font-size: 12px;
-    color: var(--nd-ink-muted);
-    border: 0;
-    background: transparent;
-    text-align: left;
-    padding: 8px 10px;
-    border-radius: 6px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
   .chat {
     display: flex;
@@ -3436,24 +3365,35 @@
     flex: 1;
     overflow-y: auto;
     min-height: 100px;
-    padding: 44px 28px 20px;
+    padding: 40px 28px 20px;
   }
   .conversation-content {
     max-width: 68ch;
     margin: 0 auto;
   }
+  .conversation-content > h3 {
+    margin: var(--space-lg) 0 var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
+    font-family: var(--font-display);
+    font-size: var(--text-title-md);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+  }
   .message {
     margin-bottom: 28px;
-    font-size: 15px;
-    line-height: 1.75;
+    font-size: var(--text-body-md);
+    line-height: var(--leading-relaxed);
   }
   .reviewer-message {
     width: fit-content;
     max-width: 88%;
     margin-left: auto;
-    padding: 12px 16px;
-    background: var(--nd-raised);
-    border-radius: 16px 16px 4px 16px;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-slate);
+    box-shadow: var(--shadow-card);
   }
   .reviewer-message .byline {
     display: none;
@@ -3462,125 +3402,149 @@
     margin: 0;
   }
   .work-duration {
-    color: var(--nd-ink-muted);
-    font-size: 12px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
     font-variant-numeric: tabular-nums;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-sm);
   }
   .message p {
-    margin: 8px 0 0;
+    margin: var(--space-xs) 0 0;
     white-space: pre-wrap;
   }
   .byline {
     display: flex;
-    gap: 8px;
+    gap: var(--space-xs);
     align-items: center;
-    font-size: 13px;
+    font-size: var(--text-body-sm);
     line-height: 22px;
   }
   .byline strong {
-    font-weight: 500;
-  }
-  .user-mark,
-  .moke-mark {
-    width: 22px;
-    height: 22px;
-    display: grid;
-    place-items: center;
-    border-radius: 5px;
-    font-size: 11px;
+    font-weight: 600;
   }
   .user-mark {
-    background: var(--nd-raised);
-    color: var(--nd-ink-muted);
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 600;
   }
   .message-provenance {
-    font-size: 11px;
-    color: var(--nd-ink-muted);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
     margin-left: auto;
   }
   .message-source {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2xs);
     margin-top: 10px;
     border: 0;
     background: transparent;
     padding: 0;
-    color: var(--nd-ink-muted);
-    font-size: 12px;
+    color: var(--color-accent);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+  }
+  .message-source:hover {
+    color: var(--color-accent-hover);
   }
   .composer-region {
     width: 100%;
     max-width: 760px;
     margin: 0 auto;
-    padding: 10px 24px 16px;
+    padding: 10px 24px var(--space-md);
   }
   .scope-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-xs);
   }
   .scope-select {
     min-width: 0;
     flex: 1;
   }
-  .preset-request summary {
-    cursor: pointer;
-    margin-top: 6px;
-    color: var(--nd-ink-muted);
-    font-size: 13px;
-  }
   .preset-request details p {
-    margin-top: 8px;
+    margin-top: var(--space-xs);
+  }
+  .preset-request summary {
+    margin-top: 6px;
+    font-size: var(--text-body-sm);
   }
   .initial-review {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-xs);
     min-width: 0;
-  }
-  .initial-review button {
-    flex-shrink: 0;
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-weight: 600;
-  }
-  .initial-review button:disabled {
-    opacity: 0.55;
   }
   .initial-review span {
     min-width: 0;
-    font-size: 12px;
+    font-size: var(--text-mono-sm);
   }
   .text-button {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2xs);
     white-space: nowrap;
-    color: var(--nd-ink-muted);
-    padding: 4px 0;
-  }
-  .note-toggle {
     border: 0;
     background: transparent;
-    color: var(--nd-ink-muted);
-    padding: 7px 8px;
-    border-radius: 6px;
-    font-size: 12px;
+    color: var(--color-accent);
+    padding: 4px 0;
+    font-weight: 500;
+  }
+  .text-button:hover:not(:disabled) {
+    color: var(--color-accent-hover);
+  }
+  .note-toggle {
+    height: 24px;
     margin-left: auto;
+    padding: 0 var(--space-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+  .note-toggle:hover:not(:disabled) {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
   }
   .note-toggle[aria-pressed="true"] {
-    color: var(--nd-ink);
-    background: var(--nd-raised);
+    color: var(--color-accent);
+    border-color: var(--color-accent);
   }
   .composer {
-    border: 1px solid var(--nd-hairline-strong);
-    background: var(--nd-panel);
-    border-radius: 11px;
-    padding: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-sm);
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .composer:hover {
+    border-color: var(--color-border-strong);
+  }
+  .composer:has(textarea:focus) {
+    border-color: var(--color-accent);
+    box-shadow: var(--shadow-focus);
   }
   .composer textarea {
     display: block;
@@ -3588,92 +3552,114 @@
     resize: none;
     min-height: 56px;
     border: 0;
+    border-radius: 0;
     background: transparent;
-    padding: 3px 2px 10px;
+    padding: 2px 2px 10px;
     color: inherit;
-    font-size: 15px;
-    line-height: 1.6;
+    font-size: var(--text-body-md);
+    font-weight: 400;
+    line-height: var(--leading-relaxed);
   }
+  .composer textarea:focus,
   .composer textarea:focus-visible {
-    outline-offset: 0;
-    border-radius: 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
   }
   .composer-tools {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
     justify-content: space-between;
   }
   .composer-options {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 2px;
+    min-width: 0;
   }
   .send {
     flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    border-radius: 7px;
-    border: 0;
-    background: var(--nd-ink);
-    color: var(--nd-shell);
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-ember);
+    background: var(--color-ember);
+    color: var(--color-ink);
     display: grid;
     place-items: center;
+    transition:
+      background var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+  .send:hover:not(:disabled) {
+    background: var(--color-spark);
+    border-color: var(--color-spark);
+  }
+  .send:disabled {
+    border-color: var(--color-border-strong);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+    opacity: 1;
   }
   .composer-help {
-    font-size: 12px;
+    font-size: var(--text-mono-sm);
     line-height: 1.5;
-    color: var(--nd-ink-muted);
-    margin-top: 8px;
+    color: var(--color-text-muted);
+    margin-top: var(--space-xs);
     min-height: 18px;
   }
   .composer-help .text-button {
-    font-size: 12px;
+    font-size: var(--text-mono-sm);
     padding: 0;
-    text-decoration: underline;
-    text-underline-offset: 3px;
   }
   .chat-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: var(--space-md);
     margin: 12vh auto 32px;
-    max-width: 42ch;
+    max-width: 46ch;
     text-align: center;
   }
   .chat-empty h1 {
-    margin: 0;
-    font-size: 22px;
-    font-weight: 550;
+    margin: var(--space-xs) 0 0;
+    font-family: var(--font-display);
+    font-size: var(--text-headline-lg);
+    font-weight: 600;
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
   }
   .chat-empty p {
-    color: var(--nd-ink-muted);
-    line-height: 1.7;
-    margin: 0 0 4px;
-    font-size: 14px;
+    color: var(--color-text-muted);
+    line-height: var(--leading-relaxed);
+    margin: 0;
+    font-size: var(--text-body-md);
   }
   .banner,
   .notice {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
     justify-content: space-between;
     margin: 0;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--nd-hairline);
+    padding: 6px var(--space-sm) 6px var(--space-md);
+    border-bottom: 1px solid var(--color-border);
     line-height: 1.5;
   }
   .banner {
-    color: var(--nd-warning);
-    background: var(--nd-panel);
+    color: var(--color-error);
+    background: var(--color-surface);
+    box-shadow: inset 2px 0 0 var(--color-error);
   }
   .notice {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+    background: var(--color-surface);
   }
   .source-panel {
-    border-left: 1px solid var(--nd-hairline);
-    background: var(--nd-panel);
+    border-left: 1px solid var(--color-border);
+    background: var(--color-surface);
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -3682,41 +3668,68 @@
   .source-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-xs);
+    padding: 0 var(--space-xs) 0 var(--space-md);
     min-height: 51px;
-    border-bottom: 1px solid var(--nd-hairline);
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-muted);
   }
   .source-header strong {
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-weight: 550;
+    color: var(--color-text);
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .source-tabs {
     display: flex;
-    gap: 4px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--nd-hairline);
+    gap: var(--space-lg);
+    padding: 0 var(--space-md);
+    border-bottom: 1px solid var(--color-border);
   }
   .source-tabs button {
-    padding: 6px 10px;
-    border-radius: 6px;
+    position: relative;
+    padding: var(--space-sm) 0;
     border: 0;
     background: transparent;
-    color: var(--nd-ink-muted);
-    cursor: pointer;
-    font: inherit;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+    transition: color var(--duration-fast) var(--ease-out);
   }
+  .source-tabs button::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: transparent;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+  .source-tabs button:hover:not(:disabled),
   .source-tabs button.current {
-    background: var(--nd-raised);
-    color: var(--nd-ink);
+    color: var(--color-text);
+  }
+  .source-tabs button.current::after {
+    background: var(--color-ember);
+  }
+  .source-tabs button:focus-visible {
+    box-shadow: none;
+    color: var(--color-text);
+  }
+  .source-tabs button:focus-visible::after {
+    background: var(--color-ember);
   }
   .source-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space-md);
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -3724,199 +3737,211 @@
   .source-provenance {
     display: grid;
     gap: 4px;
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
     overflow-wrap: anywhere;
     line-height: 1.5;
   }
   .source-provenance strong {
-    color: var(--nd-ink);
+    color: var(--color-text);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+  }
+  .source-provenance details span {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
   }
   .settings-section {
     display: grid;
-    gap: 12px;
+    gap: var(--space-sm);
     padding-bottom: 20px;
-    border-bottom: 1px solid var(--nd-hairline);
+    border-bottom: 1px solid var(--color-border);
   }
   .settings-section p {
-    font-size: 13px;
-    line-height: 1.65;
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-relaxed);
     margin: 0;
   }
   .muted {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
   }
   .findings-bubble {
     margin: 0;
-    padding: 16px;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 16px;
-    background: var(--nd-panel);
-    color: var(--nd-ink);
-    box-shadow: 0 18px 40px rgb(0 0 0 / 0.25);
+    padding: var(--space-xs);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-pop);
     overflow-y: auto;
   }
   .bubble-context {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px 16px;
-    color: var(--nd-ink-muted);
-    border-bottom: 1px solid var(--nd-hairline);
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-sm) var(--space-sm);
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border);
   }
   .bubble-context strong {
-    font-weight: 450;
+    font-weight: 600;
+    color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .bubble-results {
-    padding-top: 8px;
+  .bubble-results,
+  .search-results {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding-top: var(--space-xs);
   }
   .finding-row {
     width: 100%;
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 48px;
-    padding: 12px;
-    border-radius: 10px;
+    min-height: 44px;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-md);
     border: 0;
     background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
+    color: var(--color-text);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
     text-align: left;
+    transition: background var(--duration-fast) var(--ease-out);
   }
   .finding-row:hover,
   .finding-row.selected {
-    background: var(--nd-raised);
+    background: var(--color-slate);
   }
-  .finding-row :global(svg) {
-    flex-shrink: 0;
+  .finding-row.selected {
+    box-shadow: inset 2px 0 0 var(--color-ember);
+  }
+  .finding-row > :global(svg) {
+    color: var(--color-text-muted);
   }
   .finding-title {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .finding-row .outcome {
     margin-left: auto;
-    font-size: 11px;
-    color: var(--nd-ink-muted);
-    max-width: 94px;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .menu-empty {
-    padding: 8px 12px;
-    line-height: 1.6;
-    color: var(--nd-ink-muted);
-  }
-  .project-form {
-    display: grid;
-    gap: 12px;
-    padding: 12px 2px;
-  }
-  .project-form h2 {
     margin: 0;
-    font-size: 15px;
+    padding: var(--space-xs) var(--space-sm);
+    line-height: var(--leading-relaxed);
+    color: var(--color-text-muted);
   }
-  .project-form label {
-    display: grid;
-    gap: 6px;
-  }
-  .project-form input {
-    width: 100%;
-    min-width: 0;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-shell);
-    padding: 8px;
-  }
-  .source-scroll > button,
-  .project-form button {
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    padding: 8px 10px;
-    background: var(--nd-raised);
-  }
-  button.primary {
-    background: var(--nd-ink);
-    color: var(--nd-shell);
-  }
-
   .workspace-dialog {
-    color: var(--nd-ink);
-    background: var(--nd-panel);
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 14px;
-    padding: 24px;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
     width: min(480px, calc(100vw - 32px));
     max-height: calc(100dvh - 48px);
     overflow: auto;
-    box-shadow: 0 20px 64px rgb(0 0 0 / 0.28);
-  }
-  .workspace-dialog::backdrop {
-    background: rgb(0 0 0 / 0.48);
+    box-shadow: var(--shadow-pop);
   }
   .workspace-dialog header {
     display: flex;
-    gap: 16px;
+    gap: var(--space-md);
     align-items: center;
     justify-content: space-between;
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-border);
   }
   .workspace-dialog h2 {
-    font-size: 20px;
     margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--text-headline-md);
+    font-weight: 600;
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
   }
   .workspace-dialog h3 {
-    font-size: 14px;
-    margin: 0 0 10px;
+    margin: 0;
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .workspace-dialog p {
-    line-height: 1.6;
-    font-size: 13px;
+    line-height: var(--leading-relaxed);
+    font-size: var(--text-body-sm);
   }
   .workspace-dialog footer {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
-    margin-top: 24px;
-  }
-  .workspace-dialog footer button {
-    border-radius: 7px;
-    padding: 8px 14px;
-    border: 1px solid var(--nd-hairline-strong);
+    gap: var(--space-xs);
+    margin-top: var(--space-lg);
   }
   .project-form {
     display: grid;
-    gap: 18px;
+    gap: var(--space-md);
   }
   .project-form p {
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
     margin: 0;
   }
-  .project-form .dialog-error {
-    color: var(--nd-warning);
+  .project-form label,
+  .import-label,
+  .settings-dialog label {
+    display: grid;
+    gap: var(--space-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    font-weight: 500;
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  .project-form input,
+  .import-label input,
+  .settings-dialog input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 var(--space-md);
+    font-family: var(--font-body);
+    font-size: var(--text-body-md);
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .dialog-error {
+    color: var(--color-error);
   }
   .settings-dialog {
     width: min(520px, calc(100vw - 32px));
   }
   .settings-dialog .settings-section {
     padding: 20px 0;
-    border-bottom: 1px solid var(--nd-hairline);
   }
   .settings-dialog .settings-section p {
     margin: 6px 0;
   }
   .connection-state {
     float: right;
-    color: var(--nd-ink-muted);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
   }
   .workspace-dialog details {
-    margin-top: 16px;
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    margin-top: var(--space-sm);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
   }
-  .workspace-dialog summary {
-    cursor: pointer;
+  .workspace-dialog details > :not(summary) {
+    margin-top: var(--space-xs);
   }
   .sr-only {
     position: absolute;
@@ -3934,26 +3959,36 @@
     inset: 80px max(16px, calc((100vw - 560px) / 2)) auto;
     max-height: calc(100dvh - 100px);
     overflow-y: auto;
-    background: var(--nd-panel);
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 12px;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 0.2);
-    padding: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    padding: var(--space-xs);
     z-index: 20;
   }
   .search-field {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 4px 4px 10px;
-    border-bottom: 1px solid var(--nd-hairline);
+    gap: var(--space-xs);
+    padding: 0 0 var(--space-xs) var(--space-sm);
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-muted);
   }
   .search-field input {
     flex: 1;
     min-width: 0;
+    min-height: 36px;
     border: 0;
     background: transparent;
-    padding: 6px;
+    padding: 0 var(--space-2xs);
+    color: var(--color-text);
+    font-size: var(--text-body-md);
+    font-weight: 400;
+  }
+  .search-field input:focus,
+  .search-field input:focus-visible {
+    background: transparent;
+    box-shadow: none;
   }
   @media (max-width: 1180px) and (min-width: 701px) {
     .desktop.source-open .app-body {
@@ -3968,10 +4003,21 @@
       inset: 52px auto 0 0;
       width: var(--sidebar-width);
       z-index: 15;
-      box-shadow: 12px 0 28px rgb(0 0 0 / 0.15);
+      box-shadow: var(--shadow-pop);
     }
     .project-crumb {
       max-width: 150px;
+    }
+  }
+  @media (max-width: 1180px) {
+    .import-trigger,
+    .secondary-count {
+      width: 32px;
+      padding: 0;
+    }
+    .import-trigger span,
+    .secondary-count span {
+      display: none;
     }
   }
   @media (max-width: 900px) {
@@ -3998,23 +4044,22 @@
       min-width: 86px;
       border-right: 0;
       background: transparent;
-      padding-left: 8px;
-      gap: 4px;
+      padding-left: var(--space-xs);
+      gap: 6px;
     }
     .window-bar {
-      gap: 8px;
-      padding-right: 8px;
+      gap: var(--space-xs);
+      padding-right: var(--space-xs);
     }
     .breadcrumbs {
       display: none;
     }
     .window-actions {
       margin-left: auto;
-      gap: 3px;
+      gap: 4px;
     }
-    .ghost,
-    .findings-trigger {
-      padding: 7px;
+    .window-actions :global(.btn) {
+      padding: 0 var(--space-xs);
       gap: 4px;
     }
     .sidebar {
@@ -4023,7 +4068,7 @@
       width: 240px;
       z-index: 15;
       visibility: hidden;
-      box-shadow: 12px 0 28px rgb(0 0 0 / 0.15);
+      box-shadow: var(--shadow-pop);
     }
     .desktop.mobile-navigation-open .sidebar {
       visibility: visible;
@@ -4034,10 +4079,10 @@
       z-index: 10;
     }
     .chat-scroll {
-      padding: 28px 20px 16px;
+      padding: 28px 20px var(--space-md);
     }
     .composer-region {
-      padding: 10px 16px 14px;
+      padding: 10px var(--space-md) 14px;
     }
     .chat-empty {
       margin-top: 8vh;
@@ -4077,24 +4122,32 @@
   .application-message p {
     max-width: 85ch;
   }
-  .source-header .icon-button {
-    width: auto;
-    gap: 8px;
-    font-size: 12px;
-    padding: 6px 10px;
-  }
   .selected-finding {
     max-width: 1000px;
     padding: 0 0 20px;
-    line-height: 1.65;
-    font-size: 14px;
+    line-height: var(--leading-relaxed);
+    font-size: var(--text-body-md);
   }
   .selected-finding h2 {
+    margin: 0 0 var(--space-xs);
+    font-family: var(--font-display);
     font-size: 20px;
-    margin: 0 0 8px;
+    font-weight: 600;
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
   }
   .selected-finding p {
-    margin: 8px 0;
+    margin: var(--space-xs) 0;
+  }
+  .selected-finding details {
+    margin: var(--space-xs) 0;
+  }
+  .selected-finding > label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+    color: var(--color-text-muted);
   }
   .source-scroll.packet-evidence {
     display: grid;
@@ -4110,24 +4163,34 @@
     min-width: 0;
     min-height: 0;
     overflow: auto;
-    padding: 0 12px 8px 0;
-    font-size: 13px;
+    padding: 0 var(--space-sm) var(--space-xs) 0;
+    font-size: var(--text-body-sm);
     line-height: 1.5;
   }
   .packet-evidence .selected-finding h2 {
-    font-size: 18px;
-    line-height: 1.35;
+    font-size: var(--text-title-md);
+    line-height: 1.3;
   }
-  .packet-evidence .finding-evidence-actions {
+  .finding-evidence-actions {
     display: grid;
-    gap: 8px;
-    margin: 12px 0;
+    gap: 2px;
+    margin: var(--space-sm) 0;
   }
-  .packet-evidence .finding-evidence-actions button {
+  .evidence-action {
+    width: 100%;
+    padding: var(--space-xs) 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-slate);
+    color: var(--color-text);
     text-align: left;
     white-space: normal;
     line-height: 1.4;
-    padding: 8px;
+    font-size: var(--text-body-sm);
+    transition: border-color var(--duration-fast) var(--ease-out);
+  }
+  .evidence-action:hover:not(:disabled) {
+    border-color: var(--color-accent);
   }
   .source-scroll.packet-evidence :global(.viewer) {
     grid-column: 2;
@@ -4145,57 +4208,86 @@
   }
   .cloud-preview {
     display: flex;
-    gap: 6px 12px;
+    gap: 6px var(--space-sm);
     flex-wrap: wrap;
     align-items: baseline;
     margin: 10px 4px 0;
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
   }
   .cloud-preview strong {
-    color: var(--nd-ink);
-    font-weight: 550;
+    color: var(--color-text);
+    font-weight: 600;
   }
   .cloud-preview p {
     flex-basis: 100%;
     margin: 0;
   }
+  .cloud-preview p[role="alert"] {
+    color: var(--color-error);
+  }
   .revision-picker {
     display: flex;
-    gap: 12px;
+    gap: var(--space-sm);
     align-items: center;
-    margin-bottom: 16px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wider);
+    text-transform: uppercase;
+  }
+  .revision-picker select {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-body);
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .import-revision {
+    align-self: flex-start;
   }
   .compact-actions {
     display: none;
     position: relative;
-    font-size: 12px;
+    font-size: var(--text-body-sm);
   }
   .compact-actions summary {
-    cursor: pointer;
-    padding: 7px;
+    height: 32px;
+    padding: 0 var(--space-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--text-label-sm);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
   }
   .compact-actions > div {
     position: absolute;
     right: 0;
-    top: 100%;
-    min-width: 170px;
-    padding: 6px;
-    background: var(--nd-panel);
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 7px;
+    top: calc(100% + 6px);
+    min-width: 180px;
+    padding: var(--space-2xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
     z-index: 20;
   }
   .compact-actions button {
     display: block;
     width: 100%;
-    padding: 10px;
+    min-height: 32px;
+    padding: 0 10px;
     text-align: left;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: inherit;
-    font: inherit;
+    color: var(--color-text);
+    font-size: var(--text-body-sm);
+  }
+  .compact-actions button:hover:not(:disabled) {
+    background: var(--color-slate);
   }
   @media (max-width: 900px) {
     .compact-actions {
@@ -4209,7 +4301,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 120px;
-    font-size: 12px;
+    font-size: var(--text-body-sm);
   }
   @media (max-width: 900px) {
     .compact-project {
@@ -4220,19 +4312,9 @@
     }
   }
   @media (max-width: 700px) {
-    .window-actions .ghost[data-testid="import-pdf"] {
+    .window-actions .import-trigger {
       display: none;
     }
-  }
-  .secondary-count {
-    color: var(--nd-ink-muted);
-  }
-  .revision-picker select {
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    padding: 7px 10px;
-    color: var(--nd-ink);
-    background: var(--nd-shell);
   }
   .scope-bar {
     flex-wrap: wrap;
@@ -4240,44 +4322,28 @@
   .import-dialog {
     width: min(580px, calc(100vw - 32px));
   }
-  .import-label,
-  .settings-dialog label {
-    display: grid;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .import-label input,
-  .settings-dialog input {
-    width: 100%;
-    box-sizing: border-box;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    background: var(--nd-shell);
-    color: var(--nd-ink);
-    padding: 10px 12px;
-    font: inherit;
+  .import-label {
+    margin-top: var(--space-md);
   }
   .pdf-drop-zone {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: var(--space-sm);
     padding: 40px 20px;
     margin-top: 20px;
-    border: 1px dashed var(--nd-hairline-strong);
-    border-radius: 10px;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-slate);
+    color: var(--color-text-muted);
+  }
+  .pdf-drop-zone strong {
+    color: var(--color-text);
+    font-size: var(--text-body-md);
+    font-weight: 600;
   }
   .pdf-drop-zone span {
-    color: var(--nd-ink-muted);
-    font-size: 13px;
-  }
-  .desktop :global(input:focus),
-  .desktop :global(textarea:focus) {
-    outline: none;
-  }
-  .desktop :global(input:focus-visible),
-  .desktop :global(textarea:focus-visible) {
-    box-shadow: inset 0 -2px var(--nd-focus);
+    font-size: var(--text-body-sm);
   }
   @media (max-width: 1180px) and (min-width: 701px) {
     .desktop.source-open .app-body {

@@ -263,7 +263,7 @@
             >{calls} review {calls === 1 ? "call" : "calls"}</span
           >{/if}
         {#if !locked}<button
-            class="dismiss"
+            class="btn ghost-btn dismiss"
             onclick={() => {
               if (status === null) return;
               dismissedId = status.id;
@@ -274,6 +274,7 @@
       <p class="context">{context}</p>
       {#if !locked}
         <button
+          class="btn ghost-btn details-toggle"
           aria-expanded={showReceiptDetails}
           onclick={() => {
             showReceiptDetails = !showReceiptDetails;
@@ -370,7 +371,7 @@
               ><input type="checkbox" bind:checked={acknowledge} /> I understand this review may have
               used credits. Cloud changes that have not synced may be lost.</label
             >
-            <button disabled={busy || !acknowledge} onclick={cancel}
+            <button class="btn" disabled={busy || !acknowledge} onclick={cancel}
               >Stop cloud review and return to local work</button
             >
           {/if}
@@ -401,51 +402,76 @@
       {/if}
     {:else if !loaded}<p role="status">Checking for an existing cloud review…</p>{/if}
     {#if error}<p role="alert">{error}</p>
-      <button disabled={busy} onclick={reconnect}>Retry sync</button>{/if}
+      <button class="btn" disabled={busy} onclick={reconnect}>Retry sync</button>{/if}
   </section>
 {/if}
 
 <style>
   .cloud-review {
     margin: 10px 24px;
-    padding: 14px 16px;
+    padding: var(--space-sm) var(--space-md);
     display: grid;
-    gap: 8px;
-    border: 1px solid var(--nd-hairline);
-    border-radius: 8px;
-    font-size: 12px;
-    color: var(--nd-ink-muted);
+    gap: var(--space-xs);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+    font-size: var(--text-mono-sm);
+    color: var(--color-text-muted);
   }
   .summary {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
     flex-wrap: wrap;
+  }
+  .summary strong {
+    font-size: var(--text-body-sm);
+  }
+  .summary > span {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
   }
   .dismiss {
     margin-left: auto;
   }
+  .details-toggle {
+    justify-self: start;
+    padding: 0;
+    min-height: 24px;
+  }
   .context {
-    color: var(--nd-ink);
+    color: var(--color-text);
   }
   strong {
-    color: var(--nd-ink);
+    color: var(--color-text);
+    font-weight: 600;
   }
   p {
     margin: 0;
-    line-height: 1.6;
+    line-height: var(--leading-relaxed);
+  }
+  p[role="alert"] {
+    color: var(--color-error);
   }
   .transfer {
     display: grid;
     gap: 4px;
   }
+  .transfer p {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+  }
   /* Keep the composer reachable in short windows: about 690px of the viewport belongs to the
      top bar, card header, a minimal thread and the composer. Long details scroll in the card. */
   .receipt-details {
     display: grid;
-    gap: 8px;
+    gap: var(--space-xs);
     max-height: clamp(96px, calc(100vh - 690px), 30vh);
     overflow-y: auto;
+  }
+  .receipt-details > .btn {
+    justify-self: start;
   }
   .finding-preview {
     display: grid;
@@ -456,51 +482,38 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 2px;
   }
   .finding-preview li {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 2px 8px;
-    padding: 3px 0;
-    border-top: 1px solid var(--nd-hairline);
+    gap: 2px var(--space-xs);
+    padding: 6px 0;
+    border-top: 1px solid var(--color-border);
     line-height: 1.5;
   }
   .finding-preview .title {
     flex: 1;
     min-width: 160px;
-    color: var(--nd-ink);
+    color: var(--color-text);
   }
   .severity,
   .sheets {
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: var(--text-label-sm);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
   }
   .severity[data-severity="Critical"] {
-    color: var(--nd-warning);
+    color: var(--color-error);
   }
   progress {
     width: min(100%, 420px);
-    height: 7px;
-    accent-color: var(--nd-ink);
-  }
-  button {
-    width: fit-content;
-    border: 1px solid var(--nd-hairline);
-    background: transparent;
-    border-radius: 5px;
-    padding: 6px 10px;
-    color: var(--nd-ink);
-    cursor: pointer;
-  }
-  button:disabled {
-    cursor: default;
-    opacity: 0.45;
   }
   label {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
-    line-height: 1.6;
+    gap: var(--space-xs);
+    line-height: var(--leading-relaxed);
   }
 </style>

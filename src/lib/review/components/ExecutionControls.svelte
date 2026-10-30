@@ -130,7 +130,12 @@
   <section class="execution" aria-label="Review execution" data-testid="execution-controls">
     {#if status}
       <div class="status-line" role="status" data-testid="execution-status">
-        <span class={["status-dot", { running: status.state === "running" }]}></span><span
+        <span
+          class={[
+            "status-dot",
+            { running: status.state === "running", failed: status.state === "failed" },
+          ]}
+        ></span><span
           >{status.state === "running"
             ? "Reviewing drawings"
             : status.state === "pausing"
@@ -167,6 +172,7 @@
           may have been charged.</label
         >
         <button
+          class="btn"
           disabled={busy || !chargeAcknowledged || status.uncertaintyAcknowledged}
           onclick={acknowledge}
           >{status.uncertaintyAcknowledged
@@ -177,13 +183,18 @@
     {/if}
     {#if error}<p role="alert">{error}</p>{/if}
     <div class="controls">
-      {#if status?.state === "running"}<button disabled={busy} onclick={() => control("pause")}
-          >Pause</button
+      {#if status?.state === "running"}<button
+          class="btn"
+          disabled={busy}
+          onclick={() => control("pause")}>Pause</button
         >{/if}
-      {#if status?.state === "paused"}<button disabled={busy} onclick={() => control("resume")}
-          >Resume</button
+      {#if status?.state === "paused"}<button
+          class="btn primary"
+          disabled={busy}
+          onclick={() => control("resume")}>Resume</button
         >{/if}
       {#if active || status?.state === "uncertain"}<button
+          class="btn"
           disabled={busy}
           onclick={() => control("cancel")}>Cancel inspection</button
         >{/if}
@@ -193,35 +204,44 @@
 
 <style>
   .execution {
-    font-size: 13px;
+    font-size: var(--text-body-sm);
     display: grid;
-    gap: 8px;
-    padding: 10px 0;
-    color: var(--nd-ink-muted);
+    gap: var(--space-xs);
+    padding: var(--space-sm) 0;
+    color: var(--color-text-muted);
   }
   p {
-    line-height: 1.6;
+    line-height: var(--leading-relaxed);
     margin: 0;
   }
+  p[role="alert"] {
+    color: var(--color-error);
+  }
   .elapsed {
+    font-family: var(--font-mono);
+    font-size: var(--text-mono-sm);
+    letter-spacing: var(--tracking-wide);
     font-variant-numeric: tabular-nums;
-    font-size: 12px;
   }
   .status-line {
     display: flex;
-    gap: 8px;
+    gap: var(--space-xs);
     align-items: center;
-    color: var(--nd-ink);
+    color: var(--color-text);
+    font-weight: 500;
   }
   .status-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
-    background: var(--nd-ink-muted);
+    border-radius: var(--radius-full);
+    background: var(--color-ash);
   }
   .status-dot.running {
-    background: var(--nd-ink);
+    background: var(--color-ember);
     animation: pulse 1.6s ease-out infinite;
+  }
+  .status-dot.failed {
+    background: var(--color-error);
   }
   @keyframes pulse {
     50% {
@@ -234,29 +254,23 @@
     }
   }
   .uncertain {
-    color: var(--nd-warning);
+    color: var(--color-accent);
   }
   .controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-xs);
+  }
+  .controls:empty {
+    display: none;
   }
   label {
     display: flex;
-    align-items: start;
-    gap: 8px;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    line-height: var(--leading-relaxed);
   }
-  button {
-    font: inherit;
-    border: 1px solid var(--nd-hairline-strong);
-    border-radius: 6px;
-    padding: 6px 10px;
-    background: var(--nd-panel);
-    color: var(--nd-ink);
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
+  .execution > .btn {
+    justify-self: start;
   }
 </style>
