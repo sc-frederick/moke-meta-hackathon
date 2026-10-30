@@ -130,6 +130,40 @@ export const PacketFindingDecision = Schema.Struct({
   decidedAt: Schema.Finite,
 });
 
+const FocusPixels = Schema.Struct({
+  left: Schema.Finite,
+  top: Schema.Finite,
+  right: Schema.Finite,
+  bottom: Schema.Finite,
+});
+
+/**
+ * Host-rendered zoom of a finding's problem area, segmented by SAM from the finding region.
+ * Pixels refer to the zoom artifact. Segments are geometry proposals, never verified symbols.
+ */
+export const PacketFindingFocus = Schema.Struct({
+  artifactId: ArtifactId,
+  sheetId: SheetId,
+  region: Region,
+  width: Schema.Int.check(Schema.isGreaterThan(0)),
+  height: Schema.Int.check(Schema.isGreaterThan(0)),
+  box: FocusPixels,
+  model: Schema.Literal("sam-3.1"),
+  responseId: Schema.NonEmptyString,
+  segments: Schema.Array(
+    Schema.Struct({
+      confidence: Schema.NullOr(Schema.Finite),
+      bounds: FocusPixels,
+      mask: Schema.Struct({
+        encoding: Schema.Literals(["one_bit", "lossless"]),
+        payload: Schema.String.check(Schema.isMaxLength(65536)),
+        width: Schema.Int.check(Schema.isGreaterThan(0)),
+        height: Schema.Int.check(Schema.isGreaterThan(0)),
+      }),
+    }),
+  ).check(Schema.isMaxLength(8)),
+});
+
 /** General review issues retain evidence and remain distinct from reviewer completion tracking. */
 export const PacketFinding = Schema.Struct({
   id: Id,
@@ -167,6 +201,8 @@ export const PacketFinding = Schema.Struct({
       permitStageBasis: Required,
     }),
   ),
+  /** Host-owned SAM zoom of the first focused location; the model cannot set it. */
+  focus: Schema.optionalKey(PacketFindingFocus),
 });
 
 /** Present the validated summary when available, retaining historical findings verbatim. */
@@ -351,6 +387,8 @@ export class PacketReview extends Schema.Class<PacketReview>("PacketReview")({
   baselineSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   inspectedThisReviewSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   detailInspectedSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
+  /** Sheets with a completed segment_objects call in this review; device counts require one. */
+  segmentedSheetIds: Schema.optionalKey(Schema.Array(SheetId)),
   evidenceIds: Schema.Array(ArtifactId),
   steering: Schema.optionalKey(
     Schema.Array(

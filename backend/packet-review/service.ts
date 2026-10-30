@@ -38,6 +38,7 @@ import {
   SheetId,
 } from "#lib/review/contracts.ts";
 import { ExecutionError, ReviewDiscipline } from "#lib/review/execution.ts";
+import { transformRegion } from "#lib/review/geometry.ts";
 import {
   PacketReview,
   PacketScope,
@@ -61,6 +62,7 @@ import { reviewModels } from "#lib/review/models.ts";
 import { initialReview } from "#lib/review/initial-review.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
 import type { createReviewOperations } from "../review/operations.ts";
+import type { ExecutionImage } from "../review/execution-port.ts";
 import { executionPersistence } from "../review/execution-store.ts";
 import {
   createAdmittedModels,
@@ -79,7 +81,7 @@ import { calculate, CalculationInput } from "./calculations.ts";
 import { readSource, searchSources } from "./sources.ts";
 import { renderPacketReport } from "./report.ts";
 import { SamInspectionRequest } from "#lib/review/segmentation.ts";
-import { preparePacketSamRequest, decodePacketSamResponse } from "./sam.ts";
+import { preparePacketSamRequest, decodePacketSamFocus, decodePacketSamResponse } from "./sam.ts";
 import { citationHasSourceSupport } from "./citations.ts";
 import { FindingSummaryText, RecordFindingSummary } from "#lib/review/finding-summary.ts";
 import { EarlierReview, jurisdictionHistory, jurisdictionValue } from "./jurisdiction.ts";
@@ -235,6 +237,49 @@ const ChecklistRow = Schema.Struct({
   text: Schema.String,
   saved_at: Schema.Finite,
 });
+
+const deviceNoun =
+  "(?:receptacles?|outlets?|luminaires?|light(?:ing)? fixtures?|fixtures?|lights?|switch(?:es)?|sprinkler heads?|sprinklers?|diffusers?|detectors?|devices?|water closets?|lavator(?:y|ies)|urinals?|sinks?)";
+
+// "One receptacle" usually identifies a device, so spelled quantities start at two.
+const quantity =
+  "(?:\\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|a dozen)";
+
+// Room, circuit, sheet and code-section numbers before a device noun are identifiers, not counts.
+const deviceCount = new RegExp(
+  `\\b(?:(?:counts?|quantit(?:y|ies)|qty|number) of (?:[\\w-]+ ){0,3}${deviceNoun}|${deviceNoun} (?:counts?|quantit(?:y|ies)|totals?)|(?<!(?:room|rm|circuit|ckt|panel|sheet|detail|note|section|level|floor|unit|suite|type|no)\\.? |[\\d.#-])${quantity} (?:[\\w-]+ ){0,2}${deviceNoun})\\b`,
+  "i",
+);
+
+/** Whether a finding states a drawn device or fixture count, which SAM should help establish. */
+export const claimsDeviceCount = (text: string) => deviceCount.test(text);
+
+/** SAM masks are for the reviewer's view; model-facing findings omit them. */
+const withoutFocus = (findings: PacketReview["findings"]) =>
+  findings.map((finding) => Struct.omit(finding, ["focus"]));
+
+const clip = (region: Region, box: Region) => {
+  const x = Math.max(region.x, box.x);
+  const y = Math.max(region.y, box.y);
+  const width = Math.min(region.x + region.width, box.x + box.width) - x;
+  const height = Math.min(region.y + region.height, box.y + box.height) - y;
+
+  return width > 0 && height > 0 ? new Region({ x, y, width, height }) : undefined;
+};
+
+/** A finding zoom covers its first location region that is at most half of its sheet. */
+const focusTarget = (
+  locations: (typeof PacketFinding.Type)["locations"],
+  sheets: PacketReview["sheets"],
+) =>
+  locations.flatMap((location) => {
+    const sheet = sheets.find((item) => item.id === location.sheetId);
+    const region = sheet && location.region && clip(location.region, sheet.box);
+
+    return sheet && region && region.width * region.height * 2 <= sheet.box.width * sheet.box.height
+      ? [{ sheet, region }]
+      : [];
+  })[0];
 
 // Both technical text and its display summary use the same missing-content evidence gate.
 const requireAbsenceSupport = (
@@ -850,6 +895,345 @@ export class PacketReviews extends Context.Service<
             item,
           ];
 
+          const meta = config.providers.find(
+            (provider) => (provider.provider ?? "meta") === "meta",
+          );
+
+          /**
+           * One durable SAM path for model requests and host finding zooms. Intent is saved before
+           * dispatch, an unresolved outcome is never resent, and a pause drains the receipt.
+           */
+          const segment = async (
+            taskId: number,
+            conversationId: number,
+            image: ExecutionImage,
+            request: SamInspectionRequest,
+            sheet: PacketReview["sheets"][number] | undefined,
+            counted: boolean,
+          ) => {
+            if (!meta) throw error("unavailable", "SAM is not configured for this review.");
+
+            return await withActivity(
+              taskId,
+              "segment_objects",
+              async () => {
+                const prepared = await run(preparePacketSamRequest(image, request));
+
+                const previous = await run(
+                  query(
+                    Effect.gen(function* () {
+                      const sql = yield* SqlClient.SqlClient;
+
+                      const saved = (yield* Schema.decodeUnknownEffect(Schema.Array(Attempt))(
+                        yield* sql`SELECT fingerprint,status,sent,response_json FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${taskId} AND attempt=1 AND kind='sam'`,
+                      ))[0];
+
+                      if (saved) {
+                        if (
+                          saved.fingerprint !== prepared.fingerprint ||
+                          saved.status !== "completed" ||
+                          saved.response_json === null
+                        )
+                          return yield* error(
+                            "uncertain",
+                            "An unresolved SAM request cannot be sent again.",
+                          );
+
+                        return saved.response_json;
+                      }
+
+                      const fresh = yield* load(row.project_id, row.id);
+                      yield* assertActive(fresh);
+
+                      if (
+                        fresh.payload.maxCalls !== null &&
+                        fresh.payload.admittedCalls >= fresh.payload.maxCalls
+                      )
+                        return yield* error(
+                          "budget",
+                          "The optional review call budget was reached before SAM.",
+                        );
+
+                      const unresolved = yield* Schema.decodeUnknownEffect(UnresolvedAttempts)(
+                        yield* sql`SELECT task_id,attempt FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain'`,
+                      );
+
+                      // Peer sheet reviewers' requests do not block this one's SAM call.
+                      if (blocksRequest(assignments, unresolved, conversationId))
+                        return yield* error(
+                          "uncertain",
+                          "Resolve the earlier provider request before SAM.",
+                        );
+                      yield* sql`INSERT INTO packet_review_attempts(review_id,task_id,attempt,kind,fingerprint,status,sent) VALUES (${row.id},${taskId},1,'sam',${prepared.fingerprint},'uncertain',0)`;
+                      yield* Effect.sync(() => assignments.requests.set(taskId, conversationId));
+                      yield* save(
+                        fresh,
+                        new PacketReview({
+                          ...fresh.payload,
+                          admittedCalls: fresh.payload.admittedCalls + 1,
+                        }),
+                      );
+
+                      return null;
+                    }),
+                  ),
+                );
+
+                if (previous !== null) return { raw: previous, prepared, replayed: true };
+
+                await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
+
+                const controller = new AbortController();
+                const controllers = samControllers.get(row.id) ?? new Set<AbortController>();
+                controllers.add(controller);
+                samControllers.set(row.id, controllers);
+
+                try {
+                  await run(
+                    query(
+                      Effect.gen(function* () {
+                        const fresh = yield* load(row.project_id, row.id);
+                        yield* assertActive(fresh, true);
+                        const sql = yield* SqlClient.SqlClient;
+                        yield* sql`UPDATE packet_review_attempts SET sent=1 WHERE review_id=${row.id} AND task_id=${taskId} AND attempt=1 AND kind='sam' AND sent=0`;
+                      }),
+                    ),
+                  );
+
+                  const response = await (meta.transport ?? globalThis.fetch)(prepared.route, {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${Redacted.value(meta.apiKey)}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: prepared.body,
+                    redirect: "error",
+                    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
+                  });
+
+                  if (!response.ok || !response.body)
+                    throw error("uncertain", "SAM did not return a usable response.");
+                  const chunks: Uint8Array[] = [];
+                  let bytes = 0;
+                  const reader = response.body.getReader();
+
+                  try {
+                    while (true) {
+                      const part = await reader.read();
+
+                      if (part.done) break;
+                      bytes += part.value.length;
+
+                      if (bytes > 8 * 1024 * 1024) {
+                        await reader.cancel();
+                        throw error("uncertain", "SAM response exceeded its receipt bound.");
+                      }
+
+                      chunks.push(part.value);
+                    }
+                  } finally {
+                    reader.releaseLock();
+                  }
+
+                  const raw = Buffer.concat(chunks).toString("utf8");
+                  await run(decodePacketSamResponse(raw, image));
+                  await run(
+                    query(
+                      Effect.gen(function* () {
+                        const fresh = yield* load(row.project_id, row.id);
+
+                        if (fresh.owner_generation !== config.owner.generation)
+                          return yield* error(
+                            "conflict",
+                            "SAM receipt belongs to an earlier owner.",
+                          );
+                        const sql = yield* SqlClient.SqlClient;
+                        yield* sql`UPDATE packet_review_attempts SET status='completed',response_json=${raw} WHERE review_id=${row.id} AND task_id=${taskId} AND attempt=1 AND kind='sam' AND sent=1`;
+                        const segmented = fresh.payload.segmentedSheetIds ?? [];
+
+                        // Device-count findings need a model-requested SAM inspection of their sheet.
+                        if (counted && !segmented.includes(image.sheetId))
+                          yield* save(
+                            fresh,
+                            new PacketReview(
+                              Struct.assign(fresh.payload, {
+                                segmentedSheetIds: [...segmented, image.sheetId],
+                              }),
+                            ),
+                          );
+                      }),
+                    ),
+                  );
+                  await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
+                  await run(
+                    query(
+                      Effect.gen(function* () {
+                        yield* assertActive(yield* load(row.project_id, row.id), true);
+                      }),
+                    ),
+                  );
+
+                  return { raw, prepared, replayed: false };
+                } catch (cause) {
+                  await run(
+                    query(
+                      Effect.gen(function* () {
+                        const fresh = yield* load(row.project_id, row.id);
+                        const sql = yield* SqlClient.SqlClient;
+
+                        const completed =
+                          yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${taskId} AND attempt=1 AND kind='sam' AND status='completed' AND response_json IS NOT NULL`;
+
+                        if (completed.length || fresh.owner_generation !== config.owner.generation)
+                          return fresh.payload;
+
+                        return yield* save(
+                          fresh,
+                          new PacketReview({
+                            ...fresh.payload,
+                            state: fresh.payload.state === "cancelled" ? "cancelled" : "uncertain",
+                            error:
+                              "A SAM request has an unresolved outcome. Its saved intent prevents automatic repetition.",
+                          }),
+                        );
+                      }),
+                    ).pipe(Effect.flatMap(publish)),
+                  );
+                  throw cause;
+                } finally {
+                  controllers.delete(controller);
+                }
+              },
+              sheet,
+            );
+          };
+
+          /**
+           * Zoom into a recorded finding's problem area and segment it with SAM from the finding
+           * region. The finding stands without the zoom; an unresolved SAM outcome still stops the
+           * review through the shared dispatch.
+           */
+          const focusFinding = async (
+            taskId: number,
+            conversationId: number,
+            findingId: string,
+          ) => {
+            if (!meta) return undefined;
+            const review = await run(get(row.project_id, row.id));
+            const finding = review.findings.find((entry) => entry.id === findingId);
+            const target = finding && focusTarget(finding.locations, review.sheets);
+
+            if (!finding || !target) return undefined;
+
+            if (finding.focus !== undefined)
+              return {
+                artifactId: finding.focus.artifactId,
+                segments: finding.focus.segments.length,
+              };
+            const { sheet, region } = target;
+            const pad = Math.max(36, 0.25 * Math.max(region.width, region.height));
+
+            const crop =
+              clip(
+                new Region({
+                  x: region.x - pad,
+                  y: region.y - pad,
+                  width: region.width + 2 * pad,
+                  height: region.height + 2 * pad,
+                }),
+                sheet.box,
+              ) ?? region;
+
+            try {
+              const artifact = await run(
+                asExecution(
+                  config.review.render({
+                    projectId: row.project_id,
+                    sheetId: sheet.id,
+                    operationId: Schema.decodeUnknownSync(OperationId)(
+                      stableId(row.id, taskId, "focus-render"),
+                    ),
+                    region: crop,
+                    // About 1,400 pixels on the long side, inside SAM's 2,048-pixel guidance limit.
+                    dpi: Math.max(
+                      24,
+                      Math.min(200, Math.floor((1400 * 72) / Math.max(crop.width, crop.height))),
+                    ),
+                  }),
+                ),
+              );
+
+              const image = await run(config.review.port.readImage(artifact));
+              const pixels = transformRegion(image.pdfToPixels, region);
+
+              const box = {
+                left: Math.max(0, Math.floor(pixels.x)),
+                top: Math.max(0, Math.floor(pixels.y)),
+                right: Math.min(image.width, Math.ceil(pixels.x + pixels.width)),
+                bottom: Math.min(image.height, Math.ceil(pixels.y + pixels.height)),
+              };
+
+              // A live E-3 receptacle zoom: box alone 0.48 confidence, box with centre point 0.62.
+              const request = Schema.decodeUnknownSync(SamInspectionRequest)({
+                artifactId: artifact.id,
+                prompt: {
+                  kind: "guided",
+                  box,
+                  points: [
+                    {
+                      x: Math.round((box.left + box.right) / 2),
+                      y: Math.round((box.top + box.bottom) / 2),
+                      label: "positive",
+                    },
+                  ],
+                },
+              });
+
+              const sam = await segment(taskId, conversationId, image, request, sheet, false);
+              const decoded = await run(decodePacketSamFocus(sam.raw, image));
+
+              const focus = {
+                artifactId: artifact.id,
+                sheetId: sheet.id,
+                region,
+                width: image.width,
+                height: image.height,
+                box,
+                model: "sam-3.1" as const,
+                responseId: decoded.responseId,
+                segments: decoded.segments,
+              };
+
+              // Saving the same zoom again is harmless, so a drained pause may still record it.
+              await run(
+                query(
+                  Effect.gen(function* () {
+                    const fresh = yield* load(row.project_id, row.id);
+                    yield* assertActive(fresh, true);
+
+                    return yield* save(
+                      fresh,
+                      new PacketReview(
+                        Struct.assign(fresh.payload, {
+                          evidenceIds: [...new Set([...fresh.payload.evidenceIds, artifact.id])],
+                          findings: fresh.payload.findings.map((entry) =>
+                            entry.id === findingId ? { ...entry, focus } : entry,
+                          ),
+                        }),
+                      ),
+                    );
+                  }),
+                ).pipe(Effect.flatMap(publish)),
+              );
+
+              return { artifactId: artifact.id, segments: focus.segments.length };
+            } catch (cause) {
+              return {
+                skipped: cause instanceof ExecutionError ? cause.message : "SAM focus unavailable.",
+              };
+            }
+          };
+
           const tools = [
             tool(
               "inventory_packet",
@@ -861,7 +1245,7 @@ export class PacketReviews extends Context.Service<
 
                 // A sheet reviewer needs its own rows, not the whole ledger.
                 return assigned === undefined
-                  ? review
+                  ? Struct.assign(review, { findings: withoutFocus(review.findings) })
                   : {
                       request: review.request,
                       scope: review.scope,
@@ -869,8 +1253,10 @@ export class PacketReviews extends Context.Service<
                       projectConfiguration: review.projectConfiguration,
                       sources: review.sources.map(({ id, url, title }) => ({ id, url, title })),
                       coverage: review.coverage.filter((entry) => entry.sheetId === assigned),
-                      findings: review.findings.filter((finding) =>
-                        finding.locations.some((location) => location.sheetId === assigned),
+                      findings: withoutFocus(
+                        review.findings.filter((finding) =>
+                          finding.locations.some((location) => location.sheetId === assigned),
+                        ),
                       ),
                     };
               },
@@ -1208,9 +1594,9 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_finding",
-              "Save the complete source-specific technical finding, including necessary values, qualifications and evidence. Do not shorten or omit technical facts to fit a display limit. Reuse an existing issue ID for follow-up. The result includes the host-owned summary state and revision; if Pending, use record_finding_summary. Completed and the reviewer's decision are user-owned and cannot be set by this tool.",
+              "Save the complete source-specific technical finding, including necessary values, qualifications and evidence. Do not shorten or omit technical facts to fit a display limit. Give each location the tight PDF region of the problem area; when SAM is available the host renders a zoom of the first region under half its sheet and segments it for the reviewer. Reuse an existing issue ID for follow-up. The result includes the host-owned summary state and revision; if Pending, use record_finding_summary. Completed and the reviewer's decision are user-owned and cannot be set by this tool.",
               Schema.Struct({
-                ...Struct.omit(PacketFinding.fields, ["summary", "decision"]),
+                ...Struct.omit(PacketFinding.fields, ["summary", "decision", "focus"]),
                 id: Schema.optionalKey(Id),
                 completed: Schema.optionalKey(Schema.Boolean),
               }),
@@ -1235,15 +1621,26 @@ export class PacketReviews extends Context.Service<
                   },
                 );
 
-                return await recordTool(
+                const saved = await recordTool(
                   row,
                   task,
                   "finding",
                   (review) => {
                     const existing = review.findings.find((entry) => entry.id === id);
+                    const target = focusTarget(input.locations, review.sheets);
+
+                    // A follow-up keeps its zoom while the focused problem area is unchanged.
+                    const kept =
+                      existing?.focus !== undefined &&
+                      target !== undefined &&
+                      existing.focus.sheetId === target.sheet.id &&
+                      JSON.stringify(existing.focus.region) === JSON.stringify(target.region)
+                        ? { focus: existing.focus }
+                        : {};
 
                     const recorded = {
                       ...input,
+                      ...kept,
                       id,
                       summary,
                       completed: existing?.completed ?? false,
@@ -1253,6 +1650,18 @@ export class PacketReviews extends Context.Service<
                       existing?.decision === undefined
                         ? recorded
                         : { ...recorded, decision: existing.decision };
+
+                    if (
+                      meta !== undefined &&
+                      claimsDeviceCount(`${finding.title} ${finding.observed}`) &&
+                      !finding.locations.some((location) =>
+                        (review.segmentedSheetIds ?? []).includes(location.sheetId),
+                      )
+                    )
+                      throw error(
+                        "input",
+                        "A drawn device or fixture count needs SAM evidence from this review. Render a focused crop of the counted area on one of this finding's sheets, call segment_objects with a concept prompt naming the symbol, check every candidate against the source and look for symbols SAM missed, then record the finding.",
+                      );
 
                     if (
                       finding.locations.some(
@@ -1305,6 +1714,10 @@ export class PacketReviews extends Context.Service<
                   },
                   { id, summary },
                 );
+
+                const focus = await focusFinding(task, api.conversationId, id);
+
+                return focus === undefined ? saved : { id, summary, samFocus: focus };
               },
             ),
             tool(
@@ -1541,16 +1954,12 @@ export class PacketReviews extends Context.Service<
             ),
           ];
 
-          const meta = config.providers.find(
-            (provider) => (provider.provider ?? "meta") === "meta",
-          );
-
           if (meta)
             tools.push(
               defineTool({
                 name: "segment_objects",
                 description:
-                  "Use SAM on an inspected source crop to locate geometric candidates. Confirm class, drawing context and coverage yourself. Geometry is not physical measurement and zero matches do not prove absence.",
+                  "Use SAM 3.1 on an inspected source crop to locate geometric candidates, for example every receptacle, switch, luminaire or plumbing fixture symbol in a plan area. Confirm class, drawing context and coverage yourself. Geometry is not physical measurement and zero matches do not prove absence.",
                 parameters: descriptor(SamInspectionRequest),
                 replay: "safe",
                 executionMode: "sequential",
@@ -1576,225 +1985,36 @@ export class PacketReviews extends Context.Service<
                   );
 
                   if (!artifact) throw error("input", "SAM source artifact is unavailable.");
+                  const image = await run(config.review.port.readImage(artifact));
 
-                  return await withActivity(
+                  const sam = await segment(
                     api.taskId,
-                    "segment_objects",
-                    async () => {
-                      const image = await run(config.review.port.readImage(artifact));
-                      const prepared = await run(preparePacketSamRequest(image, request));
+                    api.conversationId,
+                    image,
+                    request,
+                    current.sheets.find((sheet) => sheet.id === artifact.sheetId),
+                    true,
+                  );
 
-                      const previous = await run(
-                        query(
-                          Effect.gen(function* () {
-                            const sql = yield* SqlClient.SqlClient;
+                  const result = await run(decodePacketSamResponse(sam.raw, image));
 
-                            const saved = (yield* Schema.decodeUnknownEffect(Schema.Array(Attempt))(
-                              yield* sql`SELECT fingerprint,status,sent,response_json FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam'`,
-                            ))[0];
-
-                            if (saved) {
-                              if (
-                                saved.fingerprint !== prepared.fingerprint ||
-                                saved.status !== "completed" ||
-                                saved.response_json === null
-                              )
-                                return yield* error(
-                                  "uncertain",
-                                  "An unresolved SAM request cannot be sent again.",
-                                );
-
-                              return saved.response_json;
-                            }
-
-                            const fresh = yield* load(row.project_id, row.id);
-                            yield* assertActive(fresh);
-
-                            if (
-                              fresh.payload.maxCalls !== null &&
-                              fresh.payload.admittedCalls >= fresh.payload.maxCalls
-                            )
-                              return yield* error(
-                                "budget",
-                                "The optional review call budget was reached before SAM.",
-                              );
-
-                            const unresolved = yield* Schema.decodeUnknownEffect(
-                              UnresolvedAttempts,
-                            )(
-                              yield* sql`SELECT task_id,attempt FROM packet_review_attempts WHERE review_id=${row.id} AND status='uncertain'`,
-                            );
-
-                            // Peer sheet reviewers' requests do not block this one's SAM call.
-                            if (blocksRequest(assignments, unresolved, api.conversationId))
-                              return yield* error(
-                                "uncertain",
-                                "Resolve the earlier provider request before SAM.",
-                              );
-                            yield* sql`INSERT INTO packet_review_attempts(review_id,task_id,attempt,kind,fingerprint,status,sent) VALUES (${row.id},${api.taskId},1,'sam',${prepared.fingerprint},'uncertain',0)`;
-                            yield* Effect.sync(() =>
-                              assignments.requests.set(api.taskId, api.conversationId),
-                            );
-                            yield* save(
-                              fresh,
-                              new PacketReview({
-                                ...fresh.payload,
-                                admittedCalls: fresh.payload.admittedCalls + 1,
-                              }),
-                            );
-
-                            return null;
-                          }),
-                        ),
-                      );
-
-                      if (previous !== null)
-                        return {
-                          output: [
-                            {
-                              type: "text",
-                              text: JSON.stringify(
-                                await run(decodePacketSamResponse(previous, image)),
-                              ),
-                            },
-                          ],
-                        };
-
-                      await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
-
-                      const controller = new AbortController();
-                      const controllers = samControllers.get(row.id) ?? new Set<AbortController>();
-                      controllers.add(controller);
-                      samControllers.set(row.id, controllers);
-
-                      try {
-                        await run(
-                          query(
-                            Effect.gen(function* () {
-                              const fresh = yield* load(row.project_id, row.id);
-                              yield* assertActive(fresh, true);
-                              const sql = yield* SqlClient.SqlClient;
-                              yield* sql`UPDATE packet_review_attempts SET sent=1 WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam' AND sent=0`;
-                            }),
-                          ),
-                        );
-
-                        const response = await (meta.transport ?? globalThis.fetch)(
-                          prepared.route,
-                          {
-                            method: "POST",
-                            headers: {
-                              Authorization: `Bearer ${Redacted.value(meta.apiKey)}`,
-                              "Content-Type": "application/json",
-                            },
-                            body: prepared.body,
-                            redirect: "error",
-                            signal: AbortSignal.any([
-                              controller.signal,
-                              AbortSignal.timeout(120000),
-                            ]),
-                          },
-                        );
-
-                        if (!response.ok || !response.body)
-                          throw error("uncertain", "SAM did not return a usable response.");
-                        const chunks: Uint8Array[] = [];
-                        let bytes = 0;
-                        const reader = response.body.getReader();
-
-                        try {
-                          while (true) {
-                            const part = await reader.read();
-
-                            if (part.done) break;
-                            bytes += part.value.length;
-
-                            if (bytes > 8 * 1024 * 1024) {
-                              await reader.cancel();
-                              throw error("uncertain", "SAM response exceeded its receipt bound.");
-                            }
-
-                            chunks.push(part.value);
-                          }
-                        } finally {
-                          reader.releaseLock();
-                        }
-
-                        const raw = Buffer.concat(chunks).toString("utf8");
-                        const result = await run(decodePacketSamResponse(raw, image));
-                        await run(
-                          query(
-                            Effect.gen(function* () {
-                              const fresh = yield* load(row.project_id, row.id);
-
-                              if (fresh.owner_generation !== config.owner.generation)
-                                return yield* error(
-                                  "conflict",
-                                  "SAM receipt belongs to an earlier owner.",
-                                );
-                              const sql = yield* SqlClient.SqlClient;
-                              yield* sql`UPDATE packet_review_attempts SET status='completed',response_json=${raw} WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam' AND sent=1`;
-                            }),
-                          ),
-                        );
-                        await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
-                        await run(
-                          query(
-                            Effect.gen(function* () {
-                              yield* assertActive(yield* load(row.project_id, row.id), true);
-                            }),
-                          ),
-                        );
-
-                        return {
-                          output: [
-                            {
-                              type: "text",
-                              text: JSON.stringify({
+                  return {
+                    output: [
+                      {
+                        type: "text",
+                        text: JSON.stringify(
+                          sam.replayed
+                            ? result
+                            : {
                                 ...result,
                                 artifactId: image.artifactId,
-                                submittedSha256: prepared.submittedSha256,
-                                promptSha256: prepared.promptSha256,
-                              }),
-                            },
-                          ],
-                        };
-                      } catch (cause) {
-                        await run(
-                          query(
-                            Effect.gen(function* () {
-                              const fresh = yield* load(row.project_id, row.id);
-                              const sql = yield* SqlClient.SqlClient;
-
-                              const completed =
-                                yield* sql`SELECT task_id FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${api.taskId} AND attempt=1 AND kind='sam' AND status='completed' AND response_json IS NOT NULL`;
-
-                              if (
-                                completed.length ||
-                                fresh.owner_generation !== config.owner.generation
-                              )
-                                return fresh.payload;
-
-                              return yield* save(
-                                fresh,
-                                new PacketReview({
-                                  ...fresh.payload,
-                                  state:
-                                    fresh.payload.state === "cancelled" ? "cancelled" : "uncertain",
-                                  error:
-                                    "A SAM request has an unresolved outcome. Its saved intent prevents automatic repetition.",
-                                }),
-                              );
-                            }),
-                          ).pipe(Effect.flatMap(publish)),
-                        );
-                        throw cause;
-                      } finally {
-                        controllers.delete(controller);
-                      }
-                    },
-                    current.sheets.find((sheet) => sheet.id === artifact.sheetId),
-                  );
+                                submittedSha256: sam.prepared.submittedSha256,
+                                promptSha256: sam.prepared.promptSha256,
+                              },
+                        ),
+                      },
+                    ],
+                  };
                 },
               }),
             );
@@ -1998,8 +2218,10 @@ export class PacketReviews extends Context.Service<
                       requiredChecks: packetCoverageProgress(current)
                         .gaps.filter((gap) => gap.sheetId === sheet.id)
                         .map(({ discipline, pass, reason }) => ({ discipline, pass, reason })),
-                      previousFindings: current.findings.filter((finding) =>
-                        finding.locations.some((location) => location.sheetId === sheet.id),
+                      previousFindings: withoutFocus(
+                        current.findings.filter((finding) =>
+                          finding.locations.some((location) => location.sheetId === sheet.id),
+                        ),
                       ),
                       previousComments: current.priorComments.filter((comment) =>
                         (comment.revisionTargetSheetIds ?? []).includes(sheet.id),
@@ -2508,7 +2730,7 @@ export class PacketReviews extends Context.Service<
               conversation: row.payload.conversationContext ?? [],
               inventory: row.payload.sheets,
               scope: row.payload.scope,
-              previousFindings: row.payload.findings,
+              previousFindings: withoutFocus(row.payload.findings),
               previousComments: row.payload.priorComments,
               followUpInstructions: resumedInstructions.map(({ commandId, text }) => ({
                 commandId,
@@ -3497,7 +3719,11 @@ export class PacketReviews extends Context.Service<
 
             for (const id of new Set(
               review.findings
-                .flatMap((finding) => finding.evidenceIds)
+                .flatMap((finding) =>
+                  finding.focus === undefined
+                    ? finding.evidenceIds
+                    : [finding.focus.artifactId, ...finding.evidenceIds],
+                )
                 .concat(review.priorComments.flatMap((comment) => comment.evidenceIds)),
             )) {
               const artifact = state.artifacts.find(

@@ -37,11 +37,13 @@
   import { SheetId } from "#lib/review/contracts.ts";
   import type {
     FirmChecklist,
+    PacketFindingFocus,
     PacketFindingVerdict,
     PacketReview,
     StartPacketReview,
   } from "#lib/review/packet.ts";
   import { packetFindingText } from "#lib/review/packet.ts";
+  import { focusOutlines } from "#lib/review/segmentation.ts";
   import { inInitialReviewPhase, initialReview } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
@@ -305,6 +307,16 @@
     selectedPacketFinding === null ? null : packetFindingText(selectedPacketFinding),
   );
 
+  // The finding's SAM zoom, while its artifact is the displayed source.
+  const displayedFocus = $derived(
+    selectedPacketFinding?.focus !== undefined &&
+      sourceArtifact?.id === selectedPacketFinding.focus.artifactId
+      ? selectedPacketFinding.focus
+      : null,
+  );
+
+  const focusMasks = $derived(displayedFocus === null ? [] : focusOutlines(displayedFocus));
+
   const validCallLimit = $derived(
     callLimit === undefined || (Number.isInteger(callLimit) && callLimit > 0),
   );
@@ -501,7 +513,8 @@
     sourceTab = "evidence";
     closeFindings();
 
-    if (finding.evidenceIds.length || finding.locations.length)
+    if (finding.focus) await openPacketFocus(finding.focus);
+    else if (finding.evidenceIds.length || finding.locations.length)
       await openPacketEvidence(finding.evidenceIds[0] ?? null, finding.locations[0]);
   }
 
@@ -692,6 +705,14 @@
       firmChecklistMessage = result.error.message;
       void loadFirmChecklist();
     }
+  }
+
+  function openPacketFocus(focus: typeof PacketFindingFocus.Type) {
+    return openPacketEvidence(focus.artifactId, {
+      sheetId: focus.sheetId,
+      region: focus.region,
+      detail: "Finding region",
+    });
   }
 
   async function openPacketEvidence(
@@ -2762,6 +2783,14 @@
                     Short summary pending. The full technical finding is shown.
                   </p>{/if}
                 <div class="finding-evidence-actions">
+                  {#if selectedPacketFinding.focus}{@const focus =
+                      selectedPacketFinding.focus}<button
+                      class="ghost"
+                      disabled={busy || sourceLoading || cloudBlocked}
+                      onclick={() => openPacketFocus(focus)}
+                      >SAM focus · {focus.segments.length}
+                      {focus.segments.length === 1 ? "segment" : "segments"}</button
+                    >{/if}
                   {#each selectedPacketFinding.locations as location, index (index)}<button
                       class="ghost"
                       disabled={busy || sourceLoading || cloudBlocked}
@@ -2935,6 +2964,7 @@
                   imageUrl={sourceImageUrl}
                   pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
                   overlays={sourceOverlays}
+                  masks={focusMasks}
                   label="Original source render"
                 />{/if}
               <div class="source-provenance">
@@ -2942,6 +2972,11 @@
                   >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
                     1}{sourceIsCrop ? " · partial view of this page" : ""}</span
                 >
+                {#if displayedFocus}<span data-testid="sam-focus-caption"
+                    >SAM 3.1 focus · {displayedFocus.segments.length} segmented
+                    {displayedFocus.segments.length === 1 ? "object" : "objects"} · proposals, not verified
+                    symbols</span
+                  >{/if}
               </div>
             {:else if sourceTab === "revision"}
               <button class="ghost" disabled={busy || cloudBlocked} onclick={importPdf}
