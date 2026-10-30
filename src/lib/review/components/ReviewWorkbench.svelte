@@ -34,6 +34,7 @@
   import { ReviewDiscipline } from "#lib/review/disciplines.ts";
   import { SheetId } from "#lib/review/contracts.ts";
   import type { PacketReview, StartPacketReview } from "#lib/review/packet.ts";
+  import { packetFindingText } from "#lib/review/packet.ts";
   import { inInitialReviewPhase, initialReview } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
@@ -290,6 +291,10 @@
     packetFindings.find((finding) => finding.id === selectedPacketFindingId) ?? null,
   );
 
+  const selectedPacketText = $derived(
+    selectedPacketFinding === null ? null : packetFindingText(selectedPacketFinding),
+  );
+
   const validCallLimit = $derived(
     callLimit === undefined || (Number.isInteger(callLimit) && callLimit > 0),
   );
@@ -390,7 +395,7 @@
 
   const visiblePacketFindings = $derived(
     packetFindings.filter((finding) =>
-      `${finding.title} ${finding.observed} ${finding.correction} ${finding.discipline}`
+      `${finding.title} ${finding.observed} ${finding.correction} ${Object.values(packetFindingText(finding)).join(" ")} ${finding.discipline}`
         .toLowerCase()
         .includes(findQuery.toLowerCase()),
     ),
@@ -2660,22 +2665,38 @@
             class="source-scroll"
             class:packet-evidence={sourceTab === "evidence" && selectedPacketFinding !== null}
           >
-            {#if sourceTab === "evidence" && selectedPacketFinding}<article
+            {#if sourceTab === "evidence" && selectedPacketFinding && selectedPacketText}<article
                 class="selected-finding"
                 data-testid="selected-packet-finding"
               >
-                <h2>{selectedPacketFinding.title}</h2>
+                <h2>{selectedPacketText.title}</h2>
                 <p class="muted">
                   {selectedPacketFinding.severity} · {selectedPacketFinding.status} · {selectedPacketFinding.discipline.replaceAll(
                     "_",
                     " ",
                   )}
                 </p>
-                <details class="finding-description">
+                <details
+                  class="finding-description"
+                  open={selectedPacketFinding.summary?._tag === "Ready"}
+                >
                   <summary>Observation and correction</summary>
-                  <p>{selectedPacketFinding.observed}</p>
-                  <p><strong>Correction</strong> {selectedPacketFinding.correction}</p>
+                  <p>{selectedPacketText.observed}</p>
+                  <p><strong>Correction</strong> {selectedPacketText.correction}</p>
                 </details>
+                {#if selectedPacketFinding.summary?._tag === "Ready"}<details
+                    class="finding-description"
+                  >
+                    <summary>Full technical finding</summary>
+                    <h3>{selectedPacketFinding.title}</h3>
+                    <p>{selectedPacketFinding.observed}</p>
+                    <p><strong>Correction</strong> {selectedPacketFinding.correction}</p>
+                  </details>{:else if selectedPacketFinding.summary?._tag === "Pending"}<p
+                    role="status"
+                    class="muted"
+                  >
+                    Short summary pending. The full technical finding is shown.
+                  </p>{/if}
                 <div class="finding-evidence-actions">
                   {#each selectedPacketFinding.locations as location, index (index)}<button
                       class="ghost"
@@ -2879,7 +2900,7 @@
               class="finding-row"
               onclick={() => showPacketFinding(finding.id)}
               ><ReviewIcon name="file-text" size={16} /><span class="finding-title"
-                >{finding.title}</span
+                >{packetFindingText(finding).title}</span
               ><span class="outcome">{finding.severity}</span></button
             >{/each}
           {#if findings.length > 0}<p class="menu-section-label">Count comparisons</p>{/if}
@@ -2917,7 +2938,8 @@
           {#each visiblePacketFindings as finding (finding.id)}<button
               class="finding-row"
               onclick={() => showPacketFinding(finding.id)}
-              >{finding.title}<span class="outcome">{finding.severity} · {finding.status}</span
+              >{packetFindingText(finding).title}<span class="outcome"
+                >{finding.severity} · {finding.status}</span
               ></button
             >{/each}
           {#each visibleFindings as finding (finding.id)}<button

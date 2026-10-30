@@ -349,6 +349,7 @@ export const Request = Schema.Struct({
   instructions: Schema.optionalKey(Schema.String),
   input: Schema.optionalKey(Schema.Json),
   messages: Schema.optionalKey(Schema.Json),
+  tools: Schema.optionalKey(Schema.Json),
 });
 
 /** Decode the actual serialized model or SAM request before test assertions. */
@@ -376,7 +377,7 @@ export function outputs<S extends Schema.ConstraintCodec<unknown, unknown>>(
   schema: S,
   request: typeof Request.Type,
 ): ReadonlyArray<S["Type"]> {
-  return strings(request.input ?? null).flatMap((text) =>
+  return strings(request.input ?? request.messages ?? null).flatMap((text) =>
     Option.match(Schema.decodeUnknownOption(Schema.fromJsonString(schema))(text), {
       onNone: () => [],
       onSome: (value) => [value],
@@ -455,15 +456,34 @@ export function response(
 }
 
 /** Produce a completed Baseten chat-completions SSE receipt. */
-export function chatResponse(text: string) {
+export function chatResponse(
+  text: string,
+  tools: NonNullable<Parameters<typeof response>[0]> = [],
+) {
   const events = [
     {
       id: "packet_baseten",
-      choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }],
+      choices: [
+        {
+          index: 0,
+          delta: tools.length
+            ? {
+                role: "assistant",
+                tool_calls: tools.map((tool, index) => ({
+                  index,
+                  id: `call_${crypto.randomUUID()}`,
+                  type: "function",
+                  function: { name: tool.name, arguments: JSON.stringify(tool.arguments) },
+                })),
+              }
+            : { role: "assistant", content: text },
+          finish_reason: null,
+        },
+      ],
     },
     {
       id: "packet_baseten",
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      choices: [{ index: 0, delta: {}, finish_reason: tools.length ? "tool_calls" : "stop" }],
       usage: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
     },
   ];

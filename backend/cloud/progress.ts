@@ -25,8 +25,21 @@ const UnmarkedCloudWorkerProgress = Schema.Union([
   priorWorkerProgress(2),
 ]);
 
-const RecoverableCloudWorkerProgress = Schema.Union([
+// Protocol 4 first shipped with v3. Its already-dispatched results must survive
+// the v4 prompt upgrade without admitting an old worker for new reviews.
+const Protocol4CloudWorkerProgress = Schema.Union([
   CloudWorkerProgress,
+  Schema.Struct({
+    ...CloudWorkerProgress.fields,
+    identity: Schema.Struct({
+      ...CloudEngineIdentity.fields,
+      packetPrompt: Schema.Literal("moke-packet-review-v3"),
+    }),
+  }),
+]);
+
+const RecoverableCloudWorkerProgress = Schema.Union([
+  Protocol4CloudWorkerProgress,
   UnmarkedCloudWorkerProgress,
 ]);
 
@@ -57,7 +70,7 @@ export const parseCloudWorkerProgress = Effect.fn("parseCloudWorkerProgress")(fu
       ? UnmarkedCloudWorkerProgress
       : record.workerProtocol === 3
         ? Protocol3CloudWorkerProgress
-        : CloudWorkerProgress;
+        : Protocol4CloudWorkerProgress;
 
   const progress = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
     Effect.mapError(

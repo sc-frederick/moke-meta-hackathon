@@ -31,6 +31,14 @@ User completion changes a finding's task-tracking state with an optimistic
 version check; it does not change the finding's evidence status or prior-comment
 closure. Original source changes stop further work against a stale packet.
 
+New findings retain the original technical title, observation and correction at
+their existing capacity. A separate host-owned Pending/Ready summary records a
+revision and, when valid, concise display text. Summary retries cannot overwrite
+technical fields, evidence, status or completion. Technical updates invalidate
+the old summary. Pending summaries survive reopening and prevent a finished
+sheet or completed review. Legacy findings without summary metadata remain
+readable, exportable and usable in follow-ups without forced rewriting.
+
 Selected-count facts and calculation history remain append-only. Their current
 finding pointers change only with matching source/fact versions. Model tools
 propose count inputs and cannot accept them. Command receipts are checked before
@@ -147,10 +155,12 @@ retries reuse only files whose size and SHA-256 match the selected result
 manifest; interrupted Modal copy scratch files are cleared before package validation.
 
 New cloud receipts record the admitted worker protocol. Older unmarked receipts
-remain intact: only already-dispatched `dispatching`/`running` jobs can observe
-matching protocol-2 progress for result recovery. The current protocol-3 request
-and warm-worker handshake remain strict. This changes neither SQL migrations nor
-saved review content and never replays model work. Existing explicit sync pauses
+can recover matching protocol-2 or protocol-3 progress only for already-dispatched
+`dispatching`/`running` jobs. Protocol-3 receipts recover protocol-3 results, and
+protocol-4 receipts can recover their already-dispatched packet prompt v3 results
+after the v4 prompt upgrade. The current protocol-4 request and warm-worker
+handshake require packet prompt v4. This changes neither SQL migrations nor saved
+review content and never replays model work. Existing explicit sync pauses
 remain paused until **Retry sync**; ownership returns only through verified result
 restore or confirmed stop.
 

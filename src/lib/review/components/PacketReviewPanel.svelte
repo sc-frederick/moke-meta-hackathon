@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Match, Schema } from "effect";
-  import { cachedPromptShare, type PacketReview } from "#lib/review/packet.ts";
+  import { cachedPromptShare, packetFindingText, type PacketReview } from "#lib/review/packet.ts";
   import { configurationLabel, packetCoverageProgress } from "#lib/review/packet-coverage.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import ReviewText from "./ReviewText.svelte";
@@ -360,7 +360,7 @@
           data-testid={`packet-finding-${finding.id}`}
           onclick={() => onFinding(finding.id)}
           ><span class="severity" data-severity={finding.severity}>{finding.severity}</span><strong
-            >{finding.title}</strong
+            >{packetFindingText(finding).title}</strong
           ><span class="finding-status">{finding.status}</span></button
         >
       {/each}

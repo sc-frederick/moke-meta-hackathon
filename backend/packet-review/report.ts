@@ -1,4 +1,8 @@
-import type { PacketReview } from "../../src/lib/review/packet.ts";
+import {
+  packetFindingText,
+  type PacketFinding,
+  type PacketReview,
+} from "../../src/lib/review/packet.ts";
 import { reviewDisciplines } from "../../src/lib/review/execution.ts";
 import { Match } from "effect";
 import {
@@ -24,6 +28,19 @@ const escape = (value: string | number) =>
 
 const discipline = (id: string) => reviewDisciplines.find((entry) => entry.id === id)?.label ?? id;
 const paragraph = (value: string) => `<p class="prose">${escape(value || "Not recorded.")}</p>`;
+
+const technicalDetails = (finding: typeof PacketFinding.Type) =>
+  Match.value(finding.summary).pipe(
+    Match.when(
+      { _tag: "Ready" },
+      () =>
+        `<details><summary>Full technical finding</summary><h4>${escape(finding.title)}</h4>${paragraph(finding.observed)}${paragraph(finding.correction)}</details>`,
+    ),
+    Match.when({ _tag: "Pending" }, () =>
+      paragraph("Short summary pending. The full technical finding is shown."),
+    ),
+    Match.orElse(() => ""),
+  );
 
 const list = (values: ReadonlyArray<string>, empty: string) =>
   values.length
@@ -214,17 +231,17 @@ export function renderPacketReport(
           .join("")}</dl>`
       : paragraph("Project configuration and governing editions need input.")
   }</section>
-<section aria-labelledby="findings"><h2 id="findings">Findings</h2><p id="completion-storage" role="status">Completion choices are saved in this browser for this project and report revision. They do not travel with a copied HTML file.</p><noscript><p>JavaScript is unavailable. Checkboxes remain usable, but choices are temporary and repeated checkboxes do not synchronize.</p></noscript>${findings.length ? `<table class="finding-summary"><thead><tr><th>Issue</th><th>Discipline / severity</th><th>Finding status</th><th>User tracking</th></tr></thead><tbody>${findings.map((finding) => `<tr><td><a href="#finding-${escape(finding.id)}">${escape(finding.title)}</a><small>${escape(finding.id)}</small></td><td>${escape(discipline(finding.discipline))}<br>${badge(finding.severity)}</td><td>${escape(finding.status)}</td><td>${completion(`finding:${finding.id}`, "summary", finding.completed)}</td></tr>`).join("")}</tbody></table>` : paragraph("No findings have been recorded. This alone does not establish that the drawing set is free of issues.")}
+<section aria-labelledby="findings"><h2 id="findings">Findings</h2><p id="completion-storage" role="status">Completion choices are saved in this browser for this project and report revision. They do not travel with a copied HTML file.</p><noscript><p>JavaScript is unavailable. Checkboxes remain usable, but choices are temporary and repeated checkboxes do not synchronize.</p></noscript>${findings.length ? `<table class="finding-summary"><thead><tr><th>Issue</th><th>Discipline / severity</th><th>Finding status</th><th>User tracking</th></tr></thead><tbody>${findings.map((finding) => `<tr><td><a href="#finding-${escape(finding.id)}">${escape(packetFindingText(finding).title)}</a><small>${escape(finding.id)}</small></td><td>${escape(discipline(finding.discipline))}<br>${badge(finding.severity)}</td><td>${escape(finding.status)}</td><td>${completion(`finding:${finding.id}`, "summary", finding.completed)}</td></tr>`).join("")}</tbody></table>` : paragraph("No findings have been recorded. This alone does not establish that the drawing set is free of issues.")}
 ${findings
   .map(
     (finding) =>
-      `<article class="finding" id="finding-${escape(finding.id)}"><p class="eyebrow">${escape(discipline(finding.discipline))} · ${escape(finding.severity)} · ${escape(finding.classification)}</p><h3>${escape(finding.title)}</h3><p class="issue-id">Issue ${escape(finding.id)} · Finding status: <strong>${escape(finding.status)}</strong></p>${completion(`finding:${finding.id}`, "detail", finding.completed)}<h4>Location</h4>${list(
+      `<article class="finding" id="finding-${escape(finding.id)}"><p class="eyebrow">${escape(discipline(finding.discipline))} · ${escape(finding.severity)} · ${escape(finding.classification)}</p><h3>${escape(packetFindingText(finding).title)}</h3><p class="issue-id">Issue ${escape(finding.id)} · Finding status: <strong>${escape(finding.status)}</strong></p>${completion(`finding:${finding.id}`, "detail", finding.completed)}<h4>Location</h4>${list(
         finding.locations.map(
           (location) =>
             `${sheetLabel(location.sheetId)}: ${location.detail}${location.region === null ? "" : ` (PDF points x=${location.region.x}, y=${location.region.y}, width=${location.region.width}, height=${location.region.height})`}`,
         ),
         "No source location was recorded.",
-      )}<h4>Observed condition</h4>${paragraph(finding.observed)}<h4>Specific correction or missing input</h4>${paragraph(finding.correction)}<h4>Source and calculation references</h4>${list([...finding.citationIds.map((id) => `Citation ${id}`), ...finding.calculationIds.map((id) => `Calculation ${id}`), ...(finding.priorCommentId === null ? [] : [`Prior comment ${finding.priorCommentId}`])], finding.classification === "Drawing conflict" ? "Drawing coordination; see source locations and evidence." : "No supporting citation or calculation was recorded.")}<h4>Focused evidence</h4>${finding.evidenceIds.map((id) => evidenceImage(id, finding.evidenceNote || finding.observed)).join("") || paragraph(finding.evidenceNote || "No image evidence or explanation was recorded.")}</article>`,
+      )}<h4>Observed condition</h4>${paragraph(packetFindingText(finding).observed)}<h4>Specific correction or missing input</h4>${paragraph(packetFindingText(finding).correction)}${technicalDetails(finding)}<h4>Source and calculation references</h4>${list([...finding.citationIds.map((id) => `Citation ${id}`), ...finding.calculationIds.map((id) => `Calculation ${id}`), ...(finding.priorCommentId === null ? [] : [`Prior comment ${finding.priorCommentId}`])], finding.classification === "Drawing conflict" ? "Drawing coordination; see source locations and evidence." : "No supporting citation or calculation was recorded.")}<h4>Focused evidence</h4>${finding.evidenceIds.map((id) => evidenceImage(id, finding.evidenceNote || finding.observed)).join("") || paragraph(finding.evidenceNote || "No image evidence or explanation was recorded.")}</article>`,
   )
   .join("")}</section>
 <section aria-labelledby="coverage"><h2 id="coverage">Document inventory and review coverage</h2><p>Coverage is recorded for every requested sheet, discipline and pass. Whole-set reviews account for all 11 disciplines; excluded work requires an explicit Not applicable reason. Opening a source image does not establish completion of its checks. Missing entries remain unreviewed. Compatible coverage from earlier scopes remains visible but does not settle a different discipline's checks.</p>${review.sheets.length ? `<div class="table-wrap"><table class="coverage"><thead><tr><th>Document / sheet</th>${passes.map(([, title]) => `<th>${title}</th>`).join("")}</tr></thead><tbody>${coverageRows}</tbody></table></div>` : paragraph("No source sheets were recorded for this review.")}</section>

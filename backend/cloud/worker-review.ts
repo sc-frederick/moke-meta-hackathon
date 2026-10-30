@@ -34,7 +34,7 @@ export const cloudFindingPreview = (review: {
     readonly pageIndex: number;
   }>;
   readonly findings: ReadonlyArray<
-    Pick<typeof PacketFinding.Type, "id" | "title" | "severity" | "discipline"> & {
+    Pick<typeof PacketFinding.Type, "id" | "title" | "severity" | "discipline" | "summary"> & {
       readonly locations: ReadonlyArray<{ readonly sheetId: string }>;
     }
   >;
@@ -45,7 +45,10 @@ export const cloudFindingPreview = (review: {
 
   const preview = review.findings.slice(-cloudFindingPreviewLimits.findings).map((finding) => ({
     id: finding.id,
-    title: clip(finding.title, cloudFindingPreviewLimits.title),
+    title: clip(
+      finding.summary?._tag === "Ready" ? finding.summary.title : finding.title,
+      cloudFindingPreviewLimits.title,
+    ),
     severity: finding.severity,
     discipline: finding.discipline,
     sheets: [...new Set(finding.locations.map((location) => labels.get(location.sheetId) ?? ""))]

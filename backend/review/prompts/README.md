@@ -6,11 +6,55 @@ the upstream paths and SHA-256 hashes. Read the original skill repository to
 update them; this application does not edit that source repository.
 
 `review-prompt.ts` imports the files with Bun's text loader, embedding them in the
-compiled backend. Packet review version `moke-packet-review-v2` supplies the full
+compiled backend. Packet review version `moke-packet-review-v4` supplies the full
 master AGENTS.md and REVIEW_METHOD.md, including Report and release, as Pi
 Durable's conversation `agent.instructions`. The reviewer request and document
 inventory are separate input data. Each run records the prompt version and
 instruction revision.
+
+`finding-style.md` is application-owned guidance, embedded in every packet
+reviewer's instructions for both Meta and Baseten, including coordinator and
+sheet roles. It uses the short Sonnet 5.5 rewrites in
+`docs/research/meta-vs-sonnet-unslop-findings.md`, rows 28, 36 and 41, as wording
+examples. The calculation example expands the circuit abbreviation; a fourth
+example illustrates an uncertain reading. The comparison is a style reference,
+not a technical validation of those earlier findings.
+
+The authoritative contract is `src/lib/review/finding-summary.ts`. A display
+title has at most 80 characters and 12 words; the observation and correction each
+have at most 320 characters and 45 words, exactly one sentence, and no lists or
+line breaks. Corrections start with an action and object. Decimal values, section
+numbers and internal engineering units are recognized; ambiguous abbreviations
+must be spelled out. Both provider tool schemas publish the character bounds and
+the host enforces all checks. Model instructions are generated from these constants.
+
+`record_finding` saves the complete technical text with its existing 32,000-character
+capacity, evidence and status. When that exact text already meets the summary
+contract, it becomes the display text without rewriting. Otherwise the host saves
+a Pending summary revision. `record_finding_summary` supplies short display text
+for that specific finding and revision, leaving every original field unchanged.
+Updating a finding invalidates its prior summary. Invalid summaries leave the
+technical record saved and pending, including when Pi rejects arguments before
+the tool executes. Pending summaries block sheet and review finishing, and the
+final completion check handles reversed tool order independently. An ignored
+request leaves an explicit failed/incomplete review, not a lost finding.
+
+The workbench and HTML report show validated short text first, with full technical
+text available under Full technical finding. Old findings without summaries keep
+their original presentation. Length checks enforce form, not engineering truth
+or semantic completeness: necessary values, conditions and uncertainty must remain
+in the short text, and the retained full record and evidence remain reviewable.
+
+The prompt version is retained in review provenance and the cloud engine
+handshake. Existing reports remain readable; paused runs from older prompt
+versions must start a new review rather than resume with different instructions.
+Shipping this change to cloud review also requires a matching worker build.
+Already-dispatched protocol-4 jobs using packet prompt v3 can still return their
+saved results; that recovery allowance does not admit older workers for new jobs.
+
+Scripted-provider tests exercise actual Meta and Baseten tool calls, rejection,
+correction, completion gating and lossless reopening/export. These tests establish
+the executable format, not model writing quality or technical correctness.
 
 A whole-set review includes General and every discipline file. A selected
 discipline includes General and its own file. Fire Alarm, Fire Sprinkler, Life
