@@ -13,6 +13,10 @@ without changes:
 
 ## Where things stand
 
+Since this audit, PR #17 added reviewer decisions on findings, a firm checklist
+and jurisdiction leads, and PR #20 added the Florida code index, code search and
+PDF source text. The gaps below describe main before those PRs.
+
 Moke is a strong drawing coordination checker built on solid infrastructure. It
 does not yet check drawings against requirements, and it does not yet track
 its own findings from one revision to the next. Those are the two things the
