@@ -410,6 +410,7 @@
             {@const reference = citation.reference}
             <p class="muted">{reference.title} · {reference.document}, {reference.edition}</p>
             {#if Schema.is(ReviewSourceUrl)(reference.url)}<button
+                class="btn"
                 onclick={() => onOpenSource(reference.url)}
                 >{reference.access === "open_in_browser"
                   ? "Open section to confirm"

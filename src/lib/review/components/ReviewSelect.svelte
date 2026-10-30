@@ -124,6 +124,7 @@
   {#each options as option (option.value)}
     <button
       type="button"
+      class="option"
       role="option"
       aria-selected={value === option.value}
       disabled={option.disabled}

@@ -1935,10 +1935,14 @@
           <details class="compact-actions">
             <summary aria-label="More project actions">More</summary>
             <div>
-              <button disabled={busy || cloudBlocked} onclick={() => openSetup("sheets", true)}
-                >New count check</button
+              <button
+                class="menu-item"
+                disabled={busy || cloudBlocked}
+                onclick={() => openSetup("sheets", true)}>New count check</button
               >
-              <button disabled={busy || cloudBlocked} onclick={importPdf}>Import PDF</button>
+              <button class="menu-item" disabled={busy || cloudBlocked} onclick={importPdf}
+                >Import PDF</button
+              >
             </div>
           </details>
           <button
