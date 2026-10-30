@@ -76,7 +76,11 @@ function calls(input: typeof Schema.Json.Type | undefined) {
  * prompt prefix. Each reviewer's second request is then held until both are on the wire, so they
  * must run concurrently and one in-flight attempt cannot block the other.
  */
-function script(failing: "none" | "second-sheet" | "second-sheet-without-notes") {
+function script(
+  failing: "none" | "second-sheet" | "second-sheet-without-notes",
+  // Only the concurrency test holds requests; elsewhere a peer may never arrive to release it.
+  holdUntilBoth = false,
+) {
   const arrived = new Set<string>();
   const bothArrived = Promise.withResolvers<void>();
 
@@ -129,7 +133,7 @@ function script(failing: "none" | "second-sheet" | "second-sheet-without-notes")
         return response([{ name: "render_sheet", arguments: { sheetId: first ? other : own } }]);
       }
 
-      if (made.length === 1 && failing === "none") {
+      if (made.length === 1 && holdUntilBoth) {
         arrived.add(own);
 
         if (arrived.size === 2) bothArrived.resolve();
@@ -187,7 +191,7 @@ function script(failing: "none" | "second-sheet" | "second-sheet-without-notes")
 
 test("a large packet reviews its sheets in concurrent conversations between coordinator setup and coordination", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-"));
-  const { transport, observed } = script("none");
+  const { transport, observed } = script("none", true);
   const session = await open(directory, transport, true, undefined, "observe", parallel);
 
   try {
