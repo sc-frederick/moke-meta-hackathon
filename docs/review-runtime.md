@@ -52,6 +52,28 @@ aborts every conversation.
 `PacketReviews.layer` takes `parallel: { minSheets, concurrency }`. Test fixtures default to a single
 conversation; the parallel tests opt in.
 
+## What later reviews learn from earlier ones
+
+Three records carry the reviewer's and the firm's knowledge into later reviews. None of them is
+evidence: the current drawings and governing sources still establish every finding.
+
+- **Finding decisions.** The reviewer marks a finding valid, false alarm, not applicable or
+  duplicate, with a reason. Follow-ups in the conversation receive findings with their decisions.
+  The prompt tells the model not to raise a dismissed issue again unless the current sources show
+  something the reason did not consider. Sheet reviewers get their sheet's findings with
+  decisions, and the coordinator's finding list includes each decision.
+- **Firm checklist.** Saved in Review settings and frozen into each review at start. Packet prompt
+  `moke-packet-review-v5` appends it after the requested scope, so reviews with and without a
+  checklist share every cached token before it, and the coordinator and sheet reviewers receive the
+  same text. A deviation is a Recommendation unless a verified governing source makes it a code,
+  permit or agency finding.
+- **Jurisdiction leads.** The first `record_project` call that names a jurisdiction returns
+  sources, citations, recorded code editions and agency comments from earlier reviews in the same
+  state or county/city, in other conversations. The result labels them as leads; the model reads a
+  source again before citing it. The review records which earlier reviews were offered.
+
+The [firm memory decision](firm-memory-plan.md) explains why MOKE stops here for now.
+
 ## Future continuation of an existing run
 
 Transfer application state at a safe boundary rather than migrating live process memory:

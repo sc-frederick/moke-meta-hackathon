@@ -6,7 +6,7 @@ the upstream paths and SHA-256 hashes. Read the original skill repository to
 update them; this application does not edit that source repository.
 
 `review-prompt.ts` imports the files with Bun's text loader, embedding them in the
-compiled backend. Packet review version `moke-packet-review-v4` supplies the full
+compiled backend. Packet review version `moke-packet-review-v5` supplies the full
 master AGENTS.md and REVIEW_METHOD.md, including Report and release, as Pi
 Durable's conversation `agent.instructions`. The reviewer request and document
 inventory are separate input data. Each run records the prompt version and
@@ -104,3 +104,10 @@ The tool boundary requires current-run inspection of every source page, targeted
 inspection at the claimed location, an explicit source search and permit-stage
 basis. This is an evidence gate, not proof that model interpretation is correct;
 live acceptance still checks the visible source against the released finding.
+
+Packet review `moke-packet-review-v5` adds two host-written blocks. One tells the
+model how to treat the reviewer's finding decisions in follow-ups. The other,
+present only when the firm saved a checklist, is the checklist text under the
+heading "Firm review checklist, revision N". It comes last, after the requested
+scope, so reviews with and without a checklist share the cached prefix. The
+upstream skill files are unchanged.

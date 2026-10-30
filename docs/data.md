@@ -78,6 +78,25 @@ requires every discipline and pass, including reasons for Not applicable entries
 Shutdown and startup classify a review as uncertain while any admitted attempt
 has no completed receipt; reopening never retries that request automatically.
 
+A reviewer's decision on a packet finding (valid, false alarm, not applicable or
+duplicate, with an optional reason and the time) is saved on the finding with the
+same version check as completion. Model tools cannot set it, and a model update
+to the same issue ID keeps it. Follow-ups copy findings with their decisions.
+
+Migration 0011 adds `firm_checklist_revisions`, the firm's own review checklist.
+Each save appends a revision; rows cannot be updated or deleted, and saving
+checks the revision the reviewer edited. A packet review copies the latest
+non-empty revision into its payload at start, so a resume or cloud run uses the
+checklist the review began with. Saves are refused while the cloud owns the
+workspace, like other local writes.
+
+When `record_project` names a jurisdiction, the host reads project configuration,
+source metadata without text, citations and agency comments from the 200 most
+recent packet reviews in other conversations. It offers those from the same state
+or county/city to the model as leads. The review records which earlier reviews
+were offered and how many items, not the leads themselves; they never become
+this review's sources, citations or prior comments.
+
 Each unresolved prior comment also retains its required revision sheet targets.
 New source revisions advance that target; follow-ups without new sources preserve
 it. The model cannot rewrite this host-owned metadata to close a comment against

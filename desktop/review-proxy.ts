@@ -97,6 +97,9 @@ export const PacketProxy = PacketReviewRpc.toLayer(
       GetPacketReview: (request) => api.GetPacketReview(request).pipe(safe),
       ControlPacketReview: (request) => api.ControlPacketReview(request).pipe(safe),
       CompletePacketFinding: (request) => api.CompletePacketFinding(request).pipe(safe),
+      DecidePacketFinding: (request) => api.DecidePacketFinding(request).pipe(safe),
+      GetFirmChecklist: (request) => api.GetFirmChecklist(request).pipe(safe),
+      SaveFirmChecklist: (request) => api.SaveFirmChecklist(request).pipe(safe),
       ObservePacketReviews: (request) =>
         api.ObservePacketReviews(request).pipe(
           Stream.mapError((cause) =>

@@ -699,6 +699,7 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
     const legacy = { ...unmarked, phase: "dispatching" as const };
     const protocol3 = { ...legacy, workerProtocol: 3 as const };
 
+    // Protocol 2 and 3 workers shipped with packet prompts up to v3.
     const progress = {
       id: recorded.id,
       identity: { ...cloudEngineIdentity, protocol: 2, packetPrompt: "moke-packet-review-v3" },
@@ -820,14 +821,19 @@ test("dispatched protocol-4 results survive the v4 prompt upgrade without admitt
       ),
     ).toThrow();
 
-    for (const phase of ["dispatching", "running"] as const)
-      expect(
-        (
-          await Effect.runPromise(
-            parseCloudWorkerProgress({ ...recorded, phase }, JSON.stringify(prior)),
-          )
-        ).identity.packetPrompt,
-      ).toBe("moke-packet-review-v3");
+    // Protocol 4 workers also shipped with v4 before the current prompt.
+    for (const packetPrompt of ["moke-packet-review-v3", "moke-packet-review-v4"] as const)
+      for (const phase of ["dispatching", "running"] as const)
+        expect(
+          (
+            await Effect.runPromise(
+              parseCloudWorkerProgress(
+                { ...recorded, phase },
+                JSON.stringify({ ...prior, identity: { ...prior.identity, packetPrompt } }),
+              ),
+            )
+          ).identity.packetPrompt,
+        ).toBe(packetPrompt);
 
     const { workerProtocol, ...unmarked } = recorded;
     expect(workerProtocol).toBe(4);
