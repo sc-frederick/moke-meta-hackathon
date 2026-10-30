@@ -321,6 +321,7 @@ async function extractText(id: string, pdfPath: string, firstPage: number, maxCh
     let text = "";
     let lastPage = firstPage - 1;
     let truncated = false;
+    let embedded = false;
 
     for (let pageNumber = firstPage; pageNumber <= pageCount; pageNumber++) {
       const page = await document.getPage(pageNumber);
@@ -334,6 +335,7 @@ async function extractText(id: string, pdfPath: string, firstPage: number, maxCh
         .replace(/ *\n */g, "\n")
         .trim();
 
+      embedded ||= pageText.length > 0;
       const block = `[Page ${pageNumber}]\n${pageText}\n\n`;
 
       // Whole pages only, so a continuation can start at the next page. A single page longer
@@ -356,7 +358,8 @@ async function extractText(id: string, pdfPath: string, firstPage: number, maxCh
       pageCount,
       firstPage,
       lastPage,
-      text: text.trim(),
+      // Page markers alone are not text; a scanned PDF returns none.
+      text: embedded ? text.trim() : "",
       truncated: truncated || lastPage < pageCount,
     });
 

@@ -54,7 +54,11 @@ function sectionEvidence(text: string, section: string) {
   const headings: Array<{ line: number; id: string | null }> = [];
 
   for (const [line, contents] of lines.entries()) {
-    const value = sectionText(contents).replace(/^#{1,6}\s+/u, "");
+    // Florida Statutes pages print the section's page title before its number: "F.S. 553.79 553.79 ...".
+    const value = sectionText(contents)
+      .replace(/^#{1,6}\s+/u, "")
+      .replace(/^f\.s\.\s*(\d+(?:\.\d+)+)\s+(?=\1\b)/u, "");
+
     const explicit = /^(?:section\b|sec\.?\s|article\b|table\b|§)/u.test(value);
 
     const matched = value.match(
