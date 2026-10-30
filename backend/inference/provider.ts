@@ -83,10 +83,27 @@ const ModelNotFound = Schema.fromJsonString(
 async function refusedBeforeGeneration(response: Response) {
   if (retryableStatuses.has(response.status)) return true;
 
-  if (response.status !== 404 || Number(response.headers.get("content-length") ?? 0) > 16384)
-    return false;
+  if (response.status !== 404) return false;
+  const reader = response.clone().body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
 
-  return Option.isSome(Schema.decodeUnknownOption(ModelNotFound)(await response.clone().text()));
+  if (reader) {
+    try {
+      for (let part = await reader.read(); !part.done; part = await reader.read()) {
+        bytes += part.value.length;
+
+        if (bytes > 16384) return false;
+        chunks.push(part.value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+  }
+
+  return Option.isSome(
+    Schema.decodeUnknownOption(ModelNotFound)(Buffer.concat(chunks).toString("utf8")),
+  );
 }
 
 /** Wait before resending a refused request, honouring the provider's Retry-After seconds. */

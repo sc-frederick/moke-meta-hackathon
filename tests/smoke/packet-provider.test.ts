@@ -439,11 +439,13 @@ test.each([true, false])(
 );
 
 test.each([
-  ["model_not_found", 2, "stop"],
-  ["unknown_route", 1, "error"],
+  ["model_not_found", 0, 2, "stop"],
+  ["unknown_route", 0, 1, "error"],
+  // An unbounded body is never buffered to decide; it fails like any other 404.
+  ["model_not_found", 20_000, 1, "error"],
 ] as const)(
-  "a Meta 404 %s refusal is resent only when nothing was generated",
-  async (code, requests, stopReason) => {
+  "a Meta 404 %s refusal with %p padding bytes is resent only when nothing was generated",
+  async (code, padding, requests, stopReason) => {
     let sent = 0;
 
     const admitted = createAdmittedModels(
@@ -455,12 +457,23 @@ test.each([
         transport: async () => {
           sent++;
 
-          return sent === 1
-            ? Response.json(
-                { error: { code, message: "The requested model was not found." } },
-                { status: 404, headers: { "retry-after": "1" } },
-              )
-            : response("meta");
+          if (sent > 1) return response("meta");
+
+          const body = JSON.stringify({
+            error: { code, message: "The requested model was not found." },
+            padding: "x".repeat(padding),
+          });
+
+          // A streamed body has no Content-Length, so only the bytes read can bound it.
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(body));
+                controller.close();
+              },
+            }),
+            { status: 404, headers: { "retry-after": "1", "content-type": "application/json" } },
+          );
         },
       },
       {
