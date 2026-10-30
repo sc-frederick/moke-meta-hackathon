@@ -57,6 +57,22 @@
   const extendedBudget = $derived(review.admittedCalls + additionalCalls);
   const cachedShare = $derived(cachedPromptShare(review.promptUsage));
 
+  // Large reviews run setup, one reviewer per sheet, then cross-sheet coordination.
+  const stageLine = $derived.by(() => {
+    if (review.parallel === undefined || review.state !== "running") return null;
+    const { stage, sheets } = review.parallel;
+
+    if (stage === "setup") return "Recording project facts before sheet reviewers start";
+
+    if (stage === "coordination") return "Comparing sheets for cross-sheet conflicts";
+
+    const count = (state: string) => sheets.filter((entry) => entry.state === state).length;
+
+    return `Sheet reviewers: ${count("running")} running · ${count("completed")} of ${sheets.length} finished${
+      count("failed") > 0 ? ` · ${count("failed")} stopped` : ""
+    }`;
+  });
+
   const validAdditionalCalls = $derived(
     Number.isSafeInteger(additionalCalls) &&
       additionalCalls > 0 &&
@@ -252,6 +268,7 @@
       ? ` · ${unsettledRecorded} still ${unsettledRecorded === 1 ? "needs" : "need"} input or a reason`
       : ""}
   </p>
+  {#if stageLine}<p class="muted stage-line">{stageLine}</p>{/if}
   {#if review.summary}<div class="summary">
       <ReviewText
         text={review.summary.length > 500 ? review.summary.slice(0, 500) + "…" : review.summary}
@@ -628,6 +645,9 @@
   .duration,
   .progress {
     color: var(--nd-ink-muted);
+    font-size: 12px;
+  }
+  .stage-line {
     font-size: 12px;
   }
   .eyebrow {

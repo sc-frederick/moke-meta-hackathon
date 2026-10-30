@@ -1027,6 +1027,9 @@
 
   /** Send the preset initial QA request as the reviewer's message, with its fixed settings. */
   async function startInitialReview() {
+    // A local review started elsewhere since the last size check would refuse the cloud transfer.
+    if (cloudSetup?.configured) await refreshWorkspaceEstimate(true);
+
     if (project === null || activeConversation === null || !initialReviewReady) return;
 
     const command = ReviewCommand.cases.PostMessage.make({
