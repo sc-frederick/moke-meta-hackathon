@@ -48,6 +48,12 @@ Implemented 2026-10-30 (cloud worker protocol 4; publish a new worker image befo
 - **Progressive findings** in the cloud card, and the **Initial Review** button
   (`initial-review-v1`).
 
+Live validation on 2026-10-30 is in [fast-initial-review-validation.md](fast-initial-review-validation.md):
+the 29-sheet Brewery set took 14.3 minutes on the Windows app at 91.2% cached and 15.4
+minutes in the cloud at 94.9% cached, and a cloud Send dispatched 5 s after the click.
+It also added two fixes: Meta's intermittent 404 `model_not_found` is resent like a rate
+limit, and result files download eight at a time.
+
 A live probe on 2026-10-30 (one synthetic image, six minimal-reasoning calls, file
 deleted afterwards) answered two open questions below: Meta accepts `file_id` images in
 `function_call_output`, and `prompt_cache_retention: "24h"` is accepted, with the second

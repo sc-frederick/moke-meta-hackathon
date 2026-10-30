@@ -56,7 +56,9 @@ response headers confirmed them for the configured key. Meta reads images return
 in tool results, and accepted 300 small tool-result images in one request.
 HTTP 429 and 529 mean the provider refused the request before generating, so the
 adapter resends it up to six times, honouring `Retry-After` (otherwise backing off
-from 2 seconds up to 60). Other failures are not resent. Large packets review each sheet in its own
+from 2 seconds up to 60). Meta also answers a served model with HTTP 404
+`model_not_found` now and then (1 in 8 requests for one team's key on 2026-10-30);
+nothing is generated, so it is resent the same way. Other failures are not resent. Large packets review each sheet in its own
 conversation; see [parallel packet reviews](review-runtime.md#parallel-packet-reviews).
 
 Baseten
