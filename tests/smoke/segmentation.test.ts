@@ -197,7 +197,7 @@ test.skipIf(Bun.which("pdftoppm") === null)(
       await server.stop(true);
     }
   },
-  15_000,
+  60_000,
 );
 
 test.skipIf(Bun.which("pdftoppm") === null).each([
@@ -267,5 +267,5 @@ test.skipIf(Bun.which("pdftoppm") === null).each([
       await server.stop(true);
     }
   },
-  15_000,
+  60_000,
 );

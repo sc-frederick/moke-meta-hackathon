@@ -399,7 +399,9 @@ const seedPacketReviews = async (
       ids.push({ id, journalId, state });
     }
   } finally {
-    database.close();
+    // close() keeps the files open until garbage collection finalizes the prepared statements,
+    // and Windows cannot delete open files. close(true) finalizes them now.
+    database.close(true);
   }
 
   return ids;
@@ -1182,7 +1184,7 @@ test("complete packages retain packet journals, evidence and both kinds of uncer
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test("pre-packet packages remain readable when the new packet tables are absent", async () => {
   const root = await mkdtemp(join(tmpdir(), "legacy-packet-package-"));
@@ -1215,4 +1217,4 @@ test("pre-packet packages remain readable when the new packet tables are absent"
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);

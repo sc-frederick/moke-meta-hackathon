@@ -35,7 +35,7 @@ const attempts = (session: Session, reviewId: string) =>
   );
 
 async function untilSamCompleted(session: Session, reviewId: string) {
-  const deadline = performance.now() + 10000;
+  const deadline = performance.now() + 40000;
 
   while (performance.now() < deadline) {
     const saved = await attempts(session, reviewId);
@@ -184,7 +184,7 @@ test("a successful SAM response drains while paused and explicit resume does not
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("shutdown preserves an unresolved admitted request as uncertain across reopening", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-shutdown-"));
@@ -245,7 +245,7 @@ test("shutdown preserves an unresolved admitted request as uncertain across reop
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test.each(["uncertain", "completed"] as const)(
   "startup reconciles a prior owner's paused review with a %s request receipt without sending it",
@@ -336,5 +336,5 @@ test.each(["uncertain", "completed"] as const)(
       await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );

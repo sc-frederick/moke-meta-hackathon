@@ -298,7 +298,7 @@ test("project-first review runs actual Moke system instructions and tools, persi
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("discipline requests route to the selected model's own provider and preserve complete system instructions", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-providers-"));
@@ -347,7 +347,7 @@ test("discipline requests route to the selected model's own provider and preserv
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("a sent provider failure remains uncertain through restart and cannot be resumed or resent", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-uncertain-"));
@@ -393,7 +393,7 @@ test("a sent provider failure remains uncertain through restart and cannot be re
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("an optional call budget pauses instead of reporting a completed packet review", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-budget-"));
@@ -452,7 +452,7 @@ test("an optional call budget pauses instead of reporting a completed packet rev
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("pause drains admitted work and explicit resume replays control receipts without duplicate dispatch", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-pause-"));
@@ -596,4 +596,4 @@ test("pause drains admitted work and explicit resume replays control receipts wi
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);

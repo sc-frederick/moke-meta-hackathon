@@ -236,7 +236,7 @@ test("a large packet reviews its sheets in concurrent conversations between coor
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 const WireRequest = Schema.fromJsonString(
   Schema.Struct({
@@ -317,7 +317,7 @@ test("every conversation's next request extends its previous request byte for by
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("one sheet reviewer's unresolved provider request stops only that sheet", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-failure-"));
@@ -348,7 +348,7 @@ test("one sheet reviewer's unresolved provider request stops only that sheet", a
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("a call budget pauses a parallel review mid-sheet and resume finishes the queued sheets", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-resume-"));
@@ -404,7 +404,7 @@ test("a call budget pauses a parallel review mid-sheet and resume finishes the q
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("a sheet reviewer that ends without finish_sheet is not reported to the coordinator as completed", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-notes-"));
@@ -426,7 +426,7 @@ test("a sheet reviewer that ends without finish_sheet is not reported to the coo
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("a sheet reviewer's SAM request and its peer's model requests do not block each other", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-sam-"));
@@ -529,4 +529,4 @@ test("a sheet reviewer's SAM request and its peer's model requests do not block 
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);

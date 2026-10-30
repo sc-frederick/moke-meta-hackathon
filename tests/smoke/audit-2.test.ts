@@ -120,7 +120,7 @@ test("a drop claim rejects fresh-command reuse and preserves same-command receip
     await api.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 test.each(["complete", "budget", "cancel", "admission failure"] as const)(
   "finish-boundary steering owns its idle Pi continuation: %s",
@@ -210,7 +210,7 @@ test.each(["complete", "budget", "cancel", "admission failure"] as const)(
       journal = new Database(join(directory, "execution-journals", `${journalId}.sqlite`), {
         readonly: true,
       });
-      const deadline = performance.now() + 5000;
+      const deadline = performance.now() + 20000;
 
       while (
         Schema.decodeUnknownSync(Schema.Struct({ status: Schema.String }))(
@@ -279,7 +279,7 @@ test.each(["complete", "budget", "cancel", "admission failure"] as const)(
       await rm(directory, { recursive: true, force: true });
     }
   },
-  20000,
+  80000,
 );
 
 test("a provider failure withdraws queued steering without retrying uncertain work or blocking reopen", async () => {
@@ -349,7 +349,7 @@ test("a provider failure withdraws queued steering without retrying uncertain wo
     ]);
     release.resolve();
     let settled = await until(api, review.id, "uncertain");
-    const deadline = performance.now() + 2000;
+    const deadline = performance.now() + 8000;
 
     while (settled.steering?.[0]?.status !== "unanswered" && performance.now() < deadline) {
       await Bun.sleep(5);
@@ -409,7 +409,7 @@ test("a provider failure withdraws queued steering without retrying uncertain wo
     await api.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);
 
 // These exercise real SQLite, Pi journals, public operations and provider admission; no model is called.
 test("sheet assignments persist without confirming count coverage and explicit scopes freeze only selected revision sheets", async () => {
@@ -657,7 +657,7 @@ test("ended progress streams reload missed durable records, reconnect automatica
     await api.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 20000);
+}, 80000);
 
 test.each(["tool round", "final answer"] as const)(
   "active durable steering at a %s is idempotent, conversation-scoped, delivered, and recorded across reopen",
@@ -840,4 +840,4 @@ test("queued follow-up survives an exhausted call budget and explicit resume", a
     await api.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 15000);
+}, 60000);

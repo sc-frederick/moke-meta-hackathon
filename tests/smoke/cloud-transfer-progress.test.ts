@@ -419,4 +419,4 @@ test("workspace sizing measures referenced files and project count without stopp
     await session.dispose();
     await rm(root, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);

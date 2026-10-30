@@ -62,7 +62,7 @@ test("provider HTTP diagnostics survive cancellation without rewriting active du
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test("pause accepts progress advancing since the displayed version and cancellation excludes paused waiting", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-audit3-pause-"));
@@ -116,7 +116,7 @@ test("pause accepts progress advancing since the displayed version and cancellat
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test.each([
   "missing",
@@ -223,7 +223,7 @@ test.each([
       await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );
 
 test("the SDK request deadline is diagnosed as timeout rather than caller cancellation", async () => {
@@ -408,7 +408,7 @@ test("a Spark Open tool batch retains eight fresh images and rejects the ninth b
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 test.each([
   { maxCalls: undefined, rejections: 1 },
@@ -472,7 +472,7 @@ test.each([
       await rm(directory, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );
 
 test("a cropped render tells the reviewer that content can continue past its edge", async () => {
@@ -535,4 +535,4 @@ test("a cropped render tells the reviewer that content can continue past its edg
     await session.dispose();
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);

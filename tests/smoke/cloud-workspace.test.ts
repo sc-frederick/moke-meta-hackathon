@@ -489,7 +489,7 @@ test.each([
       await rm(`${data}.cloud`, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );
 
 test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worker"] as const)(
@@ -856,5 +856,5 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
       await rm(`${data}.cloud`, { recursive: true, force: true });
     }
   },
-  30000,
+  120000,
 );

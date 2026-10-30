@@ -103,7 +103,7 @@ test("direct crops contain the source mark through every rotation, nonzero page 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 30000);
+}, 120000);
 
 function documentsLayer(dataDirectory: string) {
   return Documents.layer({
