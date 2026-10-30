@@ -178,6 +178,25 @@ const changeStage = (review: PacketReview, stage: "sheets" | "coordination") =>
     ? review
     : new PacketReview(Struct.assign(review, { parallel: { ...review.parallel, stage } }));
 
+// A technical finding written after finish_sheet requires fresh presentation and notes.
+const invalidateSheetNotes = (review: PacketReview, sheetId: string) =>
+  review.parallel === undefined
+    ? review
+    : new PacketReview({
+        ...review,
+        parallel: {
+          ...review.parallel,
+          sheets: review.parallel.sheets.map((entry) =>
+            entry.sheetId === sheetId
+              ? {
+                  ...Struct.omit(entry, ["notes"]),
+                  state: entry.state === "completed" ? ("running" as const) : entry.state,
+                }
+              : entry,
+          ),
+        },
+      });
+
 const error = (reason: ExecutionError["reason"], message: string) =>
   new ExecutionError({ reason, message });
 
@@ -207,6 +226,50 @@ const Text = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(32000))
 const Id = Schema.String.check(Schema.isUUID());
 const ToolResult = Schema.Struct({ value: Schema.Json });
 const PriorCommentInput = PacketPriorComment.mapFields(Struct.omit(["revisionTargetSheetIds"]));
+
+// Both technical text and its display summary use the same missing-content evidence gate.
+const requireAbsenceSupport = (
+  review: PacketReview,
+  finding: Pick<typeof PacketFinding.Type, "title" | "observed" | "locations" | "absenceCheck">,
+) => {
+  const claimsAbsence =
+    /\b(?:missing|absent|omitted|not (?:provided|supplied|included|shown|present|located|found)|(?:could|can) ?not (?:locate|find)|unable to (?:locate|find)|lacks|lacking|truncated|clipped|cut off|does not (?:contain|include|show)|no .{0,70}(?:provided|shown|included|calculations?|matri(?:x|ces)|schedules?|tables?))\b/i.test(
+      `${finding.title} ${finding.observed}`,
+    );
+
+  if (claimsAbsence) {
+    const check = finding.absenceCheck;
+
+    if (
+      !check ||
+      review.sheets.some(
+        (sheet) =>
+          !check.searchedSheetIds.includes(sheet.id) ||
+          !(review.inspectedThisReviewSheetIds ?? []).includes(sheet.id),
+      )
+    )
+      throw error(
+        "input",
+        "Before claiming missing content, inspect every frozen source page in this review and provide absenceCheck with searchedSheetIds, searchDescription, contradictingEvidence and permitStageBasis. Read calculations, schedules and matrices at detail scale; otherwise record Needs input without claiming absence.",
+      );
+
+    if (
+      !finding.locations.some((location) =>
+        (review.detailInspectedSheetIds ?? []).includes(location.sheetId),
+      )
+    )
+      throw error(
+        "input",
+        "A missing-content claim needs a targeted source detail inspection at its actual file and page location.",
+      );
+
+    if (check.contradictingEvidence.trim())
+      throw error(
+        "input",
+        "Source content contradicts this absence claim. Describe the supplied content and any specific inadequacy instead of recording it as missing.",
+      );
+  }
+};
 
 type Runtime = {
   harness: Harness;
@@ -1108,43 +1171,7 @@ export class PacketReviews extends Context.Service<
                         "Finding evidence must come from this packet's inspected source regions.",
                       );
 
-                    const claimsAbsence =
-                      /\b(?:missing|absent|omitted|not (?:provided|supplied|included|shown|present|located|found)|(?:could|can) ?not (?:locate|find)|unable to (?:locate|find)|lacks|lacking|truncated|clipped|cut off|does not (?:contain|include|show)|no .{0,70}(?:provided|shown|included|calculations?|matri(?:x|ces)|schedules?|tables?))\b/i.test(
-                        `${finding.title} ${finding.observed}`,
-                      );
-
-                    if (claimsAbsence) {
-                      const check = finding.absenceCheck;
-
-                      if (
-                        !check ||
-                        review.sheets.some(
-                          (sheet) =>
-                            !check.searchedSheetIds.includes(sheet.id) ||
-                            !(review.inspectedThisReviewSheetIds ?? []).includes(sheet.id),
-                        )
-                      )
-                        throw error(
-                          "input",
-                          "Before claiming missing content, inspect every frozen source page in this review and provide absenceCheck with searchedSheetIds, searchDescription, contradictingEvidence and permitStageBasis. Read calculations, schedules and matrices at detail scale; otherwise record Needs input without claiming absence.",
-                        );
-
-                      if (
-                        !finding.locations.some((location) =>
-                          (review.detailInspectedSheetIds ?? []).includes(location.sheetId),
-                        )
-                      )
-                        throw error(
-                          "input",
-                          "A missing-content claim needs a targeted source detail inspection at its actual file and page location.",
-                        );
-
-                      if (check.contradictingEvidence.trim())
-                        throw error(
-                          "input",
-                          "Source content contradicts this absence claim. Describe the supplied content and any specific inadequacy instead of recording it as missing.",
-                        );
-                    }
+                    requireAbsenceSupport(review, finding);
 
                     if (!finding.evidenceIds.length && !finding.evidenceNote.trim())
                       throw error(
@@ -1168,11 +1195,19 @@ export class PacketReviews extends Context.Service<
                         "An unsupported regulatory claim must remain Needs input until its governing source is verified.",
                       );
 
-                    return new PacketReview({
+                    const updated = new PacketReview({
                       ...review,
                       finished: false,
                       findings: upsert(review.findings, finding),
                     });
+
+                    return Match.value(summary).pipe(
+                      Match.tagsExhaustive({
+                        Pending: () =>
+                          sheetId === null ? updated : invalidateSheetNotes(updated, sheetId),
+                        Ready: () => updated,
+                      }),
+                    );
                   },
                   { id, summary },
                 );
@@ -1195,6 +1230,11 @@ export class PacketReviews extends Context.Service<
                         "input",
                         "The technical finding changed. Read its current id and summary revision before summarizing it.",
                       );
+                    requireAbsenceSupport(review, {
+                      ...finding,
+                      title: input.title,
+                      observed: input.observed,
+                    });
                     const assigned = assignments.sheets.get(api.conversationId);
 
                     if (assigned !== undefined && finding.summary.sheetId !== assigned)
@@ -1879,7 +1919,13 @@ export class PacketReviews extends Context.Service<
 
               const reported = after.parallel?.sheets.find((item) => item.sheetId === sheet.id);
               const stopped = reported?.state === "failed";
-              const notes = reported?.notes;
+
+              const pendingSummaries = after.findings.some(
+                (finding) =>
+                  finding.summary?._tag === "Pending" && finding.summary.sheetId === sheet.id,
+              );
+
+              const notes = pendingSummaries ? undefined : reported?.notes;
 
               await sheetState(
                 sheet.id,

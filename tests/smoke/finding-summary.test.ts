@@ -395,6 +395,11 @@ test.each(["finding-first", "finish-first"] as const)(
     const findingId = id();
     let step = 0;
 
+    const technical =
+      order === "finish-first"
+        ? { title: "x".repeat(32000), observed: "y".repeat(32000), correction: "z".repeat(32000) }
+        : full;
+
     const session = await open(directory, async () => {
       if (step++ !== 0) return response([], "The reviewer stopped without correcting the summary.");
 
@@ -402,7 +407,7 @@ test.each(["finding-first", "finish-first"] as const)(
         name: "record_finding",
         arguments: {
           id: findingId,
-          ...full,
+          ...technical,
           discipline: "general",
           severity: "Minor",
           status: "Needs input",
@@ -432,8 +437,96 @@ test.each(["finding-first", "finish-first"] as const)(
       const failed = await until(session, started.id, "failed");
       expect(failed.finished).toBe(false);
       expect(failed.error).toContain("short summaries remain pending");
-      expect(failed.findings[0]).toMatchObject(full);
+      expect(failed.findings[0]).toMatchObject(technical);
       expect(failed.findings[0]?.summary?._tag).toBe("Pending");
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  120000,
+);
+
+test.each(["muse-spark-1.3", "meta-models/muse-spark-open-1026"] as const)(
+  "%s cannot introduce an unsupported absence claim through a short summary",
+  async (model) => {
+    const directory = await mkdtemp(join(tmpdir(), "moke-summary-evidence-"));
+    const findingId = id();
+    let step = 0;
+    let revision = "";
+
+    const session = await open(directory, async (_url, init) => {
+      const request = decodeRequest(init);
+
+      const reply = (calls: NonNullable<Parameters<typeof response>[0]> = []) =>
+        model === "muse-spark-1.3"
+          ? response(calls)
+          : chatResponse("Summary evidence fixture.", calls);
+
+      switch (step++) {
+        case 0:
+          return reply([{ name: "record_finding", arguments: technicalFinding(findingId) }]);
+        case 1: {
+          const saved = outputs(
+            Schema.Struct({
+              id: Schema.String,
+              summary: Schema.Struct({ revision: Schema.String }),
+            }),
+            request,
+          ).at(-1);
+
+          if (!saved) throw new Error("Missing saved technical finding");
+          revision = saved.summary.revision;
+
+          return reply([
+            {
+              name: "record_finding_summary",
+              arguments: {
+                id: findingId,
+                revision,
+                title: "Panel schedule is missing",
+                observed: "The panel schedule is missing from the drawing set.",
+                correction: "Provide the panel schedule.",
+              },
+            },
+            {
+              name: "finish_review",
+              arguments: { summary: "Attempting to finish.", missingInputs: [] },
+            },
+          ]);
+        }
+
+        case 2:
+          expect(strings(request.input ?? request.messages ?? null).join(" ")).toContain(
+            "Before claiming missing content",
+          );
+
+          return reply([
+            { name: "record_finding_summary", arguments: { id: findingId, revision, ...short } },
+          ]);
+        case 3:
+          return reply([
+            {
+              name: "finish_review",
+              arguments: { summary: "Pressure needs input.", missingInputs: ["Measured pressure"] },
+            },
+          ]);
+        default:
+          return reply();
+      }
+    });
+
+    try {
+      const started = await session.run(
+        session.packets.start(
+          await session.request("Review the service assumptions.", { model, maxCalls: 10 }),
+        ),
+      );
+
+      const completed = await until(session, started.id, "completed");
+      expect(completed.inspectedSheetIds).toHaveLength(0);
+      expect(completed.findings[0]).toMatchObject({ ...full, summary: { ...short, revision } });
+      expect(JSON.stringify(completed.findings)).not.toContain("panel schedule");
     } finally {
       await session.dispose();
       await rm(directory, { recursive: true, force: true });
