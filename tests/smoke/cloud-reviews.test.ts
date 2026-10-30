@@ -699,6 +699,7 @@ test("only unmarked dispatched receipts can recover v2 progress with the complet
     const legacy = { ...unmarked, phase: "dispatching" as const };
     const protocol3 = { ...legacy, workerProtocol: 3 as const };
 
+    // Protocol 2 and 3 workers shipped with packet prompts up to v3.
     const progress = {
       id: recorded.id,
       identity: { ...cloudEngineIdentity, protocol: 2, packetPrompt: "moke-packet-review-v3" },

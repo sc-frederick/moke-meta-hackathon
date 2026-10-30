@@ -444,7 +444,10 @@ test("record_project offers earlier reviews' sources, citations and comments for
           {
             name: "record_project",
             arguments: {
-              values: { jurisdiction: "Manatee County, Florida", permitStage: "Permit set" },
+              values: {
+                jurisdiction: "City of Bradenton, Manatee County, Florida",
+                permitStage: "Permit set",
+              },
             },
           },
         ]),
@@ -455,7 +458,7 @@ test("record_project offers earlier reviews' sources, citations and comments for
     const done = await until(session, second.id, "completed");
 
     // The last request carries every tool result of the second review's conversation once. Only
-    // its first record_project call returned the history.
+    // its first record_project call returned the history, though the second refined the place.
     const last = script.requests.at(-1);
     expect(script.requests.length).toBeGreaterThan(sent);
     const offered = last === undefined ? [] : outputs(ToolOutput, last);

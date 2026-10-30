@@ -1041,7 +1041,7 @@ export class PacketReviews extends Context.Service<
 
                 // Each review looks up a jurisdiction once; repeated calls only record values.
                 const recalled =
-                  jurisdiction === null || current.jurisdictionLeads?.jurisdiction === jurisdiction
+                  jurisdiction === null || current.jurisdictionLeads !== undefined
                     ? null
                     : jurisdictionHistory(
                         jurisdiction,
