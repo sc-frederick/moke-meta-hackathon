@@ -85,6 +85,10 @@ test("desktop proves supported, corrected, unchanged-control, revision, media, a
         if (!(await findings.isVisible()))
           await page.getByRole("button", { name: "Open findings" }).click();
         await expect(findings).toBeVisible();
+        await expect(page.getByRole("button", { name: "Open findings" })).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
       }
 
       await page.evaluate(() => document.fonts.ready);
