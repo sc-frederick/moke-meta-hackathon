@@ -47,5 +47,8 @@ For current behavior, use the setup, architecture, and validation documents abov
 - [Core council findings](research/core-council.md)
 - [Agent harness comparison](research/agent-harness-comparison.md)
 - [Hackathon bonuses](hackathon-bonuses.md)
+- [Firm memory plan](firm-memory-plan.md): proposed, not implemented; with
+  [agent memory research](research/memory-sota-notes.md) and
+  [AEC firm knowledge research](research/aec-firm-knowledge-notes.md)
 - [Project choices and dependency provenance](../.project-kit/manifest.json)
 - [Review prompt provenance](../backend/review/prompts/README.md)
