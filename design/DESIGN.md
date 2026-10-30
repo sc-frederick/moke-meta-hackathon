@@ -26,8 +26,9 @@ layout. Components use the tokens directly; there is no second UI system.
   checkboxes, 8px for dialogs, menus and popovers. Borders are 1px hairlines.
   Only menus, popovers and dialogs use the floating shadow.
 - **Controls.** Buttons are uppercase Inter at 11px: Ember primary, hairline
-  secondary and ghost. Inputs are Slate wells that take an Ember edge and halo
-  on focus. Checkboxes use Forge's clipped tick. Tabs use mono labels with a 2px
+  secondary and ghost, 32px tall in toolbars and rows and 40px in dialogs.
+  Inputs are 40px Slate wells that take an Ember edge and halo on focus; the
+  selects inside sheet rows use the 32px button height so each row lines up. Checkboxes use Forge's clipped tick. Tabs use mono labels with a 2px
   Ember underline.
 - **Icons.** Tabler outline icons only, at a 1.6 stroke (1.8 on Ember buttons).
   `src/lib/review/icons.ts` copies the official paths, and
@@ -41,7 +42,11 @@ layout. Components use the tokens directly; there is no second UI system.
 - Interface chrome is not selectable. Prose, findings, sources and form fields
   remain selectable, and selected text uses Forge's Ember highlight.
 - Focus rings appear only for keyboard focus: a 1px Ember edge with the Forge
-  halo. Mouse clicks do not leave rings behind.
+  halo, kept alongside the Ember bar on current items. Mouse clicks do not leave
+  rings behind.
+- Disabled primary buttons turn neutral; a faded Ember fill reads as brown.
+- Native window chrome follows the dark theme, and scrollbars drop their arrow
+  buttons.
 - The brand mark follows Forge's mono letter in an Ember square.
 - Header actions that would crowd the breadcrumb become icon buttons below
   1180px wide.

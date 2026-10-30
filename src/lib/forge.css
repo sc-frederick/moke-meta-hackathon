@@ -146,9 +146,29 @@ img {
   box-shadow: var(--shadow-focus-ring);
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+/* Chromium ignores these pseudo-elements when scrollbar-width or scrollbar-color is set. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--color-border-strong) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ash-soft);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
 }
 
 a {
@@ -202,7 +222,7 @@ kbd {
   select,
   textarea
 ) {
-  min-height: 32px;
+  min-height: 40px;
   padding: 0 var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -379,7 +399,7 @@ kbd {
 }
 
 :where(dialog)::backdrop {
-  background: rgb(0 0 0 / 0.6);
+  background: rgb(0 0 0 / 0.75);
 }
 
 /* Buttons. Sizes follow Forge: sm 32px with label-sm type, md 40px. */
@@ -425,6 +445,14 @@ kbd {
 
 .btn.primary:focus-visible {
   box-shadow: var(--shadow-focus-ring);
+}
+
+/* A faded Ember fill reads as a second, brown accent, so disabled primaries go neutral. */
+.btn.primary:disabled {
+  border-color: var(--color-border);
+  background: var(--color-slate);
+  color: var(--color-text-muted);
+  opacity: 1;
 }
 
 .btn.ghost-btn {
@@ -475,8 +503,8 @@ kbd {
   flex-shrink: 0;
   align-items: center;
   gap: var(--space-2xs);
-  height: 20px;
-  padding: 0 6px;
+  height: 22px;
+  padding: 0 var(--space-xs);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);

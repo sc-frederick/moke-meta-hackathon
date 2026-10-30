@@ -29,7 +29,7 @@
   function positionMenu() {
     if (!trigger || !menu) return;
     const anchor = trigger.getBoundingClientRect();
-    const width = Math.min(Math.max(anchor.width, 240), window.innerWidth - 24);
+    const width = Math.min(Math.max(anchor.width, 300), window.innerWidth - 24);
     const height = Math.min(menu.scrollHeight, window.innerHeight - 24, 320);
     menu.style.width = `${width}px`;
     menu.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12))}px`;

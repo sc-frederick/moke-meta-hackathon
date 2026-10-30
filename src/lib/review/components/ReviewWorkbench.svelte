@@ -2382,7 +2382,7 @@
                   {#if message.role === "reviewer"}<span class="user-mark">S</span
                     >{:else}{@render mark(20)}{/if}<strong
                     >{message.role === "reviewer" ? "You" : "MOKE"}</strong
-                  >{#if message.origin}<span class="message-provenance"
+                  >{#if message.origin}<span class="message-provenance selectable"
                       >Inspection · {message.origin.discipline?.replaceAll("_", " ") ??
                         "general"}</span
                     >{/if}
@@ -2909,7 +2909,7 @@
                     notice = "Review area selected. Confirm its count below.";
                   }}
                 />{/if}
-              {#if previewedSheet && sourceArtifact}<div class="source-provenance">
+              {#if previewedSheet && sourceArtifact}<div class="source-provenance selectable">
                   <strong>{previewedSheet.label}</strong><span
                     >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page
                     {previewedSheet.pageIndex + 1} · {sourceArtifact.dpi} DPI</span
@@ -2966,7 +2966,7 @@
                   masks={focusMasks}
                   label="Original source render"
                 />{/if}
-              <div class="source-provenance">
+              <div class="source-provenance selectable">
                 <strong>{previewedSheet.label}</strong><span
                   >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
                     1}{sourceIsCrop ? " · partial view of this page" : ""}</span
@@ -3216,14 +3216,18 @@
     border-bottom: 1px solid var(--color-border);
   }
   .menu-section-label {
-    margin: var(--space-xs) 0 0;
-    padding: var(--space-sm) var(--space-sm) var(--space-2xs);
-    border-top: 1px solid var(--color-border);
+    margin: 0;
+    padding: var(--space-xs) var(--space-sm) var(--space-2xs);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
     font-size: var(--text-label-sm);
     letter-spacing: var(--tracking-wider);
     text-transform: uppercase;
+  }
+  .menu-section-label:not(:first-child) {
+    margin-top: var(--space-xs);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-border);
   }
   .review-scope {
     font-size: var(--text-mono-sm);
@@ -3328,6 +3332,11 @@
     color: var(--color-text);
     box-shadow: inset 2px 0 0 var(--color-ember);
   }
+  .threads button.current:focus-visible {
+    box-shadow:
+      inset 2px 0 0 var(--color-ember),
+      var(--shadow-focus-ring);
+  }
   .sidebar-footer {
     margin-top: auto;
     padding-top: var(--space-lg);
@@ -3340,7 +3349,7 @@
     width: 6px;
     height: 6px;
     flex-shrink: 0;
-    border-radius: var(--radius-full);
+    border-radius: 1px;
     border: 1px solid var(--color-ash);
   }
   .connection-dot.connected {
@@ -3720,11 +3729,8 @@
     background: var(--color-ember);
   }
   .source-tabs button:focus-visible {
-    box-shadow: none;
+    border-radius: var(--radius-sm);
     color: var(--color-text);
-  }
-  .source-tabs button:focus-visible::after {
-    background: var(--color-ember);
   }
   .source-scroll {
     flex: 1;
@@ -3819,6 +3825,11 @@
   }
   .finding-row.selected {
     box-shadow: inset 2px 0 0 var(--color-ember);
+  }
+  .finding-row.selected:focus-visible {
+    box-shadow:
+      inset 2px 0 0 var(--color-ember),
+      var(--shadow-focus-ring);
   }
   .finding-row > :global(svg) {
     color: var(--color-text-muted);
@@ -4332,7 +4343,7 @@
     gap: var(--space-sm);
     padding: 40px 20px;
     margin-top: 20px;
-    border: 1px dashed var(--color-border-strong);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-slate);
     color: var(--color-text-muted);

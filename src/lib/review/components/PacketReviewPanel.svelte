@@ -827,8 +827,8 @@
     order: 0;
     display: inline-flex;
     align-items: center;
-    height: 20px;
-    padding: 0 6px;
+    height: 22px;
+    padding: 0 var(--space-xs);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);

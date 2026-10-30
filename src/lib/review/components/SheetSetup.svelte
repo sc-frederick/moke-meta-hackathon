@@ -291,7 +291,7 @@
                 aria-label={`Preview ${sheet.label}`}
                 onclick={() => onPreview(sheet)}><SheetThumbnail {sheet} {loadThumbnail} /></button
               >{/if}
-            <span class="sheet-identity" title={sheetCaption(sheet)}
+            <span class="sheet-identity selectable" title={sheetCaption(sheet)}
               ><strong>{sheet.label}</strong><small
                 >Original PDF page {sheet.pageIndex + 1}{!sheet.confirmed
                   ? " · label unverified"
@@ -615,8 +615,11 @@
     color: var(--color-text-muted);
     font-size: var(--text-mono-sm);
   }
-  .sheet-row select {
+  /* Row controls stay at the 32px small-button height so each sheet row lines up. */
+  .sheet-row select,
+  .bulk-actions select {
     min-width: 0;
+    min-height: 32px;
   }
   .sheet-row.with-thumbnail {
     grid-template-columns: 18px 32px minmax(90px, 1fr) minmax(110px, 150px) auto;

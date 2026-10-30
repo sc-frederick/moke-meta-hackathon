@@ -425,6 +425,11 @@
     background: var(--color-slate);
     box-shadow: inset 2px 0 0 var(--color-ember);
   }
+  .sheet-option[aria-current="page"]:focus-visible {
+    box-shadow:
+      inset 2px 0 0 var(--color-ember),
+      var(--shadow-focus-ring);
+  }
   .viewport {
     position: relative;
     flex: 1;
