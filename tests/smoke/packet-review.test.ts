@@ -340,6 +340,9 @@ test("discipline requests route to the selected model's own provider and preserv
       );
       expect(sent?.prompt).toContain("# Electrical review");
       expect(sent?.prompt).toContain("## Report and release");
+      expect(sent?.prompt).toContain("## Short, actionable findings");
+      expect(sent?.prompt).toContain("C1 post count cannot be compared");
+      expect(sent?.prompt).toContain("Keep unresolved evidence as Needs input.");
       expect(sent?.prompt).not.toContain("# Structural review");
       expect(sent?.prompt).not.toContain("ONE selected count finding");
     }

@@ -187,6 +187,10 @@ test.each([
                   legacyPhase !== null && record.workerProtocol === undefined
                     ? 2
                     : cloudEngineIdentity.protocol,
+                packetPrompt:
+                  legacyPhase !== null && record.workerProtocol === undefined
+                    ? "moke-packet-review-v3"
+                    : cloudEngineIdentity.packetPrompt,
               },
               phase: remotelyReady ? "ready" : "running",
               execution: null,
@@ -643,6 +647,10 @@ test.each(["legacy", "whole_set", "selected_sheets", "discipline", "legacy_worke
                   scopeMode === "legacy_worker" && record.workerProtocol === undefined
                     ? 2
                     : cloudEngineIdentity.protocol,
+                packetPrompt:
+                  scopeMode === "legacy_worker" && record.workerProtocol === undefined
+                    ? "moke-packet-review-v3"
+                    : cloudEngineIdentity.packetPrompt,
               },
               phase: ready ? "ready" : "running",
             }),

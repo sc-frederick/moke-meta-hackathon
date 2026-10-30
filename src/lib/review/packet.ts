@@ -10,6 +10,7 @@ import {
 } from "./execution.ts";
 import { ReviewModelId } from "./models.ts";
 import { ReviewPreset } from "./initial-review.ts";
+import { FindingSummaryText } from "./finding-summary.ts";
 
 const Text = Schema.Trim.check(Schema.isMaxLength(32000));
 const Required = Text.check(Schema.isMinLength(1));
@@ -96,6 +97,16 @@ export const PacketCalculation = Schema.Struct({
   explanation: Required,
 });
 
+/** Durable presentation state is tied to one version of the complete technical finding. */
+export const PacketFindingSummary = Schema.Union([
+  Schema.TaggedStruct("Pending", { revision: Id, sheetId: Schema.NullOr(SheetId) }),
+  Schema.TaggedStruct("Ready", {
+    revision: Id,
+    sheetId: Schema.NullOr(SheetId),
+    ...FindingSummaryText.fields,
+  }),
+]).pipe(Schema.toTaggedUnion("_tag"));
+
 /** General review issues retain evidence and remain distinct from reviewer completion tracking. */
 export const PacketFinding = Schema.Struct({
   id: Id,
@@ -121,6 +132,8 @@ export const PacketFinding = Schema.Struct({
   calculationIds: Schema.Array(Id),
   priorCommentId: Schema.NullOr(Id),
   completed: Schema.Boolean,
+  /** Host-owned presentation state; full technical fields above are never shortened. */
+  summary: Schema.optionalKey(PacketFindingSummary),
   /** Missing-content claims retain the complete source search and contradiction check. */
   absenceCheck: Schema.optionalKey(
     Schema.Struct({
@@ -131,6 +144,13 @@ export const PacketFinding = Schema.Struct({
     }),
   ),
 });
+
+/** Present the validated summary when available, retaining historical findings verbatim. */
+export function packetFindingText(
+  finding: typeof PacketFinding.Type,
+): Pick<typeof PacketFinding.Type, "title" | "observed" | "correction"> {
+  return finding.summary?._tag === "Ready" ? finding.summary : finding;
+}
 
 /** Prior comments require source-based closure independently of a user's completion checkbox. */
 export const PacketPriorComment = Schema.Struct({
@@ -171,6 +191,7 @@ export const PacketActivityTool = Schema.Literals([
   "record_coverage_batch",
   "record_citation",
   "record_finding",
+  "record_finding_summary",
   "record_prior_comment",
   "ask_reviewer",
   "finish_review",

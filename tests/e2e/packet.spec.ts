@@ -8,7 +8,7 @@ import { Effect, Schema, Struct } from "effect";
 import { CloudReviewRecord } from "../../backend/cloud/contracts.ts";
 import { writeCloudState } from "../../backend/cloud/files.ts";
 import { Artifact, Project, Revision, ReviewMessage, Sheet } from "#lib/review/contracts.ts";
-import { PacketReview, PacketScope, ReviewPass } from "#lib/review/packet.ts";
+import { PacketReview, PacketScope, ReviewPass, PacketFindingSummary } from "#lib/review/packet.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { installRpcBoundary } from "./rpc-boundary.ts";
 
@@ -284,6 +284,16 @@ test("document QA needs no count check and persisted findings support evidence, 
     await panel.getByText("Sheet coverage and review records", { exact: true }).click();
     const finding = page.getByTestId(`packet-finding-${seeded.findingId}`);
     await finding.click();
+    const detail = page.getByTestId("selected-packet-finding");
+    await expect(
+      detail.getByRole("heading", { name: seeded.findingTitle, exact: true }),
+    ).toBeVisible();
+    await expect(detail.getByText(seeded.shortObservation, { exact: true })).toBeVisible();
+    await expect(detail.getByText(seeded.technicalObservation, { exact: true })).not.toBeVisible();
+    await detail.getByText("Full technical finding", { exact: true }).click();
+    await expect(detail.getByText(seeded.technicalObservation, { exact: true })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("concise-finding-full-details.png") });
+    await detail.getByText("Full technical finding", { exact: true }).click();
     await expect(
       page.getByRole("region", { name: "Original source render" }).locator("img"),
     ).toBeVisible();
@@ -588,6 +598,13 @@ function seedCompletedReview(directory: string) {
     ).toHaveLength(0);
     const findingId = crypto.randomUUID();
     const findingTitle = "Governing source information is missing";
+
+    const shortObservation =
+      "The source fixture does not establish the jurisdiction or permit stage.";
+
+    const technicalObservation =
+      `${shortObservation} ${"Full technical context, assumptions and source qualifications remain available for review. ".repeat(8)}`.trim();
+
     const now = Date.now();
 
     const review = Schema.decodeUnknownSync(PacketReview)({
@@ -666,7 +683,7 @@ function seedCompletedReview(directory: string) {
       findings: [
         {
           id: findingId,
-          title: findingTitle,
+          title: `${findingTitle}: complete source context and permit-stage assumptions retained for review`,
           discipline: "general",
           severity: "Minor",
           status: "Needs input",
@@ -678,7 +695,7 @@ function seedCompletedReview(directory: string) {
               region: { x: 80, y: 80, width: 210, height: 180 },
             },
           ],
-          observed: "The source fixture does not establish the jurisdiction or permit stage.",
+          observed: technicalObservation,
           correction:
             "Supply jurisdiction and permit-stage information before drawing regulatory conclusions.",
           evidenceIds: [image.id],
@@ -688,6 +705,14 @@ function seedCompletedReview(directory: string) {
           calculationIds: [],
           priorCommentId: null,
           completed: false,
+          summary: PacketFindingSummary.cases.Ready.make({
+            revision: crypto.randomUUID(),
+            sheetId: null,
+            title: findingTitle,
+            observed: shortObservation,
+            correction:
+              "Supply jurisdiction and permit-stage information before drawing regulatory conclusions.",
+          }),
         },
       ],
       priorComments: [],
@@ -753,7 +778,7 @@ function seedCompletedReview(directory: string) {
         findings: [
           firstFinding,
           {
-            ...firstFinding,
+            ...Struct.omit(firstFinding, ["summary"]),
             id: secondFindingId,
             title: "Second source finding",
             evidenceIds: [],
@@ -766,7 +791,7 @@ function seedCompletedReview(directory: string) {
             ],
           },
           {
-            ...firstFinding,
+            ...Struct.omit(firstFinding, ["summary"]),
             id: crypto.randomUUID(),
             title: "Missing project inputs",
             evidenceIds: [],
@@ -829,6 +854,8 @@ function seedCompletedReview(directory: string) {
       findingId,
       secondFindingId,
       findingTitle,
+      shortObservation,
+      technicalObservation,
       conversationId: message.conversationId,
       cloud,
       previousSummary,

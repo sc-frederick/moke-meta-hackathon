@@ -86,12 +86,18 @@
     "heroCase": "docs/fixtures/hero-case.md",
     "primaryDemoPlatform": "linux-x64",
     "promptInstructions": {
-      "version": "moke-packet-review-v1",
+      "version": "moke-packet-review-v4",
       "source": "https://github.com/sc-frederick/skills/tree/8a0e2648738018631eaa6d24ee0b6ebaa239afb1/moke-review",
       "provenance": "backend/review/prompts/provenance.json",
       "scope": "Whole supplied packet or selected discipline with explicit coverage, governing sources, findings and offline HTML report",
       "legacyCountVersion": "moke-selected-coordination-v2",
-      "systemPrompt": "Pi Durable conversation agent.instructions with full master, shared method and applicable discipline files"
+      "systemPrompt": "Pi Durable conversation agent.instructions with full master, shared method and applicable discipline files",
+      "findingStyle": {
+        "instructions": "backend/review/prompts/finding-style.md",
+        "contract": "src/lib/review/finding-summary.ts",
+        "examples": "docs/research/meta-vs-sonnet-unslop-findings.md",
+        "purpose": "Validated short display summaries with complete technical findings retained"
+      }
     },
     "packetReview": {
       "entrypoint": "backend/packet-review/service.ts",

@@ -77,7 +77,7 @@ function calls(input: typeof Schema.Json.Type | undefined) {
  * must run concurrently and one in-flight attempt cannot block the other.
  */
 function script(
-  failing: "none" | "second-sheet" | "second-sheet-without-notes",
+  failing: "none" | "second-sheet" | "second-sheet-without-notes" | "pending-summary",
   // Only the concurrency test holds requests; elsewhere a peer may never arrive to release it.
   holdUntilBoth = false,
 ) {
@@ -101,6 +101,10 @@ function script(
     const request = decodeRequest(init);
     const prompt = systemPrompt(request);
     const made = calls(request.input);
+    expect(prompt).toContain("## Short, actionable findings");
+    expect(prompt).toContain(
+      "Do not copy example facts, findings or corrections into a review without support.",
+    );
 
     if (request.prompt_cache_retention !== undefined)
       observed.retention.add(request.prompt_cache_retention);
@@ -149,6 +153,29 @@ function script(
 
       if (!made.includes("record_coverage_batch")) return response([coverage(own)]);
 
+      if (failing === "pending-summary" && !made.includes("record_finding"))
+        return response([
+          {
+            name: "record_finding",
+            arguments: {
+              title: "Pressure assumptions need confirmation",
+              discipline: "general",
+              severity: "Minor",
+              status: "Needs input",
+              classification: "Recommendation",
+              locations: [{ sheetId: own, detail: "Source assumptions", region: null }],
+              observed:
+                "Pressure data needs confirmation. The installation scope is still uncertain.",
+              correction: "Provide the measured pressure before sizing.",
+              evidenceIds: [],
+              evidenceNote: "Original source context is retained for the reviewer.",
+              citationIds: [],
+              calculationIds: [],
+              priorCommentId: null,
+            },
+          },
+        ]);
+
       // This reviewer ignores both its instructions and the host's reminder to save notes.
       if (failing === "second-sheet-without-notes" && !first)
         return response([], "Sheet reviewed.");
@@ -188,6 +215,28 @@ function script(
 
   return { transport, observed };
 }
+
+test("sheet and coordinator finishing cannot silently drop pending summaries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-parallel-summary-"));
+  const { transport } = script("pending-summary");
+  const session = await open(directory, transport, true, undefined, "observe", parallel);
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    const failed = await until(session, started.id, "failed");
+    expect(failed.findings).toHaveLength(2);
+    expect(failed.findings.every((finding) => finding.summary?._tag === "Pending")).toBe(true);
+    expect(failed.parallel?.sheets.every((sheet) => sheet.notes === undefined)).toBe(true);
+    expect(failed.finished).toBe(false);
+    expect(failed.error).toContain("short summaries remain pending");
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 120000);
 
 test("a large packet reviews its sheets in concurrent conversations between coordinator setup and coordination", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-"));

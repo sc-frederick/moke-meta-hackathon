@@ -18,6 +18,7 @@ import {
   PubSub,
   Redacted,
   Match,
+  Option,
   Schema,
   Semaphore,
   Stream,
@@ -44,6 +45,7 @@ import {
   PacketCoverage,
   PacketCitation,
   PacketFinding,
+  PacketFindingSummary,
   PacketPriorComment,
   PacketSheetNotes,
   type PacketPromptUsage,
@@ -77,6 +79,7 @@ import { renderPacketReport } from "./report.ts";
 import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 import { preparePacketSamRequest, decodePacketSamResponse } from "./sam.ts";
 import { citationHasSourceSupport } from "./citations.ts";
+import { FindingSummaryText, RecordFindingSummary } from "#lib/review/finding-summary.ts";
 import {
   initializePacketCoverage,
   packetCoverageProgress,
@@ -94,7 +97,7 @@ export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten:
 
 /** Which conversation made each model or SAM request, and which sheet each sheet reviewer owns. */
 interface SheetAssignments {
-  readonly sheets: Map<number, string>;
+  readonly sheets: Map<number, typeof SheetId.Type>;
   readonly requests: Map<number, number>;
   /** Model requests on the wire in this process. They stay uncertain in SQL until they settle. */
   readonly inFlight: Set<string>;
@@ -613,6 +616,7 @@ export class PacketReviews extends Context.Service<
             record_coverage_batch: "recording",
             record_citation: "recording",
             record_finding: "recording",
+            record_finding_summary: "recording",
             record_prior_comment: "recording",
             ask_reviewer: "recording",
             finish_review: "recording",
@@ -1053,9 +1057,9 @@ export class PacketReviews extends Context.Service<
             ),
             tool(
               "record_finding",
-              "Record one source-specific defect with severity, discipline, exact location, evidence, correction and verified citations where regulatory. Reuse an existing issue ID for follow-up. Completed is user-owned and cannot be set by this tool.",
+              "Save the complete source-specific technical finding, including necessary values, qualifications and evidence. Do not shorten or omit technical facts to fit a display limit. Reuse an existing issue ID for follow-up. The result includes the host-owned summary state and revision; if Pending, use record_finding_summary. Completed is user-owned.",
               Schema.Struct({
-                ...PacketFinding.fields,
+                ...Struct.omit(PacketFinding.fields, ["summary"]),
                 id: Schema.optionalKey(Id),
                 completed: Schema.optionalKey(Schema.Boolean),
               }),
@@ -1066,6 +1070,19 @@ export class PacketReviews extends Context.Service<
                     "A sheet reviewer cannot search the whole set. List the suspected missing item under suspectedGaps in finish_sheet; the coordinator checks it.",
                   );
                 const id = input.id ?? stableId(row.id, task, "finding");
+                const revision = stableId(row.id, task, "finding-summary");
+                const sheetId = assignments.sheets.get(api.conversationId) ?? null;
+
+                const summary = Option.match(
+                  Schema.decodeUnknownOption(FindingSummaryText)(
+                    Struct.pick(input, ["title", "observed", "correction"]),
+                  ),
+                  {
+                    onNone: () => PacketFindingSummary.cases.Pending.make({ revision, sheetId }),
+                    onSome: (text) =>
+                      PacketFindingSummary.cases.Ready.make({ revision, sheetId, ...text }),
+                  },
+                );
 
                 return await recordTool(
                   row,
@@ -1075,6 +1092,7 @@ export class PacketReviews extends Context.Service<
                     const finding = {
                       ...input,
                       id,
+                      summary,
                       completed:
                         review.findings.find((entry) => entry.id === id)?.completed ?? false,
                     };
@@ -1152,12 +1170,52 @@ export class PacketReviews extends Context.Service<
 
                     return new PacketReview({
                       ...review,
+                      finished: false,
                       findings: upsert(review.findings, finding),
                     });
                   },
-                  { id },
+                  { id, summary },
                 );
               },
+            ),
+            tool(
+              "record_finding_summary",
+              "Save a short display title, one observation sentence and one action-led correction for the exact id and revision returned by record_finding. This never changes the full technical record, evidence or status. Correct rejected summaries before finishing.",
+              RecordFindingSummary,
+              async (task, input, api) =>
+                await recordTool(
+                  row,
+                  task,
+                  "finding-summary",
+                  (review) => {
+                    const finding = review.findings.find((entry) => entry.id === input.id);
+
+                    if (!finding?.summary || finding.summary.revision !== input.revision)
+                      throw error(
+                        "input",
+                        "The technical finding changed. Read its current id and summary revision before summarizing it.",
+                      );
+                    const assigned = assignments.sheets.get(api.conversationId);
+
+                    if (assigned !== undefined && finding.summary.sheetId !== assigned)
+                      throw error("input", "Summarize only your own sheet's technical findings.");
+
+                    return new PacketReview({
+                      ...review,
+                      findings: upsert(review.findings, {
+                        ...finding,
+                        summary: PacketFindingSummary.cases.Ready.make({
+                          revision: input.revision,
+                          sheetId: finding.summary.sheetId,
+                          title: input.title,
+                          observed: input.observed,
+                          correction: input.correction,
+                        }),
+                      }),
+                    });
+                  },
+                  { id: input.id },
+                ),
             ),
             tool(
               "record_prior_comment",
@@ -1251,6 +1309,16 @@ export class PacketReviews extends Context.Service<
                   task,
                   "finish",
                   (review) => {
+                    const pending = review.findings.filter(
+                      (finding) => finding.summary?._tag === "Pending",
+                    );
+
+                    if (pending.length)
+                      throw error(
+                        "input",
+                        `Short summaries are pending for ${pending.map((finding) => finding.id).join(", ")}. Full technical findings are saved. Call record_finding_summary with their current revisions, then finish_review.`,
+                      );
+
                     if (review.parallel !== undefined && review.parallel.stage !== "coordination")
                       throw error(
                         "input",
@@ -1318,7 +1386,21 @@ export class PacketReviews extends Context.Service<
                   row,
                   task,
                   "finish_sheet",
-                  (review) => changeSheet(review, assigned, { notes: input }),
+                  (review) => {
+                    if (
+                      review.findings.some(
+                        (finding) =>
+                          finding.summary?._tag === "Pending" &&
+                          finding.summary.sheetId === assigned,
+                      )
+                    )
+                      throw error(
+                        "input",
+                        "Short summaries are pending for this sheet. Full technical findings are saved. Call record_finding_summary before finish_sheet.",
+                      );
+
+                    return changeSheet(review, assigned, { notes: input });
+                  },
                   input,
                 );
               },
@@ -1598,8 +1680,24 @@ export class PacketReviews extends Context.Service<
                   onYield: async (_answer, api) => {
                     const sheetId = assignments.sheets.get(api.conversationId);
 
-                    if (sheetId === undefined || nudged.has(api.conversationId)) return undefined;
+                    if (nudged.has(api.conversationId)) return undefined;
                     const review = await run(get(row.project_id, row.id));
+
+                    const pending = review.findings.filter(
+                      (finding) =>
+                        finding.summary?._tag === "Pending" &&
+                        (sheetId === undefined || finding.summary.sheetId === sheetId),
+                    );
+
+                    if (review.state === "running" && pending.length) {
+                      nudged.add(api.conversationId);
+
+                      return {
+                        continue: `Full technical findings are saved, but short summaries are pending: ${JSON.stringify(pending.map((finding) => ({ id: finding.id, summary: finding.summary })))}. Call record_finding_summary for each, then finish your review.`,
+                      };
+                    }
+
+                    if (sheetId === undefined) return undefined;
 
                     if (
                       review.state !== "running" ||
@@ -2348,10 +2446,15 @@ export class PacketReviews extends Context.Service<
                             .slice(0, 32000) ?? "";
                       }
 
+                      const pendingSummaries = current.payload.findings.some(
+                        (finding) => finding.summary?._tag === "Pending",
+                      );
+
                       const state = unresolved.length
                         ? "uncertain"
                         : result.status === "done" &&
                             current.payload.finished &&
+                            !pendingSummaries &&
                             !steering.unanswered &&
                             (current.payload.steering ?? []).every(
                               (item) =>
@@ -2396,9 +2499,11 @@ export class PacketReviews extends Context.Service<
                           ),
                           error:
                             state === "failed"
-                              ? current.payload.finished
-                                ? "The review stopped before finishing. Saved findings and coverage remain available."
-                                : "The reviewer stopped without recording a completed source review. Saved findings, coverage and the partial summary remain available."
+                              ? pendingSummaries
+                                ? "Full technical findings are saved, but short summaries remain pending. The review is incomplete."
+                                : current.payload.finished
+                                  ? "The review stopped before finishing. Saved findings and coverage remain available."
+                                  : "The reviewer stopped without recording a completed source review. Saved findings, coverage and the partial summary remain available."
                               : state === "uncertain" && stoppedSheets.length > 0
                                 ? `${stoppedSheets.length} of ${current.payload.parallel?.sheets.length ?? 0} sheet reviewers stopped on an unresolved provider request. Their sheets keep their gaps; those requests may have been charged and will not be sent again.`
                                 : current.payload.error,
