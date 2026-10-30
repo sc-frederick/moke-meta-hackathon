@@ -9,6 +9,7 @@ import { CloudReviewRecord } from "../../backend/cloud/contracts.ts";
 import { writeCloudState } from "../../backend/cloud/files.ts";
 import { Artifact, Project, Revision, ReviewMessage, Sheet } from "#lib/review/contracts.ts";
 import { PacketReview, PacketScope, ReviewPass, PacketFindingSummary } from "#lib/review/packet.ts";
+import { transformRegion } from "#lib/review/geometry.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { installRpcBoundary } from "./rpc-boundary.ts";
 
@@ -485,6 +486,22 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(page.locator(".source-scroll .banner")).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("audit-missing-source-finding.png") });
 
+    // A finding with a SAM zoom opens on it, with the masks drawn over the source.
+    await page.getByRole("button", { name: "Open findings", exact: true }).click();
+    await page
+      .locator(".findings-bubble")
+      .getByRole("button", { name: "SAM focus finding", exact: false })
+      .click();
+    await expect(page.getByTestId("sam-focus-caption")).toContainText(
+      "SAM 3.1 focus · 1 segmented object",
+    );
+    await expect(page.locator(".viewer svg.masks path")).toHaveCount(1);
+    await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Finding region");
+    await expect(
+      page.getByRole("button", { name: "SAM focus · 1 segment", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("sam-focus-finding.png") });
+
     // History is independent of the latest run's controls and composer admission.
     await app.close();
     const controlDatabase = new DatabaseSync(join(directory, "app.sqlite"));
@@ -801,6 +818,15 @@ function seedCompletedReview(directory: string) {
 
     if (!secondSheet || !firstFinding) throw new Error("Missing distinct source fixtures");
     const secondFindingId = crypto.randomUUID();
+    const focusRegion = { x: 80, y: 80, width: 210, height: 180 };
+    const focusPixels = transformRegion(image.pdfToPixels, focusRegion);
+
+    const focusBox = {
+      left: Math.floor(focusPixels.x),
+      top: Math.floor(focusPixels.y),
+      right: Math.ceil(focusPixels.x + focusPixels.width),
+      bottom: Math.ceil(focusPixels.y + focusPixels.height),
+    };
 
     const withSecondFinding = new PacketReview(
       Struct.assign(review, {
@@ -826,6 +852,33 @@ function seedCompletedReview(directory: string) {
             evidenceIds: [],
             locations: [],
             evidenceNote: "No source drawing applies to this missing input.",
+          },
+          {
+            ...Struct.omit(firstFinding, ["summary"]),
+            id: crypto.randomUUID(),
+            title: "SAM focus finding",
+            focus: {
+              artifactId: image.id,
+              sheetId: firstSheet.id,
+              region: focusRegion,
+              width: image.width,
+              height: image.height,
+              box: focusBox,
+              model: "sam-3.1" as const,
+              responseId: "offline-sam-focus",
+              segments: [
+                {
+                  confidence: 0.8,
+                  bounds: focusBox,
+                  mask: {
+                    encoding: "one_bit" as const,
+                    payload: "!!!!!&O.lVP",
+                    width: 1,
+                    height: 1,
+                  },
+                },
+              ],
+            },
           },
         ],
       }),

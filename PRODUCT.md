@@ -53,8 +53,11 @@ and execution journals.
 Packet reviews default to no application call ceiling. Users can choose an
 operational call budget, pause or cancel work, and explicitly extend an exhausted
 budget to resume. Model context comes from provider metadata, with automatic Pi
-compaction for long conversations. SAM is an optional geometric evidence tool;
-it shares the review's durable request ledger and optional call budget.
+compaction for long conversations. With a Meta key, every packet review uses
+SAM 3.1: a device or fixture count finding needs SAM segmentation of its sheet,
+and each finding with a focused region gets a SAM zoom of that area. SAM shares
+the review's durable request ledger and optional call budget. Its masks are
+geometry proposals, not verified symbols or dimensions.
 
 Drawn-to-schedule count checks remain available as a specialized workflow.
 Reviewers accept count inputs and confirm their coverage before deterministic

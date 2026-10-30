@@ -22,8 +22,9 @@ The repository ignores `.env` and `.env.*` except the blank `.env.example`.
 
 Keep the `-1026` suffix for the supplied Baseten hackathon key. Public examples
 use `meta-models/muse-spark-open`, which is a different configured model ID. SAM
-is an optional evidence tool on Meta, rather than a chat-model option. It can
-assist a Baseten chat review when a Meta key is also configured.
+3.1 runs on Meta with `MODEL_API_KEY` and is not a chat-model option. When that
+key is configured, packet reviews use it with either chat provider; see
+[SAM in packet reviews](#sam-in-packet-reviews).
 
 `MOKE_PROVIDER` chooses the preferred startup provider, with `meta` as the
 default. Each review saves the model selected in the workbench. Changing the menu
@@ -82,6 +83,29 @@ separate two-SAM cap or six-image context window. The host still bounds transpor
 memory to 64 MiB of decoded image data and 72 MiB per serialized request. Those
 are application memory bounds, not provider token maxima. Image-token accounting
 and cost can remain unknown.
+
+## SAM in packet reviews
+
+With `MODEL_API_KEY` configured, packet reviews use SAM 3.1 in two places:
+
+- **Device counts.** The reviewer calls `segment_objects` on a focused crop to
+  find receptacles, switches, luminaires, plumbing fixtures and similar symbols,
+  then checks each candidate against the source. The host rejects a finding
+  that states a drawn device or fixture count until SAM has segmented a crop of
+  one of its sheets in the same review. Room, circuit, sheet and code-section
+  numbers before a device name do not count as a quantity.
+- **Finding zooms.** After `record_finding`, the host renders a padded zoom of
+  the first location region that covers at most half its sheet. It sends the
+  region to SAM as a box with a positive point at its center and stores the
+  masks with the finding. The workbench opens a finding on its zoom with the
+  masks drawn over the source, and the exported report embeds the same view.
+  Whole-sheet locations get no zoom.
+
+Both uses share the review's request ledger and call budget. If the budget is
+already spent, the finding is recorded without a zoom. An unresolved SAM outcome
+stops the review as an unresolved model request does, and it is never resent.
+SAM masks propose locations only. They do not verify a symbol's class, establish
+coverage or measure physical dimensions.
 
 The older selected-count execution adapter keeps its narrower admission limits
 for compatibility. Those limits do not define ordinary packet review.

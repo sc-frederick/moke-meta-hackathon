@@ -1,6 +1,34 @@
+import { decodeMaskToSVGPath } from "@meta-sam/parser";
 import { Schema } from "effect";
 import { Affine, ArtifactId, CommandId, FindingId, ProjectId } from "./contracts.ts";
 import { RunId } from "./execution.ts";
+import type { PacketFindingFocus } from "./packet.ts";
+
+/** SVG outlines of a finding focus's SAM masks, in the focus artifact's pixel space. */
+export function focusOutlines(focus: typeof PacketFindingFocus.Type) {
+  return focus.segments.flatMap((segment) => {
+    const { bounds, mask } = segment;
+    let path: string;
+
+    try {
+      path = decodeMaskToSVGPath(mask);
+    } catch {
+      return [];
+    }
+
+    const scaleX = (bounds.right - bounds.left) / mask.width;
+    const scaleY = (bounds.bottom - bounds.top) / mask.height;
+
+    // Mask paths use pixel centres, so the raster spans -0.5 to width - 0.5.
+    return [
+      {
+        path,
+        transform: `translate(${bounds.left} ${bounds.top}) scale(${scaleX} ${scaleY}) translate(0.5 0.5)`,
+        confidence: segment.confidence,
+      },
+    ];
+  });
+}
 
 const Pixel = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2048 }));
 const Box = Schema.Struct({ left: Pixel, top: Pixel, right: Pixel, bottom: Pixel });

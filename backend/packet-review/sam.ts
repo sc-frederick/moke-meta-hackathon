@@ -74,8 +74,7 @@ export const preparePacketSamRequest = Effect.fn("PacketReview.prepareSam")(func
   return { body, fingerprint, submittedSha256, promptSha256, route, model };
 });
 
-/** Decode a completed SAM receipt into geometry proposals; masks are retained in the caller's raw receipt, not repeated in model context. */
-export const decodePacketSamResponse = Effect.fn("PacketReview.decodeSam")(function* (
+const receipt = Effect.fn("PacketReview.samReceipt")(function* (
   raw: string,
   input: ExecutionImage,
 ) {
@@ -99,6 +98,16 @@ export const decodePacketSamResponse = Effect.fn("PacketReview.decodeSam")(funct
 
   const parsed = yield* parseInstances(response.output[0].content[0].text, image);
 
+  return { responseId: response.id, parsed };
+});
+
+/** Decode a completed SAM receipt into geometry proposals; masks are retained in the caller's raw receipt, not repeated in model context. */
+export const decodePacketSamResponse = Effect.fn("PacketReview.decodeSam")(function* (
+  raw: string,
+  input: ExecutionImage,
+) {
+  const { responseId, parsed } = yield* receipt(raw, input);
+
   const instances = parsed.map(({ mask, ...instance }) => ({
     ...instance,
     mask: {
@@ -110,5 +119,29 @@ export const decodePacketSamResponse = Effect.fn("PacketReview.decodeSam")(funct
     },
   }));
 
-  return { responseId: response.id, parserVersion, instances };
+  return { responseId, parserVersion, instances };
+});
+
+/** Keep compact mask payloads for a finding's zoomed view; outlines are decoded for display. */
+export const decodePacketSamFocus = Effect.fn("PacketReview.decodeSamFocus")(function* (
+  raw: string,
+  input: ExecutionImage,
+) {
+  const { responseId, parsed } = yield* receipt(raw, input);
+
+  const segments = parsed
+    .filter(({ mask }) => mask.payload.length <= 65536)
+    .slice(0, 8)
+    .map(({ mask }) => ({
+      confidence: mask.confidence,
+      bounds: mask.bounds,
+      mask: {
+        encoding: mask.encoding,
+        payload: mask.payload,
+        width: mask.width,
+        height: mask.height,
+      },
+    }));
+
+  return { responseId, segments };
 });

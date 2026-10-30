@@ -7,6 +7,7 @@
     imageUrl,
     pdfToPixels,
     overlays = [],
+    masks = [],
     label = "Source view",
     selecting = $bindable(false),
     onSelectRegion,
@@ -18,6 +19,8 @@
     imageUrl: string;
     pdfToPixels: typeof Affine.Type;
     overlays?: ReadonlyArray<{ region: Region; title: string }>;
+    /** SAM mask outlines in the displayed image's pixel space. */
+    masks?: ReadonlyArray<{ path: string; transform: string }>;
     label?: string;
     selecting?: boolean;
     onSelectRegion?: (region: Region) => void;
@@ -276,6 +279,17 @@
           panY = 0;
         }}
       />
+      {#if masks.length}<svg
+          class="masks"
+          width={imageWidth}
+          height={imageHeight}
+          viewBox={`0 0 ${imageWidth} ${imageHeight}`}
+          aria-hidden="true"
+          >{#each masks as mask, index (index)}<path
+              d={mask.path}
+              transform={mask.transform}
+            />{/each}</svg
+        >{/if}
       {#each pixelOverlays as overlay, index (index)}
         <div
           class="overlay"
@@ -406,6 +420,15 @@
     display: block;
     max-width: none;
     user-select: none;
+  }
+  .masks {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+  }
+  .masks path {
+    fill: rgb(3 105 161 / 0.35);
   }
   .overlay {
     position: absolute;
