@@ -168,7 +168,10 @@ test("result download copies matching local artifacts and downloads everything e
       ),
     );
 
-    expect(downloaded).toEqual([database.path, render.path, crop.path, journal.path]);
+    // Files download concurrently, so only the set is fixed.
+    expect(downloaded.toSorted()).toEqual(
+      [database.path, render.path, crop.path, journal.path].toSorted(),
+    );
     expect(await readFile(join(destination, pdf.path), "utf8")).toBe(pdf.content);
     expect(await readFile(join(destination, render.path), "utf8")).toBe(render.content);
     expect(reports.at(-1)?.reusedFiles).toBe(1);

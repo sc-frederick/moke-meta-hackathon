@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Semaphore } from "effect";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -196,6 +196,12 @@ export const uploadCloudPackage = Effect.fn("uploadCloudPackage")(function* (
 });
 
 /** Resume verified files from the immutable result manifest and report each verified completion. */
+/**
+ * Result files download this many at a time. A 29-sheet result of 435 files took 5.6 minutes
+ * one at a time on 2026-10-30; per-file round trips, not bandwidth, set that time.
+ */
+const downloadConcurrency = 8;
+
 export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* (
   text: string,
   destination: string,
@@ -215,27 +221,35 @@ export const downloadCloudPackage = Effect.fn("downloadCloudPackage")(function* 
       }),
   });
 
-  for (const file of files) {
-    const local = join(destination, file.path);
-    let reused = false;
+  // Each completion saves the receipt, so reports stay in order while copies overlap.
+  const reporting = yield* Semaphore.make(1);
 
-    if (!(yield* downloadedCloudFileMatches(local, file))) {
-      yield* reuse(file, local);
-      reused = yield* downloadedCloudFileMatches(local, file);
+  yield* Effect.forEach(
+    files,
+    (file) =>
+      Effect.gen(function* () {
+        const local = join(destination, file.path);
+        let reused = false;
 
-      if (!reused) {
-        yield* copy(file, local);
+        if (!(yield* downloadedCloudFileMatches(local, file))) {
+          yield* reuse(file, local);
+          reused = yield* downloadedCloudFileMatches(local, file);
 
-        if (!(yield* downloadedCloudFileMatches(local, file)))
-          return yield* new CloudReviewError({
-            reason: "incompatible",
-            message: "A downloaded cloud file does not match the selected result package.",
-          });
-      }
-    }
+          if (!reused) {
+            yield* copy(file, local);
 
-    yield* progress.complete(file.bytes, reused);
-  }
+            if (!(yield* downloadedCloudFileMatches(local, file)))
+              return yield* new CloudReviewError({
+                reason: "incompatible",
+                message: "A downloaded cloud file does not match the selected result package.",
+              });
+          }
+        }
+
+        yield* progress.complete(file.bytes, reused).pipe(Semaphore.withPermit(reporting));
+      }),
+    { concurrency: downloadConcurrency, discard: true },
+  );
 
   yield* clearInterruptedCloudDownloads(destination);
   yield* Effect.tryPromise({
