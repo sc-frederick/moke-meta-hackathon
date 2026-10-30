@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Semaphore } from "effect";
 import { availableParallelism } from "node:os";
 import { DocumentError, Region, ReviewStorageError, Sheet } from "#lib/review/contracts.ts";
 import { artifactPath, readArtifactChunk, storeBytes, storeFile } from "./artifact-store.ts";
-import type { DocumentsConfig } from "./config.ts";
+import { type DocumentsConfig, DocumentsLimits } from "./config.ts";
 import { validatePdfSource } from "./pdf-validation.ts";
 import { validateRenderRequest } from "./render-bounds.ts";
 import { ImportedPdf, RenderedPdf } from "./types.ts";
@@ -11,7 +11,9 @@ import {
   type PdfWorkerSession,
   workerInspect,
   workerRender,
+  workerText,
 } from "./worker-client.ts";
+import type { WorkerTextResult } from "./worker-messages.ts";
 
 /**
  * Each PDF job runs in its own worker process, so jobs can overlap. Parallel sheet reviewers
@@ -42,6 +44,15 @@ export class Documents extends Context.Service<
       offset: number,
       limit: number,
     ) => Effect.Effect<{ base64: string; totalBytes: number }, DocumentError | ReviewStorageError>;
+    /** Store a retrieved PDF by content hash and extract its embedded text from a one-based page. */
+    readonly extractText: (
+      bytes: Uint8Array,
+      firstPage: number,
+      maxCharacters: number,
+    ) => Effect.Effect<
+      typeof WorkerTextResult.Type & { readonly sha256: string },
+      DocumentError | ReviewStorageError
+    >;
   }
 >()("documents/Documents") {
   /** Acquire a scoped worker per job, bound concurrent PDF jobs, and keep SQL out of this layer. */
@@ -174,6 +185,36 @@ export class Documents extends Context.Service<
 
           read: (sha256, mediaType, offset, limit) =>
             readArtifactChunk(config.dataDirectory, sha256, mediaType, offset, limit),
+
+          extractText: (bytes, firstPage, maxCharacters) =>
+            withPdfJob((worker) =>
+              Effect.gen(function* () {
+                if (bytes.byteLength > DocumentsLimits.maxSourceBytes)
+                  return yield* new DocumentError({
+                    reason: "limit",
+                    message: "The PDF exceeds the maximum allowed size.",
+                  });
+
+                // Check the header before storing, so a mislabeled response leaves no artifact.
+                if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-")
+                  return yield* new DocumentError({
+                    reason: "invalid",
+                    message: "The source is not a PDF.",
+                  });
+
+                const stored = yield* storeBytes(config.dataDirectory, bytes, "application/pdf");
+
+                const pdfPath = artifactPath(
+                  config.dataDirectory,
+                  stored.sha256,
+                  "application/pdf",
+                );
+
+                const extracted = yield* workerText(worker, { pdfPath, firstPage, maxCharacters });
+
+                return { ...extracted, sha256: stored.sha256 };
+              }),
+            ),
         });
       }),
     );

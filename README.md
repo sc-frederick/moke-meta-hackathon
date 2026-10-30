@@ -19,9 +19,10 @@ Follow-up requests can deepen the review while retaining earlier issue IDs.
 3. **Follow the inspection.** Moke inventories the supplied sheets, opens source
    images and detail crops, and records the four review passes: document
    completeness, code and agency requirements, coordination, and prior comments.
-   Public-source lookup and repeatable arithmetic support the inspection. With a
-   Meta key, SAM 3.1 segments drawn devices and fixtures for counts and zooms
-   into each finding's problem area.
+   A Florida code index points each check to its code section, statute or rule.
+   Public-source lookup with PDF text and repeatable arithmetic support the
+   inspection. With a Meta key, SAM 3.1 segments drawn devices and fixtures for
+   counts and zooms into each finding's problem area.
 4. **Review the findings and gaps.** Each issue identifies its location, evidence,
    correction and supporting sources or calculations. Unreviewed sheets,
    inaccessible governing text and missing project inputs remain visible. Mark

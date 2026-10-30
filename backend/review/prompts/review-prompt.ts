@@ -73,7 +73,7 @@ export function selectedReviewPrompt(context: typeof ExecutionReviewContext.Type
 }
 
 /** Version of the project-first system prompt used for new packet reviews. */
-export const packetPromptVersion = "moke-packet-review-v5";
+export const packetPromptVersion = "moke-packet-review-v6";
 
 /**
  * A review runs as one reviewer, or as a coordinator plus one reviewer per sheet. Large packets
@@ -87,10 +87,12 @@ const imageGuidance = {
   meta: "Rendered pages and crops stay in your conversation. Render the full assigned page first, then focused crops at legible scale for dense notes, schedules, tables and details. Render a detail again before relying on a reading you are unsure of.",
 } as const;
 
+const codeGuidance =
+  "For Florida Building Code sections, Florida Statutes and Florida Administrative Code rules, call search_code first. It returns the exact section, a plan review note and the section's link; cite a result with record_citation and its id as codeReferenceId. ICC Digital Codes blocks automated retrieval, so do not read_source codes.iccsafe.org links: record those citations as unverified with the section and codeReferenceId, and the engineer opens the link to confirm it. Statute links can be retrieved with read_source and verified against their text. read_source also extracts text from PDF sources such as county amendments and agency checklists; add #page=N to a PDF link to start at that page.";
+
 const sourceGuidance = {
-  baseten:
-    "Use search_sources and read_source to retrieve governing sources; record exact citations and applicability.",
-  meta: "Use your built-in web search to find governing sources and adopted editions, then read_source on the primary official page to retrieve and record it; record exact citations and applicability. search_sources remains available as a fallback. Web search results alone are leads, not recorded evidence.",
+  baseten: `${codeGuidance} Use search_sources and read_source for other governing sources; record exact citations and applicability.`,
+  meta: `${codeGuidance} For other governing sources and adopted editions, use your built-in web search, then read_source on the primary official page to retrieve and record it; record exact citations and applicability. search_sources remains available as a fallback. Web search results alone are leads, not recorded evidence.`,
 } as const;
 
 const roleGuidance: Record<PacketPromptRole, ReadonlyArray<string>> = {

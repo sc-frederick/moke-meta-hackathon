@@ -24,10 +24,20 @@ export const WorkerRenderRequest = Schema.TaggedStruct("Render", {
   ),
 });
 
+/** Extract embedded text from a bounded page range, for retrieved governing-source PDFs. */
+export const WorkerTextRequest = Schema.TaggedStruct("Text", {
+  id: RequestId,
+  pdfPath: Schema.NonEmptyString,
+  firstPage: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DocumentsLimits.maxPages })),
+  maxCharacters: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000_000 })),
+});
+
 /** Requests accepted on the private worker's NDJSON input. */
-export const WorkerRequest = Schema.Union([WorkerInspectRequest, WorkerRenderRequest]).pipe(
-  Schema.toTaggedUnion("_tag"),
-);
+export const WorkerRequest = Schema.Union([
+  WorkerInspectRequest,
+  WorkerRenderRequest,
+  WorkerTextRequest,
+]).pipe(Schema.toTaggedUnion("_tag"));
 
 const WorkerPageInfo = Schema.Struct({
   pageIndex: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 199 })),
@@ -51,11 +61,20 @@ export const WorkerRenderResult = Schema.Struct({
   pixelsToPdf: Affine,
 });
 
+/** Page-marked embedded text; a scanned PDF returns no text rather than invented content. */
+export const WorkerTextResult = Schema.Struct({
+  pageCount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DocumentsLimits.maxPages })),
+  firstPage: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  lastPage: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  text: Schema.String.check(Schema.isMaxLength(1_000_000)),
+  truncated: Schema.Boolean,
+});
+
 /** Successful worker output correlated with its request identity. */
 export const WorkerSuccess = Schema.Struct({
   id: RequestId,
   ok: Schema.Literal(true),
-  result: Schema.Union([WorkerInspectResult, WorkerRenderResult]),
+  result: Schema.Union([WorkerInspectResult, WorkerRenderResult, WorkerTextResult]),
 });
 
 /** Worker failures omit private paths and PDF parser diagnostics. */

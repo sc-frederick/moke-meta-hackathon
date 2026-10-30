@@ -118,6 +118,43 @@ function documentsLayer(dataDirectory: string) {
   });
 }
 
+test("extracts retrieved PDF text by whole pages, from a requested page, and stores the original", async () => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-text-"));
+  const pdf = createHeroPdf("A");
+
+  try {
+    const [whole, fromSecond, bounded, notPdf] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const documents = yield* Documents;
+
+        return [
+          yield* documents.extractText(pdf, 1, 100_000),
+          yield* documents.extractText(pdf, 2, 100_000),
+          yield* documents.extractText(pdf, 1, 400),
+          yield* Effect.exit(documents.extractText(new TextEncoder().encode("<html>"), 1, 100)),
+        ] as const;
+      }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
+    );
+
+    expect(whole.pageCount).toBe(2);
+    expect(whole.text).toContain("[Page 1]\nMOKE COORDINATION LAB");
+    expect(whole.text).toContain("[Page 2]");
+    expect(whole.truncated).toBe(false);
+    expect(fromSecond.text.startsWith("[Page 2]")).toBe(true);
+    expect(fromSecond.text).not.toContain("[Page 1]");
+    // A limit inside page 2 returns page 1 whole, so a continuation starts at page 2.
+    expect(bounded.lastPage).toBe(1);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.text).not.toContain("[Page 2]");
+    expect(Exit.isFailure(notPdf)).toBe(true);
+
+    const stored = await readFile(join(dataDirectory, "artifacts", `${whole.sha256}.pdf`));
+    expect(Buffer.compare(stored, Buffer.from(pdf))).toBe(0);
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+}, 60000);
+
 test("import stores the original hash and inventories pages", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-"));
   const source = join(fixtureDirectory, "original.pdf");

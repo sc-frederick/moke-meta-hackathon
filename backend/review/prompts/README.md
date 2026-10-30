@@ -6,7 +6,7 @@ the upstream paths and SHA-256 hashes. Read the original skill repository to
 update them; this application does not edit that source repository.
 
 `review-prompt.ts` imports the files with Bun's text loader, embedding them in the
-compiled backend. Packet review version `moke-packet-review-v5` supplies the full
+compiled backend. Packet review version `moke-packet-review-v6` supplies the full
 master AGENTS.md and REVIEW_METHOD.md, including Report and release, as Pi
 Durable's conversation `agent.instructions`. The reviewer request and document
 inventory are separate input data. Each run records the prompt version and
@@ -63,8 +63,11 @@ through the supplied packet and records its actual coverage; it is not restricte
 to one count finding or two sheets.
 
 The host registers tools for packet inventory, original-PDF pages and crops,
-public-source discovery and text retrieval, repeatable calculations, project
-configuration, findings, citations, coverage and prior-comment tracking. SAM can
+Florida code search, public-source discovery and text retrieval, repeatable
+calculations, project configuration, findings, citations, coverage and
+prior-comment tracking. Packet review version `moke-packet-review-v6` adds
+`search_code`, which searches the [Florida code index](../code-index/README.md),
+and PDF text in `read_source`. SAM can
 provide geometric observations when Meta is configured, including when the chat
 model uses Baseten. Model and SAM requests share durable admission and receipt
 records. An optional user call budget pauses work; there is no separate two-SAM
@@ -74,9 +77,10 @@ Official-source retrieval retains the URL, access status, content hash and text.
 Verified citation records require retrieved official text, an exact quote,
 edition, section and applicability. Search results alone do not verify a claim.
 Login requirements, inaccessible sources and unknown governing inputs remain
-unverified or Needs input. The text lookup does not extract remote PDF sources;
-import PDF documents for visual inspection and obtain readable governing text
-before marking a citation verified. Retrieved documents and tool output remain
+unverified or Needs input. The text lookup extracts embedded text from remote
+PDFs, starting at a `#page=N` fragment when given; scanned PDFs stay
+unavailable. ICC Digital Codes blocks automated retrieval, so a citation to an
+indexed ICC section stays unverified until the engineer opens its link. Retrieved documents and tool output remain
 evidence, not system instructions.
 
 The model records structured results while the host renders the self-contained

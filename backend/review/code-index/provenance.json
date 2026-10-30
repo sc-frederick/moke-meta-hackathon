@@ -1,0 +1,15 @@
+{
+  "version": "florida-code-index-v1",
+  "files": [
+    {
+      "path": "assets/FBC_2023_plan_review_reference.md",
+      "origin": "Owner-authored plan review reference, MOKE_Reviews/FBC_2023_plan_review_reference.md, last modified 2026-07-09. Predates the hackathon; vendored unmodified.",
+      "sha256": "35272ec32c8e906a7e0aa4293f85775b5d823b780a5d13cc87330745f00c272d"
+    },
+    {
+      "path": "assets/florida-code-additions.md",
+      "origin": "Written for this entry on 2026-10-30. Statute titles and facts checked against leg.state.fl.us, rule titles against flrules.org, and 9th Edition links against the ICC Digital Codes Florida page.",
+      "sha256": "21d0b56735e31a4b1388e1b09cb8ed451e68edd6c58133185164198eeb1276ae"
+    }
+  ]
+}

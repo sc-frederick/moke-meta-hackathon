@@ -18,6 +18,7 @@ import {
   WorkerRequest,
   WorkerResponse,
   WorkerSuccess,
+  WorkerTextResult,
 } from "./worker-messages.ts";
 
 const assetsRoot = process.env.MOKE_PDFJS_ASSETS;
@@ -298,6 +299,87 @@ async function renderRegion(
   }
 }
 
+async function extractText(id: string, pdfPath: string, firstPage: number, maxCharacters: number) {
+  let loading: ReturnType<typeof loadDocument> | undefined;
+
+  try {
+    loading = loadDocument(pdfPath);
+    const document = await loading.promise;
+    const pageCount = document.numPages;
+
+    if (pageCount > DocumentsLimits.maxPages) {
+      writeResponse({
+        id,
+        ok: false,
+        reason: "limit",
+        message: "The PDF exceeds the maximum allowed page count.",
+      });
+
+      return;
+    }
+
+    let text = "";
+    let lastPage = firstPage - 1;
+    let truncated = false;
+
+    for (let pageNumber = firstPage; pageNumber <= pageCount; pageNumber++) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      page.cleanup();
+
+      const pageText = content.items
+        .map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : " ") : ""))
+        .join("")
+        .replace(/[ \t]+/g, " ")
+        .replace(/ *\n */g, "\n")
+        .trim();
+
+      const block = `[Page ${pageNumber}]\n${pageText}\n\n`;
+
+      // Whole pages only, so a continuation can start at the next page. A single page longer
+      // than the limit is cut, since nothing smaller than a page can be requested.
+      if (text.length + block.length > maxCharacters) {
+        if (text.length === 0) {
+          text = block.slice(0, maxCharacters);
+          lastPage = pageNumber;
+        }
+
+        truncated = true;
+        break;
+      }
+
+      text += block;
+      lastPage = pageNumber;
+    }
+
+    const result = Schema.decodeUnknownSync(WorkerTextResult)({
+      pageCount,
+      firstPage,
+      lastPage,
+      text: text.trim(),
+      truncated: truncated || lastPage < pageCount,
+    });
+
+    writeResponse(Schema.decodeUnknownSync(WorkerSuccess)({ id, ok: true, result }));
+  } catch (error) {
+    if (error instanceof Error && /limit exceeded/i.test(error.message)) {
+      writeResponse({
+        id,
+        ok: false,
+        reason: "limit",
+        message: "The PDF exceeds the maximum allowed size.",
+      });
+
+      return;
+    }
+
+    const failure = classifyLoadError(error);
+    writeResponse({ ...failure, id });
+  } finally {
+    await loading?.destroy();
+  }
+}
+
 async function handleRequest(line: string) {
   let decoded: typeof WorkerRequest.Type;
 
@@ -316,6 +398,12 @@ async function handleRequest(line: string) {
 
   if (WorkerRequest.guards.Inspect(decoded)) {
     await inspectPdf(decoded.id, decoded.pdfPath);
+
+    return;
+  }
+
+  if (WorkerRequest.guards.Text(decoded)) {
+    await extractText(decoded.id, decoded.pdfPath, decoded.firstPage, decoded.maxCharacters);
 
     return;
   }

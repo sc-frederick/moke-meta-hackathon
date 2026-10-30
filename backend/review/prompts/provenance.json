@@ -75,5 +75,5 @@
       "sha256": "b30491a08e7fafbb9c75501c4bc8fc1c01d8f25401c4a6b0bf7baaf95e0d95e4"
     }
   ],
-  "packetPromptVersion": "moke-packet-review-v4"
+  "packetPromptVersion": "moke-packet-review-v6"
 }

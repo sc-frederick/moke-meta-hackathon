@@ -13,6 +13,9 @@ import { transformRegion } from "#lib/review/geometry.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { installRpcBoundary } from "./rpc-boundary.ts";
 
+const codeSectionUrl =
+  "https://codes.iccsafe.org/content/FLBC2023P2/chapter-10-means-of-egress#FLBC2023P2_Ch10_Sec1004";
+
 test("document QA needs no count check and persisted findings support evidence, completion, and reopen", async () => {
   test.setTimeout(90000);
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-desktop-"));
@@ -209,6 +212,19 @@ test("document QA needs no count check and persisted findings support evidence, 
     await expect(
       panel.getByRole("button", { name: "Open source in browser", exact: true }),
     ).toBeVisible();
+    await expect(panel).toContainText(
+      "1004 Occupant Load · FBC Building (Commercial), 2023 8th Edition",
+    );
+    // Record the URL the trusted shell would open, instead of launching a browser.
+    await app.evaluate(({ shell }) => {
+      shell.openExternal = async (url) => {
+        process.env.MOKE_E2E_OPENED_URL = url;
+      };
+    });
+    await panel.getByRole("button", { name: "Open section to confirm", exact: true }).click();
+    await expect
+      .poll(() => app.evaluate(() => process.env.MOKE_E2E_OPENED_URL))
+      .toBe(codeSectionUrl);
     await panel.getByText("Saved retrieved text", { exact: true }).click();
     await expect(
       panel.getByText("Stored source text remains inspectable offline.", { exact: true }),
@@ -724,7 +740,28 @@ function seedCompletedReview(directory: string) {
           text: "Stored source text remains inspectable offline.",
         },
       ],
-      citations: [],
+      citations: [
+        {
+          id: crypto.randomUUID(),
+          sourceId: null,
+          jurisdiction: "Florida",
+          document: "Florida Building Code, Building",
+          edition: "2023 8th Edition",
+          section: "1004",
+          quote: "",
+          application: "Occupant load shown on the synthetic plan.",
+          status: "unverified",
+          note: "The engineer confirms the section from its link.",
+          reference: {
+            id: "codes.iccsafe.org/content/FLBC2023P2/chapter-10-means-of-egress#FLBC2023P2_Ch10_Sec1004",
+            document: "FBC Building (Commercial)",
+            edition: "2023 8th Edition",
+            title: "1004 Occupant Load",
+            url: codeSectionUrl,
+            access: "open_in_browser",
+          },
+        },
+      ],
       calculations: [],
       findings: [
         {

@@ -84,6 +84,18 @@ export const PacketCitation = Schema.Struct({
   application: Text,
   status: Schema.Literals(["verified", "incorrect", "unverified"]),
   note: Text,
+  /** Florida code index entry resolved by the host; the model names an index id, never a link. */
+  reference: Schema.optionalKey(
+    Schema.Struct({
+      id: Required,
+      document: Required,
+      edition: Required,
+      title: Required,
+      url: Schema.String.check(Schema.isStartingWith("https://")),
+      /** Whether read_source can retrieve the text, or the engineer opens the link to confirm it. */
+      access: Schema.Literals(["read_source", "open_in_browser"]),
+    }),
+  ),
 });
 
 /** Repeatable arithmetic records the expression, named values, units and result. */
@@ -268,6 +280,7 @@ export const PacketActivityTool = Schema.Literals([
   "inventory_packet",
   "render_sheet",
   "search_sources",
+  "search_code",
   "read_source",
   "calculate",
   "record_project",
