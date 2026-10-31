@@ -113,14 +113,10 @@ function pacingEstimate(transcript: TranscriptContext) {
 /** A dispatch the provider refused before generating anything, kept to decide how to resend it. */
 interface RefusedDispatch {
   readonly kind: Refusal | "model_not_found";
-  readonly response: Response;
-}
-
-/** Provider-requested wait in milliseconds, when it sends Retry-After seconds. */
-function retryAfterMs(response: Response) {
-  const requested = Number(response.headers.get("retry-after"));
-
-  return Number.isFinite(requested) && requested > 0 ? requested * 1000 : undefined;
+  /** The wait the provider's Retry-After asked for, when valid. */
+  readonly retryAfterMs: number | undefined;
+  /** The shared cooldown a rate-limit or capacity refusal started; zero for a routing refusal. */
+  readonly cooldownMs: number;
 }
 
 /**
@@ -160,16 +156,14 @@ async function refusalOf(response: Response): Promise<Refusal | "model_not_found
 }
 
 /**
- * Wait before resending one request after a routing refusal, honouring Retry-After seconds. Rate
- * limits and capacity refusals wait in the shared pacer instead, so all conversations back off.
+ * Wait before resending one request after a routing refusal, honouring Retry-After in full; only
+ * the local backoff is capped. Rate limits and capacity refusals wait in the shared pacer instead,
+ * so all conversations back off.
  */
-function refusalDelay(response: Response, retry: number) {
-  const requested = retryAfterMs(response);
+function refusalDelay(retryAfterMs: number | undefined, retry: number) {
   const backoff = Math.min(60_000, 2_000 * 2 ** retry);
 
-  return requested === undefined
-    ? backoff / 2 + Math.random() * (backoff / 2)
-    : Math.min(60_000, requested);
+  return retryAfterMs ?? backoff / 2 + Math.random() * (backoff / 2);
 }
 
 /** Short, stable routing key for one shared prompt prefix; it carries no names or prompt text. */
@@ -210,6 +204,14 @@ interface ProviderAdmission {
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
   readonly complete: (phase: RequestPhase, receipt: string) => Promise<void>;
+  /**
+   * Record that the provider refused every send of this attempt before generating anything, so it
+   * cannot have been charged; `end` follows as settled. Without it the attempt stays unresolved.
+   */
+  readonly refused?: (
+    phase: RequestPhase,
+    diagnostic: typeof ProviderFailure.Type,
+  ) => Promise<void>;
   readonly end: (
     uncertain: boolean,
     diagnostic?: typeof ProviderFailure.Type,
@@ -585,6 +587,9 @@ export function createAdmittedModels(
       let dispatched = false;
       let dispatchedAt = 0;
       let refusal: RefusedDispatch | undefined;
+      // Set while the latest send was refused and no later send has reached the provider, so the
+      // attempt provably generated nothing. Network and stream failures leave it unset.
+      let refusedUnsent = false;
 
       /** Reset the per-dispatch outcome before the SDK sends, or resends, the request. */
       const nextDispatch = (current: PacerLease) => {
@@ -635,6 +640,8 @@ export function createAdmittedModels(
         // Wait for rate-limit capacity before the durable attempt exists, so a cancel or shutdown
         // while waiting leaves nothing unresolved. The SDK's deadline starts after this wait.
         lease = await pacer.acquire(estimate, options?.signal);
+        // The refusal budget runs on the pacer's clock from this first release.
+        const admittedAt = lease.dispatchedAt;
         const cached = await admission.begin(phase, fingerprint);
         admitted = true;
 
@@ -670,6 +677,7 @@ export function createAdmittedModels(
             )
               throw new Error("Transport admission denied");
             dispatched = true;
+            refusedUnsent = false;
 
             // One durable attempt covers every resend of a request the provider refused.
             if (!sent) {
@@ -690,15 +698,21 @@ export function createAdmittedModels(
               // resending it cannot duplicate paid work. Parallel sheet reviewers rely on this.
               const refused = await refusalOf(response);
 
+              const retryAfterMs =
+                refused === undefined ? undefined : pacer.retryAfter(response.headers);
+
               // Start the shared cooldown before anything returns capacity to the pacer, or a
               // waiting conversation would be released into the same refusal.
-              if (refused === "rate_limit" || refused === "overloaded")
-                pacer.refused(refused, dispatchedAt, retryAfterMs(response));
+              const cooldownMs =
+                refused === "rate_limit" || refused === "overloaded"
+                  ? pacer.refused(refused, dispatchedAt, retryAfterMs)
+                  : 0;
 
               pacer.observe(response.headers);
 
               if (refused !== undefined) {
-                refusal = { kind: refused, response };
+                refusal = { kind: refused, retryAfterMs, cooldownMs };
+                refusedUnsent = true;
                 await response.body?.cancel();
                 transportFailure = "http";
                 rejectionDetail = refused === "rate_limit" ? "rate_limit" : "unclassified";
@@ -773,15 +787,20 @@ export function createAdmittedModels(
           // A refused request counted against the request limit but used no tokens.
           current.settle(0);
 
+          // Rate limits and capacity refusals already started the shared cooldown.
+          const waitMs =
+            refused.kind === "model_not_found"
+              ? refusalDelay(refused.retryAfterMs, refusals)
+              : refused.cooldownMs;
+
+          // A resend that could go out only after the budget ends the attempt now, without waiting.
           if (
             refusals + 1 >= maxRefusals ||
-            performance.now() - started > refusalBudgetMs ||
+            pacer.now() + waitMs - admittedAt > refusalBudgetMs ||
             options?.signal?.aborted
           )
             response = result;
-          // Rate limits and capacity refusals already started the shared cooldown.
-          else if (refused.kind === "model_not_found")
-            await Bun.sleep(refusalDelay(refused.response, refusals));
+          else if (refused.kind === "model_not_found") await pacer.sleep(waitMs, options?.signal);
         }
 
         if (response.stopReason === "error" || response.stopReason === "aborted") {
@@ -821,23 +840,28 @@ export function createAdmittedModels(
         if (dispatched) lease?.settle(estimate);
         else lease?.refund();
 
-        if (admitted)
-          await admission
-            .end(
-              !completed,
-              {
-                category:
-                  transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
-                phase: failurePhase,
-                elapsedMs: Math.max(0, performance.now() - started),
-                httpStatus,
-                detail: rejectionDetail ?? "unclassified",
-                requestImages,
-                requestBytes,
-              },
-              phase,
-            )
-            .catch(() => undefined);
+        if (admitted) {
+          const diagnostic: typeof ProviderFailure.Type = {
+            category: transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
+            phase: failurePhase,
+            elapsedMs: Math.max(0, performance.now() - started),
+            httpStatus,
+            detail: rejectionDetail ?? "unclassified",
+            requestImages,
+            requestBytes,
+          };
+
+          // A request refused on every send, by the provider or past the refusal budget, is a
+          // definite outcome. Anything that may have reached generation stays unresolved.
+          await (
+            refusedUnsent && phase !== undefined && admission.refused !== undefined
+              ? admission.refused(phase, diagnostic).then(
+                  () => admission.end(false, diagnostic, phase),
+                  () => admission.end(true, diagnostic, phase),
+                )
+              : admission.end(!completed, diagnostic, phase)
+          ).catch(() => undefined);
+        }
 
         const message: AssistantMessage = {
           role: "assistant",

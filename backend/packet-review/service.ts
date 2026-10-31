@@ -2628,6 +2628,35 @@ export class PacketReviews extends Context.Service<
                       }),
                     ),
                   ),
+                // Every send was refused before generation, so nothing was charged. The attempt is
+                // withdrawn instead of left unresolved, and the review pauses for an explicit resume.
+                refused: (phase, diagnostic) =>
+                  run(
+                    query(
+                      Effect.gen(function* () {
+                        const sql = yield* SqlClient.SqlClient;
+                        yield* sql`DELETE FROM packet_review_attempts WHERE review_id=${row.id} AND task_id=${phase["task.id"]} AND attempt=${phase.attempt} AND kind='model' AND status='uncertain'`;
+                      }),
+                    ).pipe(
+                      Effect.andThen(
+                        mutate(
+                          row.project_id,
+                          row.id,
+                          (review) =>
+                            review.state === "running"
+                              ? new PacketReview({
+                                  ...review,
+                                  state: "paused",
+                                  providerFailure: diagnostic,
+                                  error: `The provider refused the request (HTTP ${diagnostic.httpStatus ?? "error"}) until its retry limit ran out. Nothing was generated or charged. Findings and coverage were saved; resume when the provider is available.`,
+                                })
+                              : review,
+                          false,
+                        ),
+                      ),
+                      Effect.asVoid,
+                    ),
+                  ),
                 end: async (uncertain, diagnostic, phase) => {
                   if (phase !== undefined)
                     assignments.inFlight.delete(attemptKey(phase["task.id"], phase.attempt));

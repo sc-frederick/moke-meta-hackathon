@@ -2,9 +2,61 @@ import { expect, test } from "bun:test";
 import { Redacted, Schema } from "effect";
 import { createCanvas } from "@napi-rs/canvas";
 import { metaProvider } from "@earendil-works/pi-ai/providers/meta";
-import { type PacerClock, RequestPacer } from "../../backend/inference/pacing.ts";
+import { type PacerClock, type Refusal, RequestPacer } from "../../backend/inference/pacing.ts";
 import { createAdmittedModels } from "../../backend/inference/provider.ts";
 import type { RequestPhase } from "../../backend/inference/telemetry.ts";
+import type { ProviderFailure } from "#lib/review/execution.ts";
+
+/** Counts events and resolves a wait once a count is reached, so no test sleeps to let work arrive. */
+function counter() {
+  let count = 0;
+  const waiting: Array<{ readonly target: number; readonly resolve: () => void }> = [];
+
+  return {
+    get count() {
+      return count;
+    },
+    add() {
+      count++;
+
+      for (const waiter of waiting.filter((entry) => entry.target <= count)) waiter.resolve();
+    },
+    reached(target: number) {
+      if (target <= count) return Promise.resolve();
+      const reached = Promise.withResolvers<void>();
+      waiting.push({ target, resolve: reached.resolve });
+
+      return reached.promise;
+    },
+  };
+}
+
+/** A real pacer that reports each acquisition and refusal, so a test moves its clock only after them. */
+class SignalledPacer extends RequestPacer {
+  readonly acquired = counter();
+  readonly refusals = counter();
+  /** When each lease was released, stamped on the pacer's clock at the moment of release. */
+  readonly released: Array<number> = [];
+
+  override acquire(tokens: number, signal?: AbortSignal) {
+    const lease = super.acquire(tokens, signal).then((granted) => {
+      this.released.push(granted.dispatchedAt);
+
+      return granted;
+    });
+
+    this.acquired.add();
+
+    return lease;
+  }
+
+  override refused(refusal: Refusal, dispatchedAt: number, retryAfterMs?: number) {
+    const remaining = super.refused(refusal, dispatchedAt, retryAfterMs);
+    this.refusals.add();
+
+    return remaining;
+  }
+}
 
 function response(provider: "meta" | "baseten", outputTokens = 6000) {
   if (provider === "baseten") {
@@ -70,6 +122,8 @@ interface FixtureOptions {
   readonly retryAfter?: string;
   readonly headers?: Record<string, string>;
   readonly pacer?: RequestPacer;
+  /** After its refusals, the transport fails as a connection lost after dispatch would. */
+  readonly networkFailure?: boolean;
 }
 
 function fixture(
@@ -82,6 +136,8 @@ function fixture(
   const receipts: string[] = [];
   const phases: RequestPhase[] = [];
   const endings: boolean[] = [];
+  const refused: Array<typeof ProviderFailure.Type> = [];
+  const sent = counter();
   const maxOutputTokens = provider === "meta" ? 256000 : 1048576;
 
   const admitted = createAdmittedModels(
@@ -97,6 +153,7 @@ function fixture(
           authorization: new Headers(init?.headers).get("authorization"),
           body: Schema.decodeUnknownSync(Schema.String)(init?.body),
         });
+        sent.add();
 
         if (requests.length <= refusals)
           return Response.json(
@@ -108,6 +165,7 @@ function fixture(
             },
           );
 
+        if (options.networkFailure) throw new TypeError("fetch failed");
         const answer = response(provider);
 
         for (const [name, value] of Object.entries(options.headers ?? {}))
@@ -129,6 +187,9 @@ function fixture(
       complete: async (_phase, receipt) => {
         receipts.push(receipt);
       },
+      refused: async (_phase, diagnostic) => {
+        refused.push(diagnostic);
+      },
       end: async (uncertain) => {
         endings.push(uncertain);
       },
@@ -139,7 +200,7 @@ function fixture(
 
   if (!model) throw new Error("Fixture model not available");
 
-  return { admitted, model, requests, receipts, phases, endings };
+  return { admitted, model, requests, receipts, phases, endings, refused, sent };
 }
 
 const generation = {
@@ -370,12 +431,16 @@ test("a rate-limit refusal is resent after the provider delay within one admitte
   expect(session.endings).toEqual([false]);
 });
 
+/** Wall time when every test clock starts. */
+const startedAt = Date.UTC(2026, 9, 31, 12, 0, 0);
+
 /** Timers fire at once and move the clock to their due time, so backoff costs no test time. */
 function instantClock(): PacerClock {
   let now = 0;
 
   return {
     now: () => now,
+    wall: () => startedAt + now,
     schedule: (callback, ms) => {
       const timer = setTimeout(() => {
         now = Math.max(now, now + ms);
@@ -395,6 +460,7 @@ function heldClock() {
 
   const clock: PacerClock = {
     now: () => now,
+    wall: () => startedAt + now,
     schedule: (callback, ms) => {
       const timer = { at: now + ms, callback, live: true };
       timers.push(timer);
@@ -439,7 +505,7 @@ test("Baseten rate limits without Retry-After are waited out past six resends in
 test("a request waiting for rate-limit capacity has no durable attempt until it may be sent", async () => {
   const { clock, advance } = heldClock();
   // Two requests a minute hold one at a time and replenish one every 30 seconds.
-  const pacer = new RequestPacer({ requestsPerMinute: 2, tokensPerMinute: 10_000_000 }, clock);
+  const pacer = new SignalledPacer({ requestsPerMinute: 2, tokensPerMinute: 10_000_000 }, clock);
   const session = fixture("baseten", true, 0, { pacer });
 
   const ask = (signal?: AbortSignal) =>
@@ -456,7 +522,7 @@ test("a request waiting for rate-limit capacity has no durable attempt until it 
   // A cancelled wait never reaches admission, so it leaves no unresolved attempt behind.
   const controller = new AbortController();
   const cancelled = ask(controller.signal);
-  await Bun.sleep(10);
+  await pacer.acquired.reached(2);
   expect(session.phases).toHaveLength(1);
   controller.abort();
   expect((await cancelled).stopReason).toBe("error");
@@ -464,7 +530,7 @@ test("a request waiting for rate-limit capacity has no durable attempt until it 
   expect(session.endings).toEqual([false]);
 
   const waiting = ask();
-  await Bun.sleep(10);
+  await pacer.acquired.reached(3);
   expect(session.phases).toHaveLength(1);
   advance(30_000);
   expect((await waiting).stopReason).toBe("stop");
@@ -475,9 +541,14 @@ test("a request waiting for rate-limit capacity has no durable attempt until it 
 
 test("a capacity refusal holds conversations already waiting for the pacer", async () => {
   const { clock, advance } = heldClock();
+
   // A 24,000-character request is estimated at 6,000 tokens, and 12,000 tokens a minute hold one
   // at a time, so the peer waits for tokens the refused request then returns.
-  const pacer = new RequestPacer({ requestsPerMinute: 1_000_000, tokensPerMinute: 12_000 }, clock);
+  const pacer = new SignalledPacer(
+    { requestsPerMinute: 1_000_000, tokensPerMinute: 12_000 },
+    clock,
+  );
+
   const session = fixture("baseten", true, 1, { status: 529, retryAfter: "10", pacer });
 
   const context = {
@@ -491,21 +562,24 @@ test("a capacity refusal holds conversations already waiting for the pacer", asy
 
   const refused = ask();
   const peer = ask();
-  await Bun.sleep(20);
+  // The first request was refused and its resend queued behind the waiting peer.
+  await pacer.refusals.reached(1);
+  await pacer.acquired.reached(3);
 
   // The refused request returned its tokens, but the cooldown began first.
   expect(session.requests).toHaveLength(1);
-  advance(10_000);
-  await Bun.sleep(20);
+  advance(9_999);
+  advance(1);
+  await session.sent.reached(2);
 
   // The peer was waiting first, so it goes first. The fixture counts 6,020 tokens for it, so the
   // resend waits about 30 seconds for the bucket to refill.
+  expect((await peer).stopReason).toBe("stop");
   expect(session.requests).toHaveLength(2);
   advance(31_000);
 
   expect((await refused).stopReason).toBe("stop");
-  expect((await peer).stopReason).toBe("stop");
-  expect(session.requests).toHaveLength(3);
+  expect(pacer.released).toEqual([0, 10_000, 41_000]);
 });
 
 test("provider rate-limit headers set the pacer's limits", async () => {
@@ -767,3 +841,149 @@ test.each([
     expect(JSON.stringify(context)).toBe(original);
   },
 );
+
+test("forty refusals end the attempt as a definite refusal rather than an unresolved charge", async () => {
+  const session = fixture("baseten", true, Number.POSITIVE_INFINITY, {
+    retryAfter: "1",
+    pacer: new RequestPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, instantClock()),
+  });
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("error");
+  expect(answer.usage.totalTokens).toBe(0);
+  expect(session.requests).toHaveLength(40);
+  expect(session.phases).toHaveLength(1);
+  expect(session.receipts).toEqual([]);
+  expect(session.refused).toEqual([
+    expect.objectContaining({ category: "http", httpStatus: 429, detail: "rate_limit" }),
+  ]);
+  expect(session.endings).toEqual([false]);
+});
+
+test("a provider Retry-After of two minutes is waited out in full until the refusal budget ends", async () => {
+  const { clock, advance } = heldClock();
+  const pacer = new SignalledPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, clock);
+
+  const session = fixture("baseten", true, Number.POSITIVE_INFINITY, {
+    status: 529,
+    retryAfter: "120",
+    pacer,
+  });
+
+  const pending = session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  // Sends at 0, 2, 4, 6, 8 and 10 minutes; a seventh could go out only after the budget.
+  for (let send = 1; send < 6; send++) {
+    await pacer.acquired.reached(send + 1);
+    advance(119_999);
+    advance(1);
+    await session.sent.reached(send + 1);
+  }
+
+  const answer = await pending;
+  expect(answer.stopReason).toBe("error");
+
+  expect(pacer.released).toEqual([0, 120_000, 240_000, 360_000, 480_000, 600_000]);
+
+  expect(session.receipts).toEqual([]);
+  expect(session.refused).toEqual([expect.objectContaining({ category: "http", httpStatus: 529 })]);
+  expect(session.endings).toEqual([false]);
+});
+
+test("a provider wait beyond the refusal budget ends the attempt without an early resend", async () => {
+  const { clock } = heldClock();
+
+  const session = fixture("baseten", true, Number.POSITIVE_INFINITY, {
+    retryAfter: "900",
+    pacer: new RequestPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, clock),
+  });
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("error");
+  expect(session.requests).toHaveLength(1);
+  expect(clock.now()).toBe(0);
+  expect(session.refused).toEqual([expect.objectContaining({ httpStatus: 429 })]);
+  expect(session.endings).toEqual([false]);
+});
+
+test.each([
+  ["an HTTP-date", new Date(startedAt + 90_000).toUTCString(), 90_000],
+  // Zero and malformed values ask for no wait, so the local backoff's first 2 seconds apply.
+  ["zero", "0", 2000],
+  ["a malformed value", "soon", 2000],
+] as const)(
+  "a refusal with %s as Retry-After is not resent before its wait",
+  async (_, value, waitMs) => {
+    const { clock, advance } = heldClock();
+    const pacer = new SignalledPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, clock);
+    const session = fixture("baseten", true, 1, { retryAfter: value, pacer });
+
+    const pending = session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+    );
+
+    await pacer.acquired.reached(2);
+    advance(waitMs - 1);
+    advance(1);
+
+    expect((await pending).stopReason).toBe("stop");
+    expect(pacer.released).toEqual([0, waitMs]);
+    expect(session.endings).toEqual([false]);
+  },
+);
+
+test("cancelling during a provider cooldown leaves the queue and records a definite refusal", async () => {
+  const { advance, clock } = heldClock();
+  const pacer = new SignalledPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, clock);
+  const session = fixture("baseten", true, 1, { retryAfter: "120", pacer });
+  const controller = new AbortController();
+
+  const ask = (signal?: AbortSignal) =>
+    session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      session.admitted.models.completeSimple(
+        session.model,
+        shortContext,
+        signal === undefined ? { telemetry } : { telemetry, signal },
+      ),
+    );
+
+  const cancelled = ask(controller.signal);
+  await pacer.acquired.reached(2);
+  controller.abort();
+  expect((await cancelled).stopReason).toBe("error");
+  expect(session.refused).toEqual([expect.objectContaining({ httpStatus: 429 })]);
+  expect(session.endings).toEqual([false]);
+
+  // The next conversation waits out the same cooldown, not a cancelled request ahead of it.
+  const next = ask();
+  await pacer.acquired.reached(3);
+  advance(119_999);
+  advance(1);
+  expect((await next).stopReason).toBe("stop");
+  expect(pacer.released).toEqual([0, 120_000]);
+});
+
+test("a connection lost after a refused send stays unresolved", async () => {
+  const session = fixture("baseten", true, 1, {
+    retryAfter: "1",
+    networkFailure: true,
+    pacer: new RequestPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, instantClock()),
+  });
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("error");
+  expect(session.requests).toHaveLength(2);
+  expect(session.refused).toEqual([]);
+  expect(session.endings).toEqual([true]);
+});
