@@ -52,6 +52,11 @@ The review moves through three stages, recorded in `PacketReview.parallel`:
    checks suspected gaps against the whole inventory, and calls `finish_review`. Its tool list
    widens once, here; each role and stage otherwise keeps one list, so its cached prefix holds.
 
+Sources are retrieved once per review. Reviewers reading the same URL share one retrieval and one
+source ID, a `#page=N` selector reads a different source, and `read_source` with a `sourceId`
+rereads a saved source. A failed or unavailable read can be tried again. A source saved by an
+earlier review is never reused for a new read.
+
 Each submission has a stable request ID, and each sheet's conversation number is saved in the
 review. A restart rejoins the work of the current stage. An explicit resume continues unfinished
 sheets in their own conversations. When a review pauses, sheets without notes stay queued.

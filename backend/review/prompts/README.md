@@ -120,5 +120,6 @@ Packet review `moke-packet-review-v7` gives each parallel role and stage its own
 tool list. Coordinator setup has inventory, rendering, research, project and
 citation records, `ask_reviewer` and a new `finish_setup` tool; sheet reviewers
 lose `record_project` and report a different project fact in their notes. The
-coordinator's guidance describes setup's sheet and request limits. See
+coordinator's guidance describes setup's sheet and request limits, and
+`read_source` can reread a saved source by `sourceId`. See
 [docs/review-runtime.md](../../../docs/review-runtime.md#parallel-packet-reviews).

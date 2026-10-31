@@ -1,13 +1,28 @@
 import { expect, test } from "bun:test";
-import { Effect, Result } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DocumentError } from "#lib/review/contracts.ts";
+import { reviewDisciplines } from "#lib/review/execution.ts";
+import { ReviewPass } from "#lib/review/packet.ts";
+import type { ProviderTransport } from "../../backend/inference/provider.ts";
 import {
   readSource,
   searchSources,
+  sourceKey,
   type SourceLookupOptions,
   type SourceResponse,
 } from "../../backend/packet-review/sources.ts";
+import {
+  decodeRequest,
+  open,
+  outputs,
+  response,
+  systemPrompt,
+  until,
+} from "../fixtures/packet-review.ts";
 
 const publicDns: NonNullable<SourceLookupOptions["resolve"]> = async () => [
   { address: "1.1.1.1", family: 4 },
@@ -324,3 +339,172 @@ test("keeps scanned, missing-page and unreadable PDFs unavailable", async () => 
   expect(failed.sha256).toBeNull();
   expect(failed.text).toContain("The PDF could not be parsed.");
 });
+
+test("a source key ignores fragments except a PDF page selector", () => {
+  expect(sourceKey("https://County.gov:443/rules.pdf#section-3")).toBe(
+    "https://county.gov/rules.pdf",
+  );
+  expect(sourceKey("https://county.gov/rules.pdf#page=1")).toBe("https://county.gov/rules.pdf");
+  expect(sourceKey("https://county.gov/rules.pdf#page=4")).toBe(
+    "https://county.gov/rules.pdf#page=4",
+  );
+});
+
+const Call = Schema.Struct({
+  type: Schema.optionalKey(Schema.String),
+  name: Schema.optionalKey(Schema.String),
+});
+
+const ReadResult = Schema.Struct({
+  id: Schema.String,
+  url: Schema.String,
+  status: Schema.String,
+  text: Schema.String,
+});
+
+const SheetOpening = Schema.Struct({
+  stage: Schema.Literal("sheet"),
+  sheet: Schema.Struct({ id: Schema.String }),
+  inventory: Schema.Array(Schema.Struct({ id: Schema.String })),
+});
+
+test("parallel sheet reviewers share one retrieval of a source and reread it by id; page selectors stay distinct", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-packet-source-reads-"));
+  const url = "https://county.gov/amendments.pdf";
+  const fetched = new Array<string>();
+  const reads = new Map<string, ReadonlyArray<typeof ReadResult.Type>>();
+  const bothAsked = Promise.withResolvers<void>();
+  let asked = 0;
+
+  const transport: ProviderTransport = async (_url, init) => {
+    const request = decodeRequest(init);
+
+    const made = Schema.decodeUnknownSync(Schema.Array(Call))(request.input ?? []).flatMap(
+      (item) => (item.type === "function_call" && item.name ? [item.name] : []),
+    );
+
+    // The coordinator records nothing in setup and finishes in coordination.
+    if (!systemPrompt(request).includes("## Parallel review: sheet reviewer")) {
+      if (!outputs(Schema.Struct({ stage: Schema.Literal("coordination") }), request).length)
+        return response([], "Project configuration recorded.");
+
+      return made.includes("finish_review")
+        ? response([], "Coordination complete.")
+        : response([
+            {
+              name: "finish_review",
+              arguments: { summary: "Sheets reviewed and compared.", missingInputs: [] },
+            },
+          ]);
+    }
+
+    const input = outputs(SheetOpening, request).at(0);
+
+    if (!input) throw new Error("Sheet reviewer input is missing its sheet");
+    const own = input.sheet.id;
+    const first = own === input.inventory[0]?.id;
+    const results = outputs(ReadResult, request);
+
+    if (!made.includes("render_sheet"))
+      return response([{ name: "render_sheet", arguments: { sheetId: own } }]);
+
+    if (!made.includes("read_source")) {
+      if (++asked === 2) bothAsked.resolve();
+
+      return response([{ name: "read_source", arguments: { url } }]);
+    }
+
+    // Each reviewer rereads the saved copy by id; the first also opens a later PDF page.
+    if (results.length === 1)
+      return response([
+        { name: "read_source", arguments: { sourceId: results[0]?.id ?? "missing" } },
+        ...(first ? [{ name: "read_source", arguments: { url: `${url}#page=2` } }] : []),
+      ]);
+
+    reads.set(own, results);
+
+    if (!made.includes("record_coverage_batch"))
+      return response([
+        {
+          name: "record_coverage_batch",
+          arguments: {
+            entries: reviewDisciplines.flatMap((discipline) =>
+              ReviewPass.literals.map((pass) => ({
+                sheetId: own,
+                discipline: discipline.id,
+                pass,
+                status: "checked",
+                note: "",
+              })),
+            ),
+          },
+        },
+      ]);
+
+    if (!made.includes("finish_sheet"))
+      return response([
+        {
+          name: "finish_sheet",
+          arguments: {
+            summary: "Sheet reviewed.",
+            keyFacts: [],
+            crossReferences: [],
+            suspectedGaps: [],
+          },
+        },
+      ]);
+
+    return response([], "Sheet notes saved.");
+  };
+
+  const sources = {
+    resolve: publicDns,
+    transport: async (target: URL) => {
+      fetched.push(target.href);
+      // The first retrieval is still on the wire when the second reviewer asks for the source.
+      await Promise.race([bothAsked.promise, Bun.sleep(5000)]);
+
+      return html("<p>County amendment 3: cleanouts at every change of direction.</p>");
+    },
+  };
+
+  const session = await open(
+    directory,
+    transport,
+    true,
+    undefined,
+    "observe",
+    { minSheets: 2, concurrency: { meta: 4, baseten: 2 } },
+    sources,
+  );
+
+  try {
+    const sheets = (await session.snapshot()).sheets;
+
+    const started = await session.run(
+      session.packets.start(await session.request("Review the whole drawing set.")),
+    );
+
+    const finished = await until(session, started.id, "completed");
+    const [left, right] = sheets.map((sheet) => reads.get(sheet.id) ?? []);
+
+    // Two reviewers' reads of one URL made one retrieval; the later page is its own source.
+    expect(fetched).toHaveLength(2);
+    expect(finished.sources).toHaveLength(2);
+    expect(new Set(finished.sources.map((source) => source.id)).size).toBe(2);
+    expect(finished.sources.map((source) => sourceKey(source.url)).toSorted()).toEqual(
+      [url, `${url}#page=2`].toSorted(),
+    );
+
+    const [shared, page] = [left?.[0], left?.[2]];
+    expect(shared?.status).toBe("available");
+    expect(right?.[0]).toEqual(shared);
+    // Rereading by id returns the same saved source.
+    expect(left?.[1]).toEqual(shared);
+    expect(right?.[1]).toEqual(shared);
+    expect(page?.id).not.toBe(shared?.id);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 120000);

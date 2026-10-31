@@ -88,7 +88,7 @@ const imageGuidance = {
 } as const;
 
 const codeGuidance =
-  "For Florida Building Code sections, Florida Statutes and Florida Administrative Code rules, call search_code first. It returns the exact section, a plan review note and the section's link; cite a result with record_citation and its id as codeReferenceId. ICC Digital Codes blocks automated retrieval, so do not read_source codes.iccsafe.org links: record those citations as unverified with the section and codeReferenceId, and the engineer opens the link to confirm it. Statute links can be retrieved with read_source and verified against their text. read_source also extracts text from PDF sources such as county amendments and agency checklists; add #page=N to a PDF link to start at that page.";
+  "For Florida Building Code sections, Florida Statutes and Florida Administrative Code rules, call search_code first. It returns the exact section, a plan review note and the section's link; cite a result with record_citation and its id as codeReferenceId. ICC Digital Codes blocks automated retrieval, so do not read_source codes.iccsafe.org links: record those citations as unverified with the section and codeReferenceId, and the engineer opens the link to confirm it. Statute links can be retrieved with read_source and verified against their text. read_source also extracts text from PDF sources such as county amendments and agency checklists; add #page=N to a PDF link to start at that page. A url this review already retrieved returns its saved copy; reread a saved source with read_source and its sourceId.";
 
 const sourceGuidance = {
   baseten: `${codeGuidance} Use search_sources and read_source for other governing sources; record exact citations and applicability.`,
