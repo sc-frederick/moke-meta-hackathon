@@ -102,9 +102,11 @@ const promptVersion = packetPromptVersion;
 /**
  * Three-sheet reviews finished as one conversation on 2026-10-29; a 29-sheet review recorded
  * 220 of 1,276 checks in 33 minutes. Run in parallel at 16 sheets, it recorded all 1,276 using
- * about 1.5M of Meta's 4M tokens a minute, so Meta reviews start every sheet at once.
+ * about 1.5M of Meta's 4M tokens a minute, so Meta reviews start every sheet at once. The Baseten
+ * key allows 100 requests and 2M tokens a minute (2026-10-31); 16 sheet reviewers send about 40
+ * requests a minute, and the shared request pacer holds any burst inside the limit.
  */
-export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten: 4 } } as const;
+export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten: 16 } } as const;
 
 /** Which conversation made each model or SAM request, and which sheet each sheet reviewer owns. */
 interface SheetAssignments {

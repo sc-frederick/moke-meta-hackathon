@@ -14,6 +14,7 @@ import type {
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { Option, Predicate, Redacted, Schema } from "effect";
 import { createHash } from "node:crypto";
+import { type PacerLease, type Refusal, RequestPacer, sharedPacer } from "./pacing.ts";
 import { parseResponseReceipt } from "./response.ts";
 import { createExecutionTelemetry, type RequestPhase } from "./telemetry.ts";
 import type { ProviderFailure } from "#lib/review/execution.ts";
@@ -40,6 +41,11 @@ export interface ProviderConfiguration {
    * base64 on every turn. Defaults to on for live routes; recorded tests opt in.
    */
   readonly imageFiles?: boolean;
+  /**
+   * Paces requests within the credential's rate limits. Live routes share one pacer per key in
+   * the process; recorded routes get a private pacer unless a test supplies one.
+   */
+  readonly pacer?: RequestPacer;
 }
 
 /** Meta serves Muse Spark 1.3 with a larger output ceiling than Pi's catalog records (checked 2026-10-29). */
@@ -69,21 +75,65 @@ interface MetaPayloadChanges {
   prompt_cache_retention?: "24h";
 }
 
-/** Provider refusals before generation: rate limits and missing serving capacity. */
-const retryableStatuses = new Set([429, 529]);
-
 const ModelNotFound = Schema.fromJsonString(
   Schema.Struct({ error: Schema.Struct({ code: Schema.Literal("model_not_found") }) }),
 );
 
 /**
- * Meta intermittently answers a served model with 404 `model_not_found` (about one request in
- * eight for one team's key on 2026-10-30). Like a rate limit, nothing was generated.
+ * A refused request generated nothing, so it can be resent for as long as this budget allows. The
+ * provider's limits replenish within a minute; a longer refusal is an outage, not a rate limit.
  */
-async function refusedBeforeGeneration(response: Response) {
-  if (retryableStatuses.has(response.status)) return true;
+const refusalBudgetMs = 10 * 60_000;
+const maxRefusals = 40;
 
-  if (response.status !== 404) return false;
+/** Allowances a recorded transport never reaches. */
+const unpacedLimits = { requestsPerMinute: 1e9, tokensPerMinute: 1e15 } as const;
+
+/** Rough request size for pacing: four characters a token, plus an allowance for each image. */
+function pacingEstimate(transcript: TranscriptContext) {
+  let characters = 0;
+  let images = 0;
+
+  for (const message of transcript.messages) {
+    if (Predicate.isString(message.content)) {
+      characters += message.content.length;
+      continue;
+    }
+
+    for (const part of message.content)
+      if (part.type === "image") images++;
+      else if (part.type === "text") characters += part.text.length;
+      else if (part.type === "thinking") characters += part.thinking.length;
+      else characters += JSON.stringify(part.arguments).length;
+  }
+
+  return Math.ceil(characters / 4) + images * 1500;
+}
+
+/** A dispatch the provider refused before generating anything, kept to decide how to resend it. */
+interface RefusedDispatch {
+  readonly kind: Refusal | "model_not_found";
+  readonly response: Response;
+}
+
+/** Provider-requested wait in milliseconds, when it sends Retry-After seconds. */
+function retryAfterMs(response: Response) {
+  const requested = Number(response.headers.get("retry-after"));
+
+  return Number.isFinite(requested) && requested > 0 ? requested * 1000 : undefined;
+}
+
+/**
+ * Why a response refused the request before generating anything: a rate limit (429), missing
+ * serving capacity (529), or Meta's intermittent 404 `model_not_found` for a served model (about
+ * one request in eight for one team's key on 2026-10-30).
+ */
+async function refusalOf(response: Response): Promise<Refusal | "model_not_found" | undefined> {
+  if (response.status === 429) return "rate_limit";
+
+  if (response.status === 529) return "overloaded";
+
+  if (response.status !== 404) return undefined;
   const reader = response.clone().body?.getReader();
   const chunks: Uint8Array[] = [];
   let bytes = 0;
@@ -93,7 +143,7 @@ async function refusedBeforeGeneration(response: Response) {
       for (let part = await reader.read(); !part.done; part = await reader.read()) {
         bytes += part.value.length;
 
-        if (bytes > 16384) return false;
+        if (bytes > 16384) return undefined;
         chunks.push(part.value);
       }
     } finally {
@@ -104,17 +154,22 @@ async function refusedBeforeGeneration(response: Response) {
 
   return Option.isSome(
     Schema.decodeUnknownOption(ModelNotFound)(Buffer.concat(chunks).toString("utf8")),
-  );
+  )
+    ? "model_not_found"
+    : undefined;
 }
 
-/** Wait before resending a refused request, honouring the provider's Retry-After seconds. */
+/**
+ * Wait before resending one request after a routing refusal, honouring Retry-After seconds. Rate
+ * limits and capacity refusals wait in the shared pacer instead, so all conversations back off.
+ */
 function refusalDelay(response: Response, retry: number) {
-  const requested = Number(response.headers.get("retry-after"));
+  const requested = retryAfterMs(response);
   const backoff = Math.min(60_000, 2_000 * 2 ** retry);
 
-  return Number.isFinite(requested) && requested > 0
-    ? Math.min(60_000, requested * 1000)
-    : backoff / 2 + Math.random() * (backoff / 2);
+  return requested === undefined
+    ? backoff / 2 + Math.random() * (backoff / 2)
+    : Math.min(60_000, requested);
 }
 
 /** Short, stable routing key for one shared prompt prefix; it carries no names or prompt text. */
@@ -393,6 +448,13 @@ export function createAdmittedModels(
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       };
 
+  // A recorded transport replays at full speed; it still waits out refusals like a live route.
+  const pacer =
+    configuration.pacer ??
+    (configuration.route === "live"
+      ? sharedPacer(selected.provider === "baseten" ? "baseten" : "meta", configuration.apiKey)
+      : new RequestPacer(unpacedLimits));
+
   const imageFiles =
     selected.provider === "meta" && (configuration.imageFiles ?? configuration.route === "live")
       ? new Map<string, { readonly id: Promise<string | null>; readonly reusableUntil: number }>()
@@ -505,6 +567,21 @@ export function createAdmittedModels(
       let admitted = false;
       let completed = false;
       let phase: RequestPhase | undefined;
+      let estimate = 0;
+      let lease: PacerLease | undefined;
+      let dispatched = false;
+      let dispatchedAt = 0;
+      let refusal: RefusedDispatch | undefined;
+
+      /** Reset the per-dispatch outcome before the SDK sends, or resends, the request. */
+      const nextDispatch = (current: PacerLease) => {
+        dispatchedAt = current.dispatchedAt;
+        dispatched = false;
+        refusal = undefined;
+        httpStatus = null;
+        rejectionDetail = undefined;
+        transportFailure = undefined;
+      };
 
       try {
         phase = identity.phase(options?.telemetry);
@@ -541,10 +618,16 @@ export function createAdmittedModels(
           )
           .digest("hex");
 
+        estimate = pacingEstimate(bounded);
+        // Wait for rate-limit capacity before the durable attempt exists, so a cancel or shutdown
+        // while waiting leaves nothing unresolved. The SDK's deadline starts after this wait.
+        lease = await pacer.acquire(estimate, options?.signal);
         const cached = await admission.begin(phase, fingerprint);
         admitted = true;
 
         if (cached !== null) {
+          lease.refund();
+          lease = undefined;
           const message = parseResponseReceipt(JSON.parse(cached));
           completed = true;
           await admission.end(false, undefined, phase);
@@ -554,8 +637,8 @@ export function createAdmittedModels(
           return;
         }
 
-        let dispatched = false;
         const dispatchPhase = phase;
+        let sent = false;
 
         const transport: FetchFunction = Object.assign(
           async (input: Parameters<FetchFunction>[0], init?: Parameters<FetchFunction>[1]) => {
@@ -574,25 +657,44 @@ export function createAdmittedModels(
             )
               throw new Error("Transport admission denied");
             dispatched = true;
-            await admission.send(dispatchPhase);
+
+            // One durable attempt covers every resend of a request the provider refused.
+            if (!sent) {
+              await admission.send(dispatchPhase);
+              sent = true;
+            }
 
             failurePhase = "dispatch";
 
             try {
               const dispatch = configuration.transport ?? globalThis.fetch;
-              let response = await dispatch(input, init);
-
-              // A rate-limit, capacity or model-routing refusal happens before generation, so
-              // resending it cannot duplicate paid work. Parallel sheet reviewers rely on this.
-              for (let retry = 0; (await refusedBeforeGeneration(response)) && retry < 6; retry++) {
-                await response.body?.cancel();
-                await Bun.sleep(refusalDelay(response, retry));
-                init?.signal?.throwIfAborted();
-                response = await dispatch(input, init);
-              }
+              const response = await dispatch(input, init);
 
               httpStatus = response.status;
               failurePhase = "response";
+
+              // A rate-limit, capacity or model-routing refusal happens before generation, so
+              // resending it cannot duplicate paid work. Parallel sheet reviewers rely on this.
+              const refused = await refusalOf(response);
+
+              // Start the shared cooldown before anything returns capacity to the pacer, or a
+              // waiting conversation would be released into the same refusal.
+              if (refused === "rate_limit" || refused === "overloaded")
+                pacer.refused(refused, dispatchedAt, retryAfterMs(response));
+
+              pacer.observe(response.headers);
+
+              if (refused !== undefined) {
+                refusal = { kind: refused, response };
+                await response.body?.cancel();
+                transportFailure = "http";
+                rejectionDetail = refused === "rate_limit" ? "rate_limit" : "unclassified";
+
+                return Response.json(
+                  { error: { message: `Provider refused request: ${rejectionDetail}` } },
+                  { status: response.status },
+                );
+              }
 
               if (!response.ok) {
                 transportFailure = "http";
@@ -621,8 +723,53 @@ export function createAdmittedModels(
           { preconnect: globalThis.fetch.preconnect },
         );
 
-        // Buffer the final normalized response. No tool can consume a response before its receipt commits.
-        const response = await send(transport, bounded, admission.cacheKey?.(phase)).result();
+        let response: AssistantMessage | undefined;
+
+        // The first dispatch uses the capacity reserved before admission. Each resend is a fresh
+        // SDK call, so its deadline covers one dispatch and none of the waiting.
+        for (let refusals = 0; response === undefined; refusals++) {
+          const current = lease ?? (await pacer.acquire(estimate, options?.signal));
+          lease = current;
+          nextDispatch(current);
+
+          // Buffer the final normalized response. No tool can consume a response before its
+          // receipt commits.
+          const result = await send(
+            transport,
+            bounded,
+            admission.cacheKey?.(dispatchPhase),
+          ).result();
+
+          const refused = refusal;
+          lease = undefined;
+
+          if (refused === undefined) {
+            pacer.accepted(current.dispatchedAt);
+            current.settle(
+              result.stopReason === "error" || result.stopReason === "aborted"
+                ? estimate
+                : result.usage.input +
+                    result.usage.cacheRead +
+                    result.usage.cacheWrite +
+                    result.usage.output,
+            );
+            response = result;
+            continue;
+          }
+
+          // A refused request counted against the request limit but used no tokens.
+          current.settle(0);
+
+          if (
+            refusals + 1 >= maxRefusals ||
+            performance.now() - started > refusalBudgetMs ||
+            options?.signal?.aborted
+          )
+            response = result;
+          // Rate limits and capacity refusals already started the shared cooldown.
+          else if (refused.kind === "model_not_found")
+            await Bun.sleep(refusalDelay(refused.response, refusals));
+        }
 
         if (response.stopReason === "error" || response.stopReason === "aborted") {
           // The SDK's deadline abort uses a plain AbortError internally. Its normalized
@@ -657,6 +804,10 @@ export function createAdmittedModels(
         admitted = false;
         output.push({ type: "done", reason: message.stopReason, message });
       } catch {
+        // A request that reached the provider keeps its reservation; one never sent returns it.
+        if (dispatched) lease?.settle(estimate);
+        else lease?.refund();
+
         if (admitted)
           await admission
             .end(

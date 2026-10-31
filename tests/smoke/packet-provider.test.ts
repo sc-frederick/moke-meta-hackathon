@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { Redacted, Schema } from "effect";
 import { createCanvas } from "@napi-rs/canvas";
 import { metaProvider } from "@earendil-works/pi-ai/providers/meta";
+import { type PacerClock, RequestPacer } from "../../backend/inference/pacing.ts";
 import { createAdmittedModels } from "../../backend/inference/provider.ts";
 import type { RequestPhase } from "../../backend/inference/telemetry.ts";
 
@@ -63,7 +64,20 @@ function response(provider: "meta" | "baseten", outputTokens = 6000) {
   });
 }
 
-function fixture(provider: "meta" | "baseten" = "meta", packetReview = true, refusals = 0) {
+/** Optional refusal shape, headers and pacer for one fixture. */
+interface FixtureOptions {
+  readonly status?: number;
+  readonly retryAfter?: string;
+  readonly headers?: Record<string, string>;
+  readonly pacer?: RequestPacer;
+}
+
+function fixture(
+  provider: "meta" | "baseten" = "meta",
+  packetReview = true,
+  refusals = 0,
+  options: FixtureOptions = { retryAfter: "1" },
+) {
   const requests: Array<{ url: string; authorization: string | null; body: string }> = [];
   const receipts: string[] = [];
   const phases: RequestPhase[] = [];
@@ -76,6 +90,7 @@ function fixture(provider: "meta" | "baseten" = "meta", packetReview = true, ref
       model: provider === "meta" ? "muse-spark-1.3" : "meta-models/muse-spark-open-1026",
       apiKey: Redacted.make(`packet-${provider}-fixture-key`),
       route: "recorded",
+      pacer: options.pacer ?? new RequestPacer({ requestsPerMinute: 1e9, tokensPerMinute: 1e15 }),
       transport: async (input, init) => {
         requests.push({
           url: input instanceof Request ? input.url : String(input),
@@ -85,11 +100,20 @@ function fixture(provider: "meta" | "baseten" = "meta", packetReview = true, ref
 
         if (requests.length <= refusals)
           return Response.json(
-            { error: { message: "Rate limit reached" } },
-            { status: 429, headers: { "retry-after": "1" } },
+            { error: "Rate limit exceeded" },
+            {
+              status: options.status ?? 429,
+              headers:
+                options.retryAfter === undefined ? {} : { "retry-after": options.retryAfter },
+            },
           );
 
-        return response(provider);
+        const answer = response(provider);
+
+        for (const [name, value] of Object.entries(options.headers ?? {}))
+          answer.headers.set(name, value);
+
+        return answer;
       },
     },
     {
@@ -344,6 +368,159 @@ test("a rate-limit refusal is resent after the provider delay within one admitte
   expect(session.phases).toHaveLength(1);
   expect(session.receipts).toHaveLength(1);
   expect(session.endings).toEqual([false]);
+});
+
+/** Timers fire at once and move the clock to their due time, so backoff costs no test time. */
+function instantClock(): PacerClock {
+  let now = 0;
+
+  return {
+    now: () => now,
+    schedule: (callback, ms) => {
+      const timer = setTimeout(() => {
+        now = Math.max(now, now + ms);
+        callback();
+      }, 0);
+
+      return () => clearTimeout(timer);
+    },
+    random: () => 1,
+  };
+}
+
+/** A clock that moves only when the test advances it. */
+function heldClock() {
+  let now = 0;
+  const timers: Array<{ at: number; callback: () => void; live: boolean }> = [];
+
+  const clock: PacerClock = {
+    now: () => now,
+    schedule: (callback, ms) => {
+      const timer = { at: now + ms, callback, live: true };
+      timers.push(timer);
+
+      return () => {
+        timer.live = false;
+      };
+    },
+    random: () => 1,
+  };
+
+  const advance = (ms: number) => {
+    now += ms;
+
+    for (const timer of timers.filter((entry) => entry.live && entry.at <= now)) {
+      timer.live = false;
+      timer.callback();
+    }
+  };
+
+  return { clock, advance };
+}
+
+test("Baseten rate limits without Retry-After are waited out past six resends in one attempt", async () => {
+  // Baseten's 429 carries no Retry-After; the old adapter gave up after six resends.
+  const session = fixture("baseten", true, 9, {
+    pacer: new RequestPacer({ requestsPerMinute: 100, tokensPerMinute: 2_000_000 }, instantClock()),
+  });
+
+  const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(answer.stopReason).toBe("stop");
+  expect(session.requests).toHaveLength(10);
+  expect(new Set(session.requests.map((request) => request.body)).size).toBe(1);
+  expect(session.phases).toHaveLength(1);
+  expect(session.receipts).toHaveLength(1);
+  expect(session.endings).toEqual([false]);
+});
+
+test("a request waiting for rate-limit capacity has no durable attempt until it may be sent", async () => {
+  const { clock, advance } = heldClock();
+  // Two requests a minute hold one at a time and replenish one every 30 seconds.
+  const pacer = new RequestPacer({ requestsPerMinute: 2, tokensPerMinute: 10_000_000 }, clock);
+  const session = fixture("baseten", true, 0, { pacer });
+
+  const ask = (signal?: AbortSignal) =>
+    session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      session.admitted.models.completeSimple(
+        session.model,
+        shortContext,
+        signal === undefined ? { telemetry } : { telemetry, signal },
+      ),
+    );
+
+  expect((await ask()).stopReason).toBe("stop");
+
+  // A cancelled wait never reaches admission, so it leaves no unresolved attempt behind.
+  const controller = new AbortController();
+  const cancelled = ask(controller.signal);
+  await Bun.sleep(10);
+  expect(session.phases).toHaveLength(1);
+  controller.abort();
+  expect((await cancelled).stopReason).toBe("error");
+  expect(session.phases).toHaveLength(1);
+  expect(session.endings).toEqual([false]);
+
+  const waiting = ask();
+  await Bun.sleep(10);
+  expect(session.phases).toHaveLength(1);
+  advance(30_000);
+  expect((await waiting).stopReason).toBe("stop");
+  expect(session.phases).toHaveLength(2);
+  expect(session.requests).toHaveLength(2);
+  expect(session.endings).toEqual([false, false]);
+});
+
+test("a capacity refusal holds conversations already waiting for the pacer", async () => {
+  const { clock, advance } = heldClock();
+  // A 24,000-character request is estimated at 6,000 tokens, and 12,000 tokens a minute hold one
+  // at a time, so the peer waits for tokens the refused request then returns.
+  const pacer = new RequestPacer({ requestsPerMinute: 1_000_000, tokensPerMinute: 12_000 }, clock);
+  const session = fixture("baseten", true, 1, { status: 529, retryAfter: "10", pacer });
+
+  const context = {
+    messages: [{ role: "user" as const, content: "x".repeat(24_000), timestamp: 0 }],
+  };
+
+  const ask = () =>
+    session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      session.admitted.models.completeSimple(session.model, context, { telemetry }),
+    );
+
+  const refused = ask();
+  const peer = ask();
+  await Bun.sleep(20);
+
+  // The refused request returned its tokens, but the cooldown began first.
+  expect(session.requests).toHaveLength(1);
+  advance(10_000);
+  await Bun.sleep(20);
+
+  // The peer was waiting first, so it goes first. The fixture counts 6,020 tokens for it, so the
+  // resend waits about 30 seconds for the bucket to refill.
+  expect(session.requests).toHaveLength(2);
+  advance(31_000);
+
+  expect((await refused).stopReason).toBe("stop");
+  expect((await peer).stopReason).toBe("stop");
+  expect(session.requests).toHaveLength(3);
+});
+
+test("provider rate-limit headers set the pacer's limits", async () => {
+  const pacer = new RequestPacer({ requestsPerMinute: 3000, tokensPerMinute: 4_000_000 });
+
+  const session = fixture("meta", true, 0, {
+    pacer,
+    headers: { "x-ratelimit-limit-requests": "1200", "x-ratelimit-limit-tokens": "3000000" },
+  });
+
+  await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+    session.admitted.models.completeSimple(session.model, shortContext, { telemetry }),
+  );
+
+  expect(pacer.limits).toEqual({ requestsPerMinute: 1200, tokensPerMinute: 3_000_000 });
 });
 
 test.each([true, false])(
