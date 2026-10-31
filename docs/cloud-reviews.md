@@ -387,7 +387,7 @@ are fenced while the cloud owns the workspace.
 
 New reviews are admitted only to a protocol-5 worker whose identity matches this
 build exactly: package engine `review-pi-1.4.0-v1`, count prompt
-`moke-selected-coordination-v2`, packet prompt `moke-packet-review-v6`, and the
+`moke-selected-coordination-v2`, packet prompt `moke-packet-review-v7`, and the
 current instruction revision and code index version. Every new ownership receipt
 records `workerProtocol: 5`. An image with a different identity fails the
 identity probe before transfer. Migrations are not part of the identity: a worker
@@ -405,7 +405,7 @@ engine, count prompt and instruction revision, and omit the code index:
 | Absent, saved by protocol-2 or 3 desktops | Protocol 2 or 3 with packet prompts v1 to v3 |
 | `3`                                       | Protocol 3 with packet prompts v1 to v3      |
 | `4`                                       | Protocol 4 with packet prompts v3 to v5      |
-| `5`                                       | Protocol 5 with the current identity         |
+| `5`                                       | Protocol 5 with packet prompt v6 or v7       |
 
 Receipts in every other phase accept only current progress.
 
@@ -432,6 +432,12 @@ before sending protocol-5 reviews; a protocol-4 image fails the identity probe
 before transfer. New receipts record `workerProtocol: 5`. Receipts already
 dispatched to protocol-4 workers stay readable and accept protocol-4 progress
 with packet prompts v3 to v5 only.
+
+Packet prompt `moke-packet-review-v7` gives each parallel role and stage its own
+tool list and builds every sheet reviewer's opening from a saved setup snapshot.
+Publish a new worker image with `bun run modal:image` before sending v7 reviews;
+a v6 image fails the identity probe before transfer. Jobs already sent to a v6
+worker stay readable.
 
 The protocol-3 handshake required support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
