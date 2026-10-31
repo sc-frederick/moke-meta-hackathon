@@ -304,6 +304,47 @@ test("extracts a retrieved PDF's text from the requested page and says how to co
   expect(source.text).toContain("Read the same URL with #page=5 to continue.");
 });
 
+test("a redirected PDF page read keeps its page selector, so it never stands in for another page", async () => {
+  const destinations: Array<string> = [];
+
+  const source = await Effect.runPromise(
+    readSource("https://county.gov/old.pdf#page=2", {
+      resolve: publicDns,
+      transport: async (url) => {
+        destinations.push(url.pathname);
+
+        if (url.pathname === "/old.pdf")
+          return {
+            status: 302,
+            headers: { location: "https://county.gov/current.pdf" },
+            body: bytes(""),
+          };
+
+        return {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+          body: bytes("%PDF-1.7"),
+        };
+      },
+      pdfText: (_body, firstPage) =>
+        Effect.succeed({
+          sha256: "c".repeat(64),
+          pageCount: 3,
+          firstPage,
+          lastPage: firstPage,
+          text: `[Page ${firstPage}]\nAmended text`,
+          truncated: false,
+        }),
+    }),
+  );
+
+  expect(destinations).toEqual(["/old.pdf", "/current.pdf"]);
+  expect(source.status).toBe("available");
+  expect(source.text).toContain("[Page 2]");
+  expect(source.url).toBe("https://county.gov/current.pdf#page=2");
+  expect(sourceKey(source.url)).not.toBe(sourceKey("https://county.gov/current.pdf"));
+});
+
 test("keeps scanned, missing-page and unreadable PDFs unavailable", async () => {
   const read = (
     pdfText: NonNullable<SourceLookupOptions["pdfText"]>,

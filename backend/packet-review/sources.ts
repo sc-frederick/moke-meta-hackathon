@@ -260,7 +260,12 @@ const fetchText = Effect.fn("PacketReview.fetchPublicSource")(function* (
           const location = response.headers.location;
 
           if (!location || hop === 4) throw new Error("Source redirect could not be followed");
-          url = Schema.decodeUnknownSync(PublicUrl)(new URL(location, url).href);
+          const next = new URL(location, url);
+
+          // As in fetch, a redirect without a fragment keeps the requested one, so a PDF `#page=N`
+          // read stays keyed to the page its text came from.
+          if (next.hash === "") next.hash = url.hash;
+          url = Schema.decodeUnknownSync(PublicUrl)(next.href);
           continue;
         }
 
