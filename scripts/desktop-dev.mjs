@@ -1,21 +1,16 @@
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
-const built = Bun.spawnSync([process.execPath, "run", "build:desktop"], {
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-});
+// Development runs backend/main.ts with Bun, so only the PDF worker and its assets are compiled.
+for (const script of ["build:desktop", "build:backend:pdf-worker", "prepare:pdf-assets"]) {
+  const built = Bun.spawnSync([process.execPath, "run", script], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
 
-if (built.exitCode !== 0) process.exit(built.exitCode);
-
-const backendBuilt = Bun.spawnSync([process.execPath, "run", "build:backend"], {
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-});
-
-if (backendBuilt.exitCode !== 0) process.exit(backendBuilt.exitCode);
+  if (built.exitCode !== 0) process.exit(built.exitCode);
+}
 
 const server = await createServer({ server: { host: "127.0.0.1", port: 5173, strictPort: true } });
 

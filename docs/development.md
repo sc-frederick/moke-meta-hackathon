@@ -8,7 +8,7 @@ by `svelte-check --tsgo` for Effect diagnostics.
 
 | Command                    | Purpose                                                                   |
 | -------------------------- | ------------------------------------------------------------------------- |
-| `bun run dev`              | Build the Electron/Bun entrypoints and launch the app with Vite           |
+| `bun run dev`              | Build Electron, the PDF worker and assets; run Vite and Bun from source   |
 | `bun run check`            | TypeScript, Svelte/Effect diagnostics, design study, lint, and formatting |
 | `bun run format`           | Apply Bun formatting                                                      |
 | `bun run test`             | Run application smoke tests                                               |
