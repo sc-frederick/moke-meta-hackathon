@@ -180,13 +180,13 @@ guard runs under that exclusion before a review connection opens. Download
 retries reuse only files whose size and SHA-256 match the selected result
 manifest; interrupted Modal copy scratch files are cleared before package validation.
 
-New cloud receipts record the admitted worker protocol. Older unmarked receipts
-can recover matching protocol-2 or protocol-3 progress only for already-dispatched
-`dispatching`/`running` jobs. Protocol-3 receipts recover protocol-3 results, and
-protocol-4 receipts can recover their already-dispatched packet prompt v3 results
-after the v4 prompt upgrade. The current protocol-4 request and warm-worker
-handshake require packet prompt v4. This changes neither SQL migrations nor saved
-review content and never replays model work. Existing explicit sync pauses
+New cloud receipts record `workerProtocol: 5`, the only protocol admitted for new
+work, with packet prompt v6. Older receipts recover progress only for jobs already
+`dispatching` or `running`: unmarked receipts accept protocol 2 or 3, protocol-3
+receipts accept protocol 3, and protocol-4 receipts accept protocol 4 with packet
+prompts v3 to v5. [Current admission and recovery](cloud-reviews.md#current-admission-and-recovery)
+lists the exact identities. Recovery changes no saved review content and never
+replays model work. Existing explicit sync pauses
 remain paused until **Retry sync**; ownership returns only through verified result
 restore or confirmed stop.
 

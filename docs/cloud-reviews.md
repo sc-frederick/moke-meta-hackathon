@@ -379,6 +379,36 @@ outbound header policies. Packet findings, coverage, evidence and reports return
 through the same complete-package boundary. Packet controls and finding completion
 are fenced while the cloud owns the workspace.
 
+### Current admission and recovery
+
+New reviews are admitted only to a protocol-5 worker whose identity matches this
+build exactly: package engine `review-pi-1.4.0-v1`, count prompt
+`moke-selected-coordination-v2`, packet prompt `moke-packet-review-v6`, and the
+current instruction revision and code index version. Every new ownership receipt
+records `workerProtocol: 5`. An image with a different identity fails the
+identity probe before transfer. Migrations are not part of the identity: a worker
+restores only packages whose migration history is a prefix of its own, so an
+image built before a new migration passes the probe and refuses the package after
+upload. Publish a matching image with `bun run modal:image` whenever worker code,
+prompts, migrations or the code index change.
+
+Recovery only observes work already `dispatching` or `running`; it never
+redispatches or restarts a model. Earlier identities must still match the current
+engine, count prompt and instruction revision, and omit the code index:
+
+| Receipt `workerProtocol`                  | Progress accepted while dispatched           |
+| ----------------------------------------- | -------------------------------------------- |
+| Absent, saved by protocol-2 or 3 desktops | Protocol 2 or 3 with packet prompts v1 to v3 |
+| `3`                                       | Protocol 3 with packet prompts v1 to v3      |
+| `4`                                       | Protocol 4 with packet prompts v3 to v5      |
+| `5`                                       | Protocol 5 with the current identity         |
+
+Receipts in every other phase accept only current progress.
+
+### Protocol history
+
+Each entry records what an upgrade required when it shipped.
+
 **Protocol 4** adds the workspace cache: new receipts record the cache Volume and
 `workerProtocol: 4`, and the worker fills skipped files from `/cache` before
 restore. Publish a new worker image with `bun run modal:image` before sending
@@ -405,8 +435,8 @@ The operator deployment above now supplies that matching worker. Rebuild and
 publish again when worker code, prompts or migrations change. Protocol-2 workers
 would discard the new selection fields and fail the handshake before admitting
 new model work. This deployment requirement is separate from recovery
-of reviews already dispatched to protocol-2 workers. New ownership receipts save
-`workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
+of reviews already dispatched to protocol-2 workers. Protocol-3 desktops saved new
+ownership receipts with `workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
 protocol-2 progress with the same engine, count/packet prompt and instruction
 identities and matching job ID. Unmarked protocol-3 receipts remain readable too.
 Recovery only observes existing work; it never redispatches or restarts a model.

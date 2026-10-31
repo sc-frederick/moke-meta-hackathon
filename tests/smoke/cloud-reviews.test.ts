@@ -1071,3 +1071,17 @@ test("a non-canonical provider route fails cloud start before allocation or uplo
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("the current cloud compatibility guide names the admitted identity and receipt protocol", async () => {
+  const guide = await readFile("docs/cloud-reviews.md", "utf8");
+  const start = guide.indexOf("### Current admission and recovery");
+  const current = guide.slice(start, guide.indexOf("### Protocol history", start));
+
+  expect(start).toBeGreaterThan(-1);
+  expect(current).toContain(`protocol-${cloudEngineIdentity.protocol} worker`);
+  expect(current).toContain(`\`workerProtocol: ${cloudEngineIdentity.protocol}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.engine}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.prompt}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.packetPrompt}\``);
+  expect(guide).not.toContain("New ownership receipts save\n`workerProtocol: 3`");
+});
