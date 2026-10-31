@@ -21,6 +21,7 @@ import {
   WarmSandboxMessage,
   cloudEngineIdentity,
   cloudProviderEndpoints,
+  cloudWorkerMinimumTimeoutMs,
   type CloudReviewRecord,
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
@@ -591,7 +592,7 @@ export const modalSandboxLayer = (
             const now = yield* Clock.currentTimeMillis;
             const remainingMs = Math.floor((record.expiresAt - now) / 1000) * 1000;
 
-            if (remainingMs < 60_000)
+            if (remainingMs < cloudWorkerMinimumTimeoutMs)
               return yield* new CloudReviewError({
                 reason: "limit",
                 message:

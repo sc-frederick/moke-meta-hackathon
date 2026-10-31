@@ -266,7 +266,11 @@ related Modal usage. Moke does not read a Modal wallet or promise a dollar cap.
 Configure account budgets in Modal separately from these runtime limits.
 Transfer and setup consume the same deadline used to claim warm capacity.
 Exec timeouts are rounded down to whole seconds, as required by the SDK; a
-transfer leaving less than one minute fails before inference dispatch.
+transfer leaving less than one minute fails before inference dispatch. A 1-minute
+limit can therefore never dispatch, so Send refuses it before preflight,
+allocation or upload and asks for 2 minutes or more. Moke does not add review
+time beyond the configured limit; whether a minimum above 1 minute or a full
+minute after setup is wanted is an open product decision.
 
 The uploaded part of the source package reaches an acknowledged external directory
 snapshot before inference dispatch; files skipped at Send are already committed in

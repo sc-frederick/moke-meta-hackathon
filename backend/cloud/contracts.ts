@@ -39,13 +39,16 @@ export const CloudEngineIdentity = Schema.Struct({
   codeIndex: Schema.Literal(cloudEngineIdentity.codeIndex),
 });
 
+/** The worker refuses less review time than this; setup and upload spend from the same limit. */
+export const cloudWorkerMinimumTimeoutMs = 60_000;
+
 /** Credentials are supplied to the exec process separately from its source package. */
 export const CloudWorkerRequest = Schema.Struct({
   id: CloudReviewId,
   identity: CloudEngineIdentity,
   request: CloudReviewRequest,
   timeoutMs: Schema.Int.check(
-    Schema.isBetween({ minimum: 60_000, maximum: 3_600_000 }),
+    Schema.isBetween({ minimum: cloudWorkerMinimumTimeoutMs, maximum: 3_600_000 }),
     Schema.isMultipleOf(1000),
   ),
 });

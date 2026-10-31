@@ -25,6 +25,7 @@ import { reviewModels } from "#lib/review/models.ts";
 import {
   cloudEngineIdentity,
   cloudProviderEndpoints,
+  cloudWorkerMinimumTimeoutMs,
   type CloudReviewRecord,
 } from "./contracts.ts";
 import {
@@ -532,6 +533,15 @@ export class CloudReviews extends Context.Service<
                 return yield* new CloudReviewError({
                   reason: "configuration",
                   message: "Set up the cloud and model connections before pushing a review.",
+                });
+
+              // The deadline starts before allocation and upload, and dispatch needs a full worker
+              // minute afterwards, so a limit of exactly that minute can never dispatch.
+              if (config.modal.timeoutMinutes * 60_000 <= cloudWorkerMinimumTimeoutMs)
+                return yield* new CloudReviewError({
+                  reason: "configuration",
+                  message:
+                    "A 1-minute cloud time limit cannot start a review: setup and upload use part of it, and the cloud worker needs a full minute after them. Set the limit to 2 minutes or more. Your workspace has not been uploaded.",
                 });
 
               const model = reviewModels.find((item) => item.id === request.model);
