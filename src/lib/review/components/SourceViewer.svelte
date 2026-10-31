@@ -23,10 +23,10 @@
     masks?: ReadonlyArray<{ path: string; transform: string }>;
     label?: string;
     selecting?: boolean;
-    onSelectRegion?: (region: Region) => void;
+    onSelectRegion?: ((region: Region) => void) | undefined;
     sheets?: ReadonlyArray<Sheet>;
     currentSheetId?: Sheet["id"] | null;
-    onSheet?: (sheet: Sheet) => void;
+    onSheet?: ((sheet: Sheet) => void) | undefined;
     zoomFactor?: number;
   } = $props();
 

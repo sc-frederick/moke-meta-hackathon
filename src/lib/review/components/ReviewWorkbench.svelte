@@ -5,6 +5,7 @@
     Conversation,
     Finding,
     Project,
+    Region,
     ReviewSnapshot,
     Sheet,
     SheetLabelSuggestions,
@@ -50,9 +51,10 @@
     initialReviewRequest,
   } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
+  import { SourceView, type SourceOverlay } from "#lib/review/source-view.svelte.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import ReviewText from "./ReviewText.svelte";
-  import SourceViewer from "./SourceViewer.svelte";
+  import SourceCanvas from "./SourceCanvas.svelte";
   import ReviewSelect from "./ReviewSelect.svelte";
   import { ReviewModelId, reviewModels } from "#lib/review/models.ts";
   import {
@@ -156,8 +158,6 @@
   let packetProjectId: Project["id"] | null = null;
   let packetSubscription: AbortController | null = null;
   let notice = $state("");
-  let sourceLoading = $state(false);
-  let previewedSheet = $state.raw<Sheet | null>(null);
   let projectConversations = $state.raw<Readonly<Record<string, ReadonlyArray<Conversation>>>>({});
 
   const conversationViews = new Map<
@@ -175,8 +175,6 @@
       callLimit: number | undefined;
     }
   >();
-
-  let sourceRequest = 0;
 
   // Each project selection is a generation. Snapshot refreshes within one are coalesced: one
   // loads while at most one more waits, and callers in between share it. Results and progress
@@ -220,27 +218,21 @@
   let applySelectedRegion: ((region: import("#lib/review/contracts.ts").Region) => void) | null =
     null;
 
-  let sourceZoomFactor = $state(1);
-  let sourceImageUrl = $state("");
-  let sourceArtifact = $state.raw<Artifact | null>(null);
+  const sourceView = new SourceView({
+    render: (request) =>
+      client.renderSource({
+        projectId: request.projectId,
+        sheetId: request.sheetId,
+        operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+        region: request.region,
+        dpi: request.dpi,
+      }),
+    loadImage: (projectId, artifact) => client.loadArtifactBlobUrl(projectId, artifact),
+    selectedProject: () => selectedProjectId,
+    releaseImage: (url) => URL.revokeObjectURL(url),
+  });
 
-  // A saved model render can be a partial crop even when a location only names the sheet.
-  const sourceIsCrop = $derived(
-    sourceArtifact?.region != null &&
-      previewedSheet !== null &&
-      (sourceArtifact.region.width < previewedSheet.box.width * 0.98 ||
-        sourceArtifact.region.height < previewedSheet.box.height * 0.98),
-  );
-
-  let sourceRequestedDpi = 96;
   let pendingDropImport = $state.raw<Parameters<ReviewClient["chooseReviewPdf"]>[0] | null>(null);
-
-  let sourceOverlays = $state.raw<
-    ReadonlyArray<{
-      region: { x: number; y: number; width: number; height: number };
-      title: string;
-    }>
-  >([]);
 
   let findingsButton: HTMLButtonElement | undefined = $state();
   let findingsBubble: HTMLElement | undefined = $state();
@@ -340,7 +332,7 @@
   // The finding's SAM zoom, while its artifact is the displayed source.
   const displayedFocus = $derived(
     selectedPacketFinding?.focus !== undefined &&
-      sourceArtifact?.id === selectedPacketFinding.focus.artifactId
+      sourceView.artifact?.id === selectedPacketFinding.focus.artifactId
       ? selectedPacketFinding.focus
       : null,
   );
@@ -528,17 +520,10 @@
     const finding = packetFindings.find((item) => item.id === findingId);
 
     if (!finding) return;
-    sourceRequest++;
-    sourceLoading = false;
+    sourceView.clear();
     selectingRegion = false;
     applySelectedRegion = null;
     selectedFindingId = null;
-    previewedSheet = null;
-
-    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-    sourceImageUrl = "";
-    sourceArtifact = null;
-    sourceOverlays = [];
     error = "";
     selectedPacketFindingId = findingId;
     searchOpen = false;
@@ -749,19 +734,19 @@
   }
 
   async function openPacketEvidence(
-    artifactId: import("#lib/review/contracts.ts").Artifact["id"] | null,
+    artifactId: Artifact["id"] | null,
     location?: {
       sheetId: Sheet["id"];
-      region: import("#lib/review/contracts.ts").Region | null;
+      region: Region | null;
       detail: string;
     },
   ) {
     if (project === null) return;
     const projectId = project.id;
-    const request = ++sourceRequest;
+    const request = sourceView.begin();
     await refresh(projectId);
 
-    if (request !== sourceRequest || projectId !== selectedProjectId) return;
+    if (!sourceView.current(request) || projectId !== selectedProjectId) return;
     const artifact = snapshot?.artifacts.find((item) => item.id === artifactId);
 
     const sheet = snapshot?.sheets.find(
@@ -777,49 +762,23 @@
     selectedFindingId = null;
     panelOpen = true;
     sourceTab = "evidence";
+    const overlays = location?.region ? [{ region: location.region, title: location.detail }] : [];
 
-    if (artifact) {
-      sourceLoading = true;
-      previewedSheet = sheet;
-      sourceZoomFactor = 1;
+    const failure = artifact
+      ? await sourceView.openArtifact(
+          request,
+          artifact,
+          sheet,
+          location?.sheetId === sheet.id ? overlays : [],
+        )
+      : await sourceView.renderSheet(sheet, {
+          projectId,
+          dpi: 150,
+          overlays: () => overlays,
+          request,
+        });
 
-      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-      sourceImageUrl = "";
-      sourceArtifact = null;
-      sourceOverlays = [];
-      const blob = await client.loadArtifactBlobUrl(artifact.projectId, artifact);
-
-      if (request !== sourceRequest) {
-        if (blob.ok) URL.revokeObjectURL(blob.value);
-
-        return;
-      }
-
-      sourceLoading = false;
-
-      if (!blob.ok) {
-        error = blob.error.message;
-
-        return;
-      }
-
-      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-      sourceImageUrl = blob.value;
-      sourceArtifact = artifact;
-      sourceOverlays =
-        location?.region && location.sheetId === sheet.id
-          ? [{ region: location.region, title: location.detail }]
-          : [];
-    } else {
-      await loadSheetSource(
-        sheet,
-        150,
-        undefined,
-        undefined,
-        location?.region ? [{ region: location.region, title: location.detail }] : [],
-        request,
-      );
-    }
+    if (failure !== null) error = failure;
   }
 
   function selectProjectId(id: Project["id"] | null) {
@@ -1322,15 +1281,9 @@
     selectedSheetIds = [];
     selectedPacketFindingId = null;
     importDialog?.close();
-    sourceRequest++;
-    sourceLoading = false;
-
-    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-    sourceImageUrl = "";
-    sourceArtifact = null;
+    sourceView.clear();
     panelOpen = true;
     sourceTab = "sheets";
-    previewedSheet = null;
     notice = initialReviewVisible
       ? "PDF imported. Choose Initial Review, or assign sheet disciplines and choose a review scope."
       : "PDF imported. Assign sheet disciplines if useful, then choose a review scope.";
@@ -1456,84 +1409,41 @@
 
     if (sheet === undefined) return;
 
-    await loadSheetSource(sheet, dpi, region, finding);
+    await loadSheetSource(sheet, dpi, { region, finding });
   }
 
+  /** Render a sheet into the source canvas. A count check's accepted evidence outlines it. */
   async function loadSheetSource(
     sheet: Sheet,
     dpi: number,
-    region?: { x: number; y: number; width: number; height: number },
-    finding?: Finding,
-    overlays?: typeof sourceOverlays,
-    request = ++sourceRequest,
-    keepZoom = false,
+    options: {
+      region?: Region | undefined;
+      finding?: Finding;
+      overlays?: ReadonlyArray<SourceOverlay>;
+      keepZoom?: boolean;
+    } = {},
   ) {
     if (project === null) return;
-    const projectId = project.id;
 
-    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-    sourceImageUrl = "";
-    sourceArtifact = null;
-    sourceOverlays = [];
-    previewedSheet = sheet;
-    sourceLoading = true;
-
-    // Only previous/next/jump navigation keeps the reviewer's zoom; a new context starts fitted.
-    if (!keepZoom) sourceZoomFactor = 1;
-
-    const targetRegion = region ?? {
-      x: sheet.box.x,
-      y: sheet.box.y,
-      width: sheet.box.width,
-      height: sheet.box.height,
-    };
-
-    const rendered = await client.renderSource({
-      projectId,
-      sheetId: sheet.id,
-      operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
-      region: targetRegion,
+    const failure = await sourceView.renderSheet(sheet, {
+      projectId: project.id,
       dpi,
+      region: options.region,
+      keepZoom: options.keepZoom ?? false,
+      overlays: () => options.overlays ?? countEvidence(sheet, options.finding),
     });
 
-    if (!rendered.ok) {
-      if (request !== sourceRequest) return;
-      sourceLoading = false;
-      error = rendered.error.message;
+    if (failure !== null) error = failure;
+  }
 
-      return;
-    }
-
-    const artifact = rendered.value;
-
-    if (request !== sourceRequest || projectId !== selectedProjectId) return;
-    const blob = await client.loadArtifactBlobUrl(projectId, artifact);
-
-    if (request !== sourceRequest) {
-      if (blob.ok) URL.revokeObjectURL(blob.value);
-
-      return;
-    }
-
-    sourceLoading = false;
-
-    if (!blob.ok) {
-      error = blob.error.message;
-
-      return;
-    }
-
-    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-    sourceImageUrl = blob.value;
-    sourceArtifact = artifact;
-    sourceRequestedDpi = dpi;
+  function countEvidence(sheet: Sheet, finding: Finding | undefined) {
     const drawn = facts.findLast((fact) => fact.findingId === finding?.id && fact.side === "drawn");
 
     const scheduled = facts.findLast(
       (fact) => fact.findingId === finding?.id && fact.side === "scheduled",
     );
 
-    sourceOverlays = overlays ?? [
+    return [
       ...(drawn?.evidence.sheetId === sheet.id
         ? [{ region: drawn.evidence.region, title: "Drawn evidence" }]
         : []),
@@ -1561,15 +1471,10 @@
     notice = "";
     selectingRegion = false;
     applySelectedRegion = null;
-    sourceRequest++;
-    sourceLoading = false;
+    sourceView.close();
     panelOpen = false;
     selectedFindingId = null;
     selectedPacketFindingId = null;
-
-    if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
-    sourceImageUrl = "";
-    sourceArtifact = null;
     findingsButton?.focus({ preventScroll: true });
   }
 
@@ -1753,8 +1658,8 @@
     if (selectedFinding)
       await loadSourceForFinding(
         selectedFinding,
-        sourceRequestedDpi,
-        sourceArtifact?.region ?? undefined,
+        sourceView.dpi,
+        sourceView.artifact?.region ?? undefined,
         sourceSide,
       );
   }
@@ -1942,9 +1847,7 @@
     return () => {
       controller.abort();
       packetSubscription?.abort();
-      sourceRequest++;
-
-      if (sourceImageUrl.startsWith("blob:")) URL.revokeObjectURL(sourceImageUrl);
+      sourceView.dispose();
     };
   });
 </script>
@@ -2814,7 +2717,7 @@
           <div class="source-tabs">
             <button
               class={{ current: sourceTab === "evidence" }}
-              disabled={busy || (!selectedFinding && !previewedSheet)}
+              disabled={busy || (!selectedFinding && !sourceView.sheet)}
               onclick={() => {
                 sourceTab = "evidence";
                 if (selectedFinding)
@@ -2871,26 +2774,23 @@
                   {#if selectedPacketFinding.focus}{@const focus =
                       selectedPacketFinding.focus}<button
                       class="evidence-action"
-                      disabled={busy || sourceLoading || cloudBlocked}
+                      disabled={busy || sourceView.loading || cloudBlocked}
                       onclick={() => openPacketFocus(focus)}
                       >SAM focus · {focus.segments.length}
                       {focus.segments.length === 1 ? "segment" : "segments"}</button
                     >{/if}
                   {#each selectedPacketFinding.locations as location, index (index)}<button
                       class="evidence-action"
-                      disabled={busy || sourceLoading || cloudBlocked}
+                      disabled={busy || sourceView.loading || cloudBlocked}
                       onclick={async () => {
                         const sheet = sheets.find((item) => item.id === location.sheetId);
                         if (sheet) {
-                          await loadSheetSource(
-                            sheet,
-                            300,
-                            location.region ?? undefined,
-                            undefined,
-                            location.region
+                          await loadSheetSource(sheet, 300, {
+                            region: location.region ?? undefined,
+                            overlays: location.region
                               ? [{ region: location.region, title: location.detail }]
                               : [],
-                          );
+                          });
                         }
                       }}
                       >{location.detail}{location.region
@@ -2959,7 +2859,7 @@
                 sheets={scopeSheets}
                 bind:selectedIds={selectedSheetIds}
                 onAssign={assignSheetDiscipline}
-                busy={busy || sourceLoading || cloudBlocked}
+                busy={busy || sourceView.loading || cloudBlocked}
                 bind:createOpen={createFindingOpen}
                 onConfirm={confirmSheet}
                 onPreview={(sheet) => {
@@ -2971,43 +2871,26 @@
                 onCreate={createFinding}
               />
             {:else if sourceTab === "evidence" && selectedFinding}
-              {#if sourceLoading}<p class="muted" role="status">
-                  Rendering source…
-                </p>{:else if sourceImageUrl}<SourceViewer
-                  bind:zoomFactor={sourceZoomFactor}
-                  imageUrl={sourceImageUrl}
-                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
-                  overlays={sourceOverlays}
-                  label="Original source render"
-                  bind:selecting={selectingRegion}
-                  onSelectRegion={(region) => {
-                    if (!previewedSheet) return;
-                    const box = previewedSheet.box;
-                    const x = Math.max(box.x, region.x);
-                    const y = Math.max(box.y, region.y);
-                    const width = Math.min(box.x + box.width, region.x + region.width) - x;
-                    const height = Math.min(box.y + box.height, region.y + region.height) - y;
-                    if (width <= 0 || height <= 0) return;
-                    applySelectedRegion?.({ x, y, width, height });
-                    sourceOverlays = [
-                      { region: { x, y, width, height }, title: "Selected review area" },
-                    ];
-                    notice = "Review area selected. Confirm its count below.";
-                  }}
-                />{/if}
-              {#if previewedSheet && sourceArtifact}<div class="source-provenance selectable">
-                  <strong>{previewedSheet.label}</strong><span
-                    >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page
-                    {previewedSheet.pageIndex + 1} · {sourceArtifact.dpi} DPI</span
-                  >
-                  <details>
-                    <summary>Source details</summary><span
-                      >Source SHA {revisions
-                        .find((item) => item.id === previewedSheet?.revisionId)
-                        ?.sha256.slice(0, 16)}</span
-                    >
-                  </details>
-                </div>{/if}
+              <SourceCanvas
+                view={sourceView}
+                {revisions}
+                provenance="render"
+                bind:selecting={selectingRegion}
+                onSelectRegion={(region) => {
+                  if (!sourceView.sheet) return;
+                  const box = sourceView.sheet.box;
+                  const x = Math.max(box.x, region.x);
+                  const y = Math.max(box.y, region.y);
+                  const width = Math.min(box.x + box.width, region.x + region.width) - x;
+                  const height = Math.min(box.y + box.height, region.y + region.height) - y;
+                  if (width <= 0 || height <= 0) return;
+                  applySelectedRegion?.({ x, y, width, height });
+                  sourceView.overlays = [
+                    { region: { x, y, width, height }, title: "Selected review area" },
+                  ];
+                  notice = "Review area selected. Confirm its count below.";
+                }}
+              />
               {#key selectedFinding.id}<FindingInspector
                   finding={selectedFinding}
                   {sheets}
@@ -3028,41 +2911,18 @@
                       ?.scrollIntoView({ block: "nearest" });
                   }}
                 />{/key}
-            {:else if sourceTab === "evidence" && previewedSheet}
-              {#if sourceLoading}<p class="muted" role="status">
-                  Rendering source…
-                </p>{:else if sourceImageUrl}<SourceViewer
-                  bind:zoomFactor={sourceZoomFactor}
-                  sheets={sheets.filter((sheet) => sheet.revisionId === previewedSheet?.revisionId)}
-                  currentSheetId={previewedSheet?.id ?? null}
-                  onSheet={async (sheet) => {
-                    await loadSheetSource(
-                      sheet,
-                      96,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      true,
-                    );
-                  }}
-                  imageUrl={sourceImageUrl}
-                  pdfToPixels={sourceArtifact?.pdfToPixels ?? [1, 0, 0, 1, 0, 0]}
-                  overlays={sourceOverlays}
-                  masks={focusMasks}
-                  label="Original source render"
-                />{/if}
-              <div class="source-provenance selectable">
-                <strong>{previewedSheet.label}</strong><span
-                  >{revisions.find((item) => item.id === previewedSheet?.revisionId)?.name} · page {previewedSheet.pageIndex +
-                    1}{sourceIsCrop ? " · partial view of this page" : ""}</span
-                >
-                {#if displayedFocus}<span data-testid="sam-focus-caption"
-                    >SAM 3.1 focus · {displayedFocus.segments.length} segmented
-                    {displayedFocus.segments.length === 1 ? "object" : "objects"} · proposals, not verified
-                    symbols</span
-                  >{/if}
-              </div>
+            {:else if sourceTab === "evidence" && sourceView.sheet}
+              <SourceCanvas
+                view={sourceView}
+                {revisions}
+                provenance="sheet"
+                sheets={sheets.filter((sheet) => sheet.revisionId === sourceView.sheet?.revisionId)}
+                onSheet={async (sheet) => {
+                  await loadSheetSource(sheet, 96, { keepZoom: true });
+                }}
+                masks={focusMasks}
+                focus={displayedFocus}
+              />
             {:else if sourceTab === "revision"}
               <button
                 class="btn import-revision"
@@ -3827,23 +3687,6 @@
     flex-direction: column;
     gap: 18px;
   }
-  .source-provenance {
-    display: grid;
-    gap: 4px;
-    font-size: var(--text-mono-sm);
-    color: var(--color-text-muted);
-    overflow-wrap: anywhere;
-    line-height: 1.5;
-  }
-  .source-provenance strong {
-    color: var(--color-text);
-    font-size: var(--text-body-sm);
-    font-weight: 600;
-  }
-  .source-provenance details span {
-    font-family: var(--font-mono);
-    letter-spacing: var(--tracking-wide);
-  }
   .settings-section {
     display: grid;
     gap: var(--space-sm);
@@ -4304,11 +4147,11 @@
     height: 100%;
     min-height: 0;
   }
-  .packet-evidence > .muted {
+  .packet-evidence > :global(.muted) {
     grid-column: 2;
     grid-row: 1;
   }
-  .packet-evidence > .source-provenance {
+  .packet-evidence > :global(.source-provenance) {
     grid-column: 2;
     grid-row: 2;
   }
@@ -4476,11 +4319,11 @@
       grid-row: 2;
       min-height: 0;
     }
-    .packet-evidence > .muted {
+    .packet-evidence > :global(.muted) {
       grid-column: 1;
       grid-row: 2;
     }
-    .packet-evidence > .source-provenance {
+    .packet-evidence > :global(.source-provenance) {
       grid-column: 1;
       grid-row: 3;
     }
