@@ -99,3 +99,35 @@ test("explicit session credentials reject shared Unix permissions and accept a p
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("accepted trailing-slash routes are saved in the canonical form cloud dispatch requires", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-credential-routes-"));
+  const source = join(directory, "providers.json");
+
+  const routes = [
+    { provider: "meta", baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3" },
+    {
+      provider: "baseten",
+      baseUrl: "https://inference.baseten.co/v1",
+      model: "meta-models/muse-spark-open-1026",
+    },
+  ];
+
+  try {
+    for (const suffix of ["", "/", "//"]) {
+      const providers = routes.map((route) => ({
+        ...route,
+        apiKey: "test-key",
+        baseUrl: `${route.baseUrl}${suffix}`,
+      }));
+
+      await writeFile(source, JSON.stringify({ providers }), { mode: 0o600 });
+
+      expect(
+        (await readProviderConfigurations(source, true)).map((provider) => provider.baseUrl),
+      ).toEqual(routes.map((route) => route.baseUrl));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

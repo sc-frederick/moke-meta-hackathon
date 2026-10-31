@@ -22,7 +22,11 @@ import {
   type CloudWorkspaceEstimate,
 } from "#lib/review/cloud.ts";
 import { reviewModels } from "#lib/review/models.ts";
-import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
+import {
+  cloudEngineIdentity,
+  cloudProviderEndpoints,
+  type CloudReviewRecord,
+} from "./contracts.ts";
 import {
   cloudReceiptReserveBytes,
   cloudRequestFingerprint,
@@ -545,6 +549,22 @@ export class CloudReviews extends Context.Service<
                   message: "Connect the selected model before pushing this review.",
                 });
 
+              const alternatives = (config.providers ?? []).filter(
+                (item) => item.provider !== provider.provider,
+              );
+
+              // Dispatch admits only canonical routes; check them before any paid allocation.
+              if (
+                [provider, ...alternatives].some(
+                  (item) => item.baseUrl !== cloudProviderEndpoints[item.provider],
+                )
+              )
+                return yield* new CloudReviewError({
+                  reason: "configuration",
+                  message:
+                    "Cloud reviews require canonical provider endpoints. Import the provider credentials again. Your workspace has not been uploaded.",
+                });
+
               if (jobs.length >= 1000)
                 return yield* new CloudReviewError({
                   reason: "limit",
@@ -623,11 +643,7 @@ export class CloudReviews extends Context.Service<
                   "Sending your review to the cloud. Progress and results will sync automatically.",
               };
               yield* save(record);
-              yield* sandbox.dispatch(
-                record,
-                provider,
-                (config.providers ?? []).filter((item) => item.provider !== provider.provider),
-              );
+              yield* sandbox.dispatch(record, provider, alternatives);
               yield* rememberPackage(join(input, "manifest.json"), inputSnapshotId, "input/");
 
               return publicStatus(yield* load(id));

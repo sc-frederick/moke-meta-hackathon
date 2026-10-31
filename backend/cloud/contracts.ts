@@ -99,6 +99,12 @@ export type CloudReviewRecord = typeof CloudReviewRecord.Type;
 /** Provider injection uses the canonical application route and a separately supplied secret. */
 export const CloudProvider = InferenceConfiguration;
 
+/** Cloud outbound policy admits exactly these provider routes. */
+export const cloudProviderEndpoints = {
+  meta: "https://api.meta.ai/v1",
+  baseten: "https://inference.baseten.co/v1",
+} as const;
+
 /** The chosen chat connection plus optional tool-provider connections contain placeholder keys only. */
 export const CloudProviders = Schema.NonEmptyArray(CloudProvider);
 

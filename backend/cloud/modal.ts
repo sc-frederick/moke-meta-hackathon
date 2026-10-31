@@ -20,6 +20,7 @@ import {
   WarmSandbox,
   WarmSandboxMessage,
   cloudEngineIdentity,
+  cloudProviderEndpoints,
   type CloudReviewRecord,
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
@@ -613,12 +614,7 @@ export const modalSandboxLayer = (
             let policy = new ExperimentalOutboundPolicy();
 
             for (const connection of providers) {
-              if (
-                connection.baseUrl !==
-                (connection.provider === "meta"
-                  ? "https://api.meta.ai/v1"
-                  : "https://inference.baseten.co/v1")
-              )
+              if (connection.baseUrl !== cloudProviderEndpoints[connection.provider])
                 return yield* new CloudReviewError({
                   reason: "configuration",
                   message: "Cloud reviews require canonical provider endpoints.",

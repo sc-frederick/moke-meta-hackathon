@@ -1024,3 +1024,50 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
     await session.dispose();
   }
 });
+
+test("a non-canonical provider route fails cloud start before allocation or upload", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-cloud-route-"));
+  const operations: Array<string> = [];
+  const unused = Effect.die("Cloud work must not start for a non-canonical route.");
+
+  const port: CloudSandboxPort = {
+    preflight: () => Effect.sync(() => void operations.push("preflight")),
+    changes: () => Stream.never,
+    allocate: () => unused,
+    upload: () => unused,
+    dispatch: () => unused,
+    progress: () => unused,
+    download: () => unused,
+    stop: () => unused,
+    seedCache: () => Effect.succeed([]),
+  };
+
+  const slashed = Schema.decodeUnknownSync(InferenceConfiguration)({
+    ...Schema.encodeSync(InferenceConfiguration)(provider),
+    baseUrl: "https://api.meta.ai/v1/",
+  });
+
+  const runtime = ManagedRuntime.make(
+    CloudReviews.layer({
+      directory,
+      modal,
+      provider: slashed,
+      inspect: () => Effect.succeed({ sourceVersion: 0, factVersion: 0, projectVersion: 0 }),
+      prepare: () => Effect.sync(() => void operations.push("prepare")),
+      restorePending: () => false,
+      restore: () => Effect.void,
+    }).pipe(Layer.provide(Layer.succeed(CloudSandbox, port))),
+  );
+
+  try {
+    const cloud = await runtime.runPromise(CloudReviews);
+    const error = await runtime.runPromise(cloud.start(request()).pipe(Effect.flip));
+    expect(error.reason).toBe("configuration");
+    expect(operations).toEqual([]);
+    expect(await runtime.runPromise(cloud.status)).toBeNull();
+    await runtime.runPromise(cloud.assertLocal);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

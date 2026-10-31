@@ -25,7 +25,8 @@ export function parseProviderConfiguration(text: string) {
     )
       throw new Error("Invalid route");
 
-    return config;
+    // Local and cloud reviews compare routes exactly, so keep only the canonical form.
+    return { ...config, baseUrl: endpoint };
   } catch {
     throw new CredentialError({
       message: "The selected credential configuration is invalid for the supported provider route.",
