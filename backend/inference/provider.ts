@@ -266,14 +266,19 @@ function requestBounds(body: string) {
  * Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts.
  * The window drops the oldest images `step` at a time, so an earlier request position changes once
  * per step instead of on every new image. Each change recomputes the provider's cached prefix.
+ * Images after the latest assistant turn have never reached the model, so the window drops only
+ * older images to make room for them. A fresh batch beyond the bounds keeps its newest images.
  */
 function boundedImageContext(
   transcript: TranscriptContext,
   limits = { images: 6, step: 3, imageBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024 },
 ): TranscriptContext {
   const images: Array<{ readonly part: ImageContent; readonly bytes: number }> = [];
+  let seen = 0;
 
   for (const message of transcript.messages) {
+    if (message.role === "assistant") seen = images.length;
+
     if (
       (message.role !== "user" && message.role !== "toolResult") ||
       Predicate.isString(message.content)
@@ -289,15 +294,23 @@ function boundedImageContext(
     }
   }
 
+  // The step stops short at the first fresh image, then resumes once those images are older.
+  const firstFresh = Math.max(seen, images.length - limits.images);
+
   let cut =
     images.length <= limits.images
       ? 0
-      : Math.ceil((images.length - limits.images) / limits.step) * limits.step;
+      : Math.min(
+          firstFresh,
+          Math.ceil((images.length - limits.images) / limits.step) * limits.step,
+        );
 
   const retainedBytes = () => images.slice(cut).reduce((total, image) => total + image.bytes, 0);
 
-  while (cut < images.length - 1 && retainedBytes() > limits.totalBytes)
-    cut = Math.min(images.length - 1, cut + limits.step);
+  while (cut < firstFresh && retainedBytes() > limits.totalBytes)
+    cut = Math.min(firstFresh, cut + limits.step);
+
+  while (cut < images.length - 1 && retainedBytes() > limits.totalBytes) cut++;
 
   const retained = new Set(images.slice(cut).map((image) => image.part));
 

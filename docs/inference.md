@@ -155,7 +155,8 @@ least 90% of prompt tokens served from cache (`cacheRead / (input + cacheRead)`)
 - **Append-only history.** Meta packet requests keep every image. Baseten packet
   requests (8 images) and count checks (6 images) drop the oldest images several
   at a time (4 and 3) instead of one per turn, so an earlier position changes once
-  per step.
+  per step. Images added since the model's last turn are never dropped for older
+  ones; the step stops short of them.
 - **Images by reference.** Live Meta requests upload each delivered image once to
   the [Files API](https://dev.meta.ai/docs/file-handling) (`purpose=user_data`,
   24-hour expiry) and send its `file_id`, so later turns no longer resend base64.

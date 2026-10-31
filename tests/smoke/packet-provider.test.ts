@@ -681,3 +681,89 @@ test.each([
     expect(sent).toBe(requests);
   },
 );
+
+/** Distinct small PNGs, so each image's bytes identify it in a captured request. */
+function pictures(count: number) {
+  return Array.from({ length: count }, (_, index) => {
+    const canvas = createCanvas(32, 32);
+    const drawing = canvas.getContext("2d");
+    drawing.fillStyle = `rgb(${index * 12}, ${255 - index * 12}, 100)`;
+    drawing.fillRect(0, 0, 32, 32);
+
+    return {
+      type: "image" as const,
+      mimeType: "image/png",
+      data: canvas.toBuffer("image/png").toString("base64"),
+    };
+  });
+}
+
+/** A turn the model already answered, so the images before it have reached the model. */
+const answered = {
+  role: "assistant" as const,
+  content: [{ type: "text" as const, text: "Inspected those sources." }],
+  api: "openai-completions" as const,
+  provider: "baseten",
+  model: "meta-models/muse-spark-open-1026",
+  usage: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  },
+  stopReason: "stop" as const,
+  timestamp: 0,
+};
+
+test.each([
+  [9, 8],
+  [10, 7],
+  [11, 8],
+  [13, 6],
+  [17, 8],
+])(
+  "Spark Open delivers every fresh image on its first request with %p images, %p of them new",
+  async (total, fresh) => {
+    const session = fixture("baseten");
+    const images = pictures(total);
+
+    const turn = (index: number) => {
+      const image = images[index];
+
+      if (image === undefined) throw new Error("Missing fixture image");
+
+      return {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: `Exact source artifact-${index}.` }, image],
+        timestamp: index,
+      };
+    };
+
+    const context = {
+      messages: [
+        ...Array.from({ length: total - fresh }, (_, index) => turn(index)),
+        answered,
+        ...Array.from({ length: fresh }, (_, index) => turn(total - fresh + index)),
+      ],
+    };
+
+    const original = JSON.stringify(context);
+
+    const answer = await session.admitted.telemetry.startSpan(generation, (telemetry) =>
+      session.admitted.models.completeSimple(session.model, context, { telemetry }),
+    );
+
+    expect(answer.stopReason).toBe("stop");
+    const body = session.requests[0]?.body ?? "";
+    const delivered = body.split("data:image/png;base64,").length - 1;
+    expect(delivered).toBeLessThanOrEqual(8);
+
+    for (const image of images.slice(total - fresh)) expect(body).toContain(image.data);
+    expect(body.split("Earlier image omitted").length - 1).toBe(total - delivered);
+
+    for (let index = 0; index < total; index++) expect(body).toContain(`artifact-${index}`);
+    expect(JSON.stringify(context)).toBe(original);
+  },
+);
