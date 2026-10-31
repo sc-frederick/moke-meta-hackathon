@@ -26,6 +26,7 @@ import { exportReviewPackage } from "../../backend/review/packages.ts";
 import { PackageError, PackageLimits } from "#lib/review/packages.ts";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import type { ProviderTransport } from "../../backend/inference/provider.ts";
+import type { SourceLookupOptions } from "../../backend/packet-review/sources.ts";
 import {
   CommandId,
   ReviewCommand,
@@ -112,6 +113,8 @@ export async function open(
     ...defaultParallel,
     minSheets: Number.POSITIVE_INFINITY,
   },
+  // Recorded DNS and HTTPS for read_source; PDF text extraction stays the real worker's.
+  sources?: Pick<SourceLookupOptions, "resolve" | "transport">,
 ) {
   const transport = gate === "accept" ? acceptCoverageGate(rawTransport) : rawTransport;
 
@@ -163,7 +166,12 @@ export async function open(
         ),
       );
 
-      const review = createReviewOperations({ query, documents, owner });
+      const operations = createReviewOperations({ query, documents, owner });
+
+      const review =
+        sources === undefined
+          ? operations
+          : { ...operations, sourceOptions: { ...operations.sourceOptions, ...sources } };
 
       const packets = yield* PacketReviews.pipe(
         Effect.provide(

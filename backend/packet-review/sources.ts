@@ -427,6 +427,20 @@ const pdfFirstPage = (url: URL) => {
   return Number.isSafeInteger(page) && page >= 1 && page <= 200 ? page : 1;
 };
 
+/**
+ * One review retrieves each source once. A fragment does not change the fetched document, except
+ * a PDF `#page=N` selector, which starts its text at another page.
+ */
+export const sourceKey = (url: string) => {
+  const parsed = URL.parse(url);
+
+  if (parsed === null) return url;
+  const page = pdfFirstPage(parsed);
+  parsed.hash = page === 1 ? "" : `page=${page}`;
+
+  return parsed.href;
+};
+
 /** Extract a retrieved PDF's embedded text; scanned or unreadable PDFs stay unavailable. */
 const readPdfSource = Effect.fnUntraced(function* (
   base: Omit<typeof PacketSource.Encoded, "status" | "text">,

@@ -6,7 +6,7 @@ the upstream paths and SHA-256 hashes. Read the original skill repository to
 update them; this application does not edit that source repository.
 
 `review-prompt.ts` imports the files with Bun's text loader, embedding them in the
-compiled backend. Packet review version `moke-packet-review-v6` supplies the full
+compiled backend. Packet review version `moke-packet-review-v7` supplies the full
 master AGENTS.md and REVIEW_METHOD.md, including Report and release, as Pi
 Durable's conversation `agent.instructions`. The reviewer request and document
 inventory are separate input data. Each run records the prompt version and
@@ -115,3 +115,11 @@ present only when the firm saved a checklist, is the checklist text under the
 heading "Firm review checklist, revision N". It comes last, after the requested
 scope, so reviews with and without a checklist share the cached prefix. The
 upstream skill files are unchanged.
+
+Packet review `moke-packet-review-v7` gives each parallel role and stage its own
+tool list. Coordinator setup has inventory, rendering, research, project and
+citation records, `ask_reviewer` and a new `finish_setup` tool; sheet reviewers
+lose `record_project` and report a different project fact in their notes. The
+coordinator's guidance describes setup's sheet and request limits, and
+`read_source` can reread a saved source by `sourceId`. See
+[docs/review-runtime.md](../../../docs/review-runtime.md#parallel-packet-reviews).

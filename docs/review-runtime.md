@@ -29,25 +29,41 @@ On 2026-10-29 a 29-sheet review run as one conversation recorded 220 of 1,276 re
 The review moves through three stages, recorded in `PacketReview.parallel`:
 
 1. **Setup.** The coordinator inventories the packet, opens the cover and code sheets, and records
-   the project configuration and governing sources.
+   the project configuration and governing sources. Setup is offered only those tools: inventory,
+   rendering, source and code research, `record_project`, `record_citation`, `ask_reviewer` and
+   `finish_setup`. The host refuses any other tool there, however the call arrives. Setup opens at
+   most 6 sheets, and the host keeps the first ones it opened. It ends at `finish_setup`, a final
+   reply, or after 20 model requests, whichever comes first. At the request limit the host ends
+   setup with what was recorded; unknown project facts stay unknown. Ending setup saves a snapshot of the
+   configuration and sources in `PacketReview.parallel.setup`, and every sheet reviewer's opening
+   is built from it, before and after a restart.
 2. **Sheets.** One conversation per sheet with unsettled checks. They run `concurrency` at a time:
    32 on Meta (3,000 requests and 4M tokens a minute per team) and 16 on Baseten (100 requests and
    2M tokens a minute for the hackathon key). Sixteen Baseten reviewers send about 40 requests a
    minute; the shared [request pacer](inference.md#rate-limit-pacing-and-refusals) holds bursts and
    refusals inside the key's limits. A sheet reviewer can
-   open and record coverage only for its own sheet. It records findings visible on that sheet. It
-   cannot record missing-content findings, because it cannot search the other sheets. It ends with
-   `finish_sheet` notes: summary, key facts, cross-references and suspected gaps. A reviewer that
-   stops without notes is asked once to save them.
+   open, record coverage for, and segment only its own sheet. It records findings visible on that
+   sheet, with locations and evidence from it, and cannot update another sheet's or the
+   coordinator's finding. It cannot record missing-content findings, because it cannot search the
+   other sheets, and it cannot change the project configuration: it reports a different project
+   fact in its notes. It ends with `finish_sheet` notes: summary, key facts, cross-references and
+   suspected gaps. A reviewer that stops without notes is asked once to save them.
 3. **Coordination.** The coordinator receives every sheet's notes, compares facts across sheets,
-   checks suspected gaps against the whole inventory, and calls `finish_review`.
+   checks suspected gaps against the whole inventory, and calls `finish_review`. Its tool list
+   widens once, here; each role and stage otherwise keeps one list, so its cached prefix holds.
+
+Sources are retrieved once per review. Reviewers reading the same URL share one retrieval and one
+source ID, a `#page=N` selector reads a different source, and `read_source` with a `sourceId`
+rereads a saved source. A failed or unavailable read can be tried again. A source saved by an
+earlier review is never reused for a new read.
 
 Each submission has a stable request ID, and each sheet's conversation number is saved in the
 review. A restart rejoins the work of the current stage. An explicit resume continues unfinished
 sheets in their own conversations. When a review pauses, sheets without notes stay queued.
 
 An unresolved provider attempt blocks further requests only in the conversation that sent it. A
-sheet reviewer whose request ends uncertain is marked failed. The other sheets and the coordinator
+sheet reviewer whose model or SAM request ends uncertain is marked failed, including a finding's
+automatic SAM zoom; the SAM request is never sent again. The other sheets and the coordinator
 continue. The review then ends uncertain and says how many sheet reviewers stopped. After a process
 restart, an unresolved attempt whose conversation is unknown still blocks every conversation. Cancel
 aborts every conversation.
