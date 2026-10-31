@@ -90,6 +90,13 @@ non-empty revision into its payload at start, so a resume or cloud run uses the
 checklist the review began with. Saves are refused while the cloud owns the
 workspace, like other local writes.
 
+Migration 0012 adds two indexes for the check that local reviews have finished
+before a cloud transfer: model attempts by run and status, and packet reviews by
+their payload state. It changes no rows or query results. Packages record their
+migration history, and a worker accepts only a prefix of its own, so a cloud
+worker image built before 0012 rejects packages from this build. Publish a
+rebuilt image with the desktop that adds a migration.
+
 Migration 0013 adds `review_render_operations`, a receipt for each render
 operation. Renders with the same source hash, page, rotation, UserUnit, exact
 region, effective DPI and renderer version share one immutable image artifact, so
@@ -183,13 +190,13 @@ guard runs under that exclusion before a review connection opens. Download
 retries reuse only files whose size and SHA-256 match the selected result
 manifest; interrupted Modal copy scratch files are cleared before package validation.
 
-New cloud receipts record the admitted worker protocol. Older unmarked receipts
-can recover matching protocol-2 or protocol-3 progress only for already-dispatched
-`dispatching`/`running` jobs. Protocol-3 receipts recover protocol-3 results, and
-protocol-4 receipts can recover their already-dispatched packet prompt v3 results
-after the v4 prompt upgrade. The current protocol-4 request and warm-worker
-handshake require packet prompt v4. This changes neither SQL migrations nor saved
-review content and never replays model work. Existing explicit sync pauses
+New cloud receipts record `workerProtocol: 5`, the only protocol admitted for new
+work, with packet prompt v6. Older receipts recover progress only for jobs already
+`dispatching` or `running`: unmarked receipts accept protocol 2 or 3, protocol-3
+receipts accept protocol 3, and protocol-4 receipts accept protocol 4 with packet
+prompts v3 to v5. [Current admission and recovery](cloud-reviews.md#current-admission-and-recovery)
+lists the exact identities. Recovery changes no saved review content and never
+replays model work. Existing explicit sync pauses
 remain paused until **Retry sync**; ownership returns only through verified result
 restore or confirmed stop.
 

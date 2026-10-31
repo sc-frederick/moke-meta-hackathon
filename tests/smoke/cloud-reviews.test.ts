@@ -1024,3 +1024,123 @@ test("already-dispatched packet prompt v1 jobs remain recoverable without admitt
     await session.dispose();
   }
 });
+
+test("a non-canonical provider route fails cloud start before allocation or upload", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-cloud-route-"));
+  const operations: Array<string> = [];
+  const unused = Effect.die("Cloud work must not start for a non-canonical route.");
+
+  const port: CloudSandboxPort = {
+    preflight: () => Effect.sync(() => void operations.push("preflight")),
+    changes: () => Stream.never,
+    allocate: () => unused,
+    upload: () => unused,
+    dispatch: () => unused,
+    progress: () => unused,
+    download: () => unused,
+    stop: () => unused,
+    seedCache: () => Effect.succeed([]),
+  };
+
+  const slashed = Schema.decodeUnknownSync(InferenceConfiguration)({
+    ...Schema.encodeSync(InferenceConfiguration)(provider),
+    baseUrl: "https://api.meta.ai/v1/",
+  });
+
+  const runtime = ManagedRuntime.make(
+    CloudReviews.layer({
+      directory,
+      modal,
+      provider: slashed,
+      inspect: () => Effect.succeed({ sourceVersion: 0, factVersion: 0, projectVersion: 0 }),
+      prepare: () => Effect.sync(() => void operations.push("prepare")),
+      restorePending: () => false,
+      restore: () => Effect.void,
+    }).pipe(Layer.provide(Layer.succeed(CloudSandbox, port))),
+  );
+
+  try {
+    const cloud = await runtime.runPromise(CloudReviews);
+    const error = await runtime.runPromise(cloud.start(request()).pipe(Effect.flip));
+    expect(error.reason).toBe("configuration");
+    expect(operations).toEqual([]);
+    expect(await runtime.runPromise(cloud.status)).toBeNull();
+    await runtime.runPromise(cloud.assertLocal);
+  } finally {
+    await runtime.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the current cloud compatibility guide names the admitted identity and receipt protocol", async () => {
+  const guide = await readFile("docs/cloud-reviews.md", "utf8");
+  const start = guide.indexOf("### Current admission and recovery");
+  const current = guide.slice(start, guide.indexOf("### Protocol history", start));
+
+  expect(start).toBeGreaterThan(-1);
+  expect(current).toContain(`protocol-${cloudEngineIdentity.protocol} worker`);
+  expect(current).toContain(`\`workerProtocol: ${cloudEngineIdentity.protocol}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.engine}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.prompt}\``);
+  expect(current).toContain(`\`${cloudEngineIdentity.packetPrompt}\``);
+  expect(guide).not.toContain("New ownership receipts save\n`workerProtocol: 3`");
+});
+
+test("a one-minute cloud limit fails before any cloud work and longer limits keep their deadline", async () => {
+  for (const timeoutMinutes of [1, 2]) {
+    const directory = await mkdtemp(join(tmpdir(), "moke-cloud-limit-"));
+    const operations: Array<string> = [];
+    const admitted: Array<CloudReviewRecord> = [];
+
+    const port: CloudSandboxPort = {
+      preflight: () => Effect.sync(() => void operations.push("preflight")),
+      changes: () => Stream.never,
+      allocate: (record) =>
+        Effect.sync(() => {
+          admitted.push(record);
+          operations.push("allocate");
+
+          return "sandbox-one";
+        }),
+      upload: () => Effect.sync(() => (operations.push("upload"), "source-checkpoint")),
+      dispatch: () => Effect.sync(() => void operations.push("dispatch")),
+      progress: () => Effect.die("Not observed"),
+      download: () => Effect.void,
+      stop: () => Effect.void,
+      seedCache: () => Effect.succeed([]),
+    };
+
+    const runtime = ManagedRuntime.make(
+      CloudReviews.layer({
+        directory,
+        modal: { ...modal, timeoutMinutes },
+        provider,
+        inspect: () => Effect.succeed({ sourceVersion: 0, factVersion: 0, projectVersion: 0 }),
+        prepare: () => Effect.sync(() => void operations.push("prepare")),
+        restorePending: () => false,
+        restore: () => Effect.void,
+      }).pipe(Layer.provide(Layer.succeed(CloudSandbox, port))),
+    );
+
+    try {
+      const cloud = await runtime.runPromise(CloudReviews);
+      const started = await runtime.runPromise(Effect.exit(cloud.start(request())));
+
+      if (timeoutMinutes === 1) {
+        expect(started._tag).toBe("Failure");
+        const error = await runtime.runPromise(cloud.start(request()).pipe(Effect.flip));
+        expect(error.reason).toBe("configuration");
+        expect(error.message).toContain("2 minutes or more");
+        expect(operations).toEqual([]);
+        expect(await runtime.runPromise(cloud.status)).toBeNull();
+      } else {
+        expect(started._tag).toBe("Success");
+        expect(operations).toEqual(["preflight", "prepare", "allocate", "upload", "dispatch"]);
+        expect(admitted.map((record) => record.expiresAt - record.createdAt)).toEqual([120_000]);
+      }
+    } finally {
+      await runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});

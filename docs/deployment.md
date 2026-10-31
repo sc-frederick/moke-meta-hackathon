@@ -43,7 +43,13 @@ and patched Svelte/Effect component checks remain enabled.
 
 Each installer includes a native `app-backend` executable in `resources/backend`,
 outside `app.asar`, a native `pdf-worker`, the matching canvas addon, PDF.js worker/fonts/CMaps/WASM
-assets, licenses, and immutable SQL migrations. No system Bun or Node is
+assets, licenses, and immutable SQL migrations. `scripts/prepare-pdf-assets.ts`
+stages PDF.js from an explicit runtime allowlist: the legacy worker module plus
+the CMap, standard font and WASM directories with their licenses. Source maps,
+minified duplicates and the web viewer are not shipped. `app.asar` carries only
+the production packages the Electron bundle leaves external, Effect and
+electron-effect-rpc. The Modal SDK is a development dependency compiled into
+`app-backend`. No system Bun or Node is
 required by the packaged app. CI launches the packaged application after building
 its installers on each OS, verifying the compiled backend and renderer together.
 
@@ -51,7 +57,8 @@ Electron starts one backend and sends its schema-validated startup configuration
 over a private stdin pipe. The backend migrates the database, binds an ephemeral
 port on `127.0.0.1`, and returns a versioned, schema-validated readiness message.
 The HTTP hop uses framed NDJSON so progress arrives while a subscription remains
-open. Effect RPC encodes and decodes every request, success, and known application
+open. Request bodies are limited to 512 KiB, which every bounded command fits
+after UTF-8 and JSON escaping; the desktop reports a larger body as an input error. Effect RPC encodes and decodes every request, success, and known application
 failure. A random per-launch bearer credential authorizes Electron; the backend
 rejects browser-origin requests. The credential stays in the two processes and
 is absent from command-line arguments, renderer capabilities, and logs.

@@ -41,6 +41,14 @@ import { executionPersistence } from "./review/execution-store.ts";
 import { cloudPackageLimits } from "./cloud/transfer.ts";
 import { CloudReviewSynchronization } from "./cloud/sync.ts";
 
+/** Count-check runs still active, or with an unacknowledged uncertain model or SAM attempt. */
+export const countRunsBlockingCloud = (sql: SqlClient.SqlClient) =>
+  sql`SELECT run_id FROM review_execution_runs r WHERE r.state IN ('running','pausing','paused','uncertain') OR ((EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=r.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=r.run_id AND s.status='uncertain')) AND NOT EXISTS(SELECT 1 FROM review_execution_acknowledgements k WHERE k.run_id=r.run_id))`;
+
+/** Project names of packet reviews that are running, paused or uncertain. */
+export const packetProjectsBlockingCloud = (sql: SqlClient.SqlClient) =>
+  sql`SELECT DISTINCT json_extract(payload,'$.projectName') AS name FROM packet_reviews WHERE json_extract(payload,'$.state') IN ('running','paused','uncertain') ORDER BY name`;
+
 /** The single managed application runtime is also the entrypoint for Pi callbacks. */
 export interface ApplicationEntry {
   readonly runPromise: <A, E>(
@@ -272,14 +280,11 @@ export class Application extends Context.Service<
             Effect.gen(function* () {
               const sql = yield* SqlClient.SqlClient;
 
-              const countRuns =
-                yield* sql`SELECT run_id FROM review_execution_runs r WHERE r.state IN ('running','pausing','paused','uncertain') OR ((EXISTS(SELECT 1 FROM review_execution_attempts a WHERE a.run_id=r.run_id AND a.status='uncertain') OR EXISTS(SELECT 1 FROM review_sam_attempts s WHERE s.run_id=r.run_id AND s.status='uncertain')) AND NOT EXISTS(SELECT 1 FROM review_execution_acknowledgements k WHERE k.run_id=r.run_id))`;
+              const countRuns = yield* countRunsBlockingCloud(sql);
 
               const packets = yield* Schema.decodeUnknownEffect(
                 Schema.Array(Schema.Struct({ name: Schema.String })),
-              )(
-                yield* sql`SELECT DISTINCT json_extract(payload,'$.projectName') AS name FROM packet_reviews WHERE json_extract(payload,'$.state') IN ('running','paused','uncertain') ORDER BY name`,
-              );
+              )(yield* packetProjectsBlockingCloud(sql));
 
               return [
                 ...packets.map((row) => row.name),

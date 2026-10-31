@@ -10,6 +10,7 @@ import {
   BackendReady,
   BackendRpc,
   BackendUnavailable,
+  backendRequestMaxBytes,
 } from "../src/lib/backend-rpc.ts";
 import { Application, BackendHandlers, type ApplicationEntry } from "./application.ts";
 
@@ -63,7 +64,10 @@ const program = Effect.gen(function* () {
         Layer.mergeAll(
           BackendHandlers.pipe(Layer.provide(Application.layer(config, entry))),
           RpcSerialization.layerNdjson,
-          Logger.layer([logger]),
+        ).pipe(
+          // Construction, its scoped background fibers and later operations all log to the file.
+          // Stdout carries only the readiness envelope.
+          Layer.provideMerge(Logger.layer([logger])),
         ),
       ),
     ),
@@ -101,7 +105,7 @@ const program = Effect.gen(function* () {
         Bun.serve({
           hostname: "127.0.0.1",
           port: 0,
-          maxRequestBodySize: 64 * 1024,
+          maxRequestBodySize: backendRequestMaxBytes,
           idleTimeout: 0, // Authenticated progress streams can be quiet during bounded provider operations.
           fetch(request) {
             if (request.headers.get("origin") !== null) return new Response(null, { status: 403 });

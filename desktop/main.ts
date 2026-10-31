@@ -415,7 +415,8 @@ if (!app.requestSingleInstanceLock()) {
           Layer.mergeAll(ReviewProxy, ExecutionProxy, PacketProxy, CloudReviewProxy, shellHandlers),
         ),
         Layer.provideMerge(backend),
-        Layer.provide(logging),
+        // Later runtime operations, not only construction, write to the log file.
+        Layer.provideMerge(logging),
       );
 
       const runtime = ManagedRuntime.make(server);
