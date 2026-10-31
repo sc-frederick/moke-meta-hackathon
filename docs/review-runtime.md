@@ -57,7 +57,8 @@ review. A restart rejoins the work of the current stage. An explicit resume cont
 sheets in their own conversations. When a review pauses, sheets without notes stay queued.
 
 An unresolved provider attempt blocks further requests only in the conversation that sent it. A
-sheet reviewer whose request ends uncertain is marked failed. The other sheets and the coordinator
+sheet reviewer whose model or SAM request ends uncertain is marked failed, including a finding's
+automatic SAM zoom; the SAM request is never sent again. The other sheets and the coordinator
 continue. The review then ends uncertain and says how many sheet reviewers stopped. After a process
 restart, an unresolved attempt whose conversation is unknown still blocks every conversation. Cancel
 aborts every conversation.

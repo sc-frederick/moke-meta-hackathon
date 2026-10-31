@@ -37,7 +37,7 @@ import {
   ReviewMessage,
   SheetId,
 } from "#lib/review/contracts.ts";
-import { ExecutionError, ReviewDiscipline } from "#lib/review/execution.ts";
+import { ExecutionError, ReviewDiscipline, type ProviderFailure } from "#lib/review/execution.ts";
 import { transformRegion } from "#lib/review/geometry.ts";
 import {
   PacketReview,
@@ -961,7 +961,8 @@ export class PacketReviews extends Context.Service<
           /**
            * One durable SAM path for model requests and host finding zooms. Intent is saved before
            * dispatch, an unresolved outcome is never resent, and a pause drains the receipt. A sheet
-           * reviewer segments only its own sheet.
+           * reviewer segments only its own sheet, and its unresolved SAM request stops only that
+           * reviewer.
            */
           const segment = async (
             taskId: number,
@@ -1049,6 +1050,8 @@ export class PacketReviews extends Context.Service<
                 const controllers = samControllers.get(row.id) ?? new Set<AbortController>();
                 controllers.add(controller);
                 samControllers.set(row.id, controllers);
+                const dispatchedAt = performance.now();
+                let answered: Response | undefined;
 
                 try {
                   await run(
@@ -1072,6 +1075,8 @@ export class PacketReviews extends Context.Service<
                     redirect: "error",
                     signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
                   });
+
+                  answered = response;
 
                   if (!response.ok || !response.body)
                     throw error("uncertain", "SAM did not return a usable response.");
@@ -1137,6 +1142,26 @@ export class PacketReviews extends Context.Service<
 
                   return { raw, prepared, replayed: false };
                 } catch (cause) {
+                  // An HTTP refusal is reported apart from a request whose outcome is unknown; the
+                  // receipt of either stays unresolved and is never sent again.
+                  const failure: typeof ProviderFailure.Type = {
+                    category:
+                      answered !== undefined
+                        ? answered.ok
+                          ? "response"
+                          : "http"
+                        : controller.signal.aborted
+                          ? "aborted"
+                          : cause instanceof Error && cause.name === "TimeoutError"
+                            ? "timeout"
+                            : "network",
+                    phase: answered === undefined ? "dispatch" : "response",
+                    elapsedMs: Math.max(0, performance.now() - dispatchedAt),
+                    httpStatus: answered?.status ?? null,
+                  };
+
+                  const sheetId = assignments.sheets.get(conversationId);
+
                   await run(
                     query(
                       Effect.gen(function* () {
@@ -1149,11 +1174,23 @@ export class PacketReviews extends Context.Service<
                         if (completed.length || fresh.owner_generation !== config.owner.generation)
                           return fresh.payload;
 
+                        // Its unresolved receipt blocks this sheet reviewer's next request only;
+                        // peers and the coordinator continue, and the review ends uncertain.
+                        if (sheetId !== undefined)
+                          return yield* save(
+                            fresh,
+                            changeSheet(fresh.payload, sheetId, {
+                              state: "failed",
+                              providerFailure: failure,
+                            }),
+                          );
+
                         return yield* save(
                           fresh,
                           new PacketReview({
                             ...fresh.payload,
                             state: fresh.payload.state === "cancelled" ? "cancelled" : "uncertain",
+                            providerFailure: failure,
                             error:
                               "A SAM request has an unresolved outcome. Its saved intent prevents automatic repetition.",
                           }),
@@ -1172,8 +1209,8 @@ export class PacketReviews extends Context.Service<
 
           /**
            * Zoom into a recorded finding's problem area and segment it with SAM from the finding
-           * region. The finding stands without the zoom; an unresolved SAM outcome still stops the
-           * review through the shared dispatch.
+           * region. The finding stands without the zoom; an unresolved SAM outcome still stops its
+           * sheet reviewer, or a coordinator's review, through the shared dispatch.
            */
           const focusFinding = async (
             taskId: number,

@@ -961,6 +961,140 @@ test("a sheet reviewer cannot record, adopt or segment another sheet's findings 
   }
 }, 120000);
 
+test.each(["segment_objects", "finding zoom"] as const)(
+  "a sheet reviewer's failed SAM request (%s) stops only that sheet; its peer and coordination finish",
+  async (kind) => {
+    const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-sam-failure-"));
+    const peerHeld = Promise.withResolvers<void>();
+    const stages = new Array<string>();
+    let current: Session | undefined;
+    let samSends = 0;
+    let afterSam = 0;
+
+    const transport: ProviderTransport = async (_url, init) => {
+      const request = decodeRequest(init);
+
+      if (request.model === "sam-3.1") {
+        samSends++;
+
+        // An HTTP refusal, or a response that ends before a usable SAM result.
+        return kind === "segment_objects"
+          ? Response.json({ error: { message: "Internal error" } }, { status: 500 })
+          : new Response("data: incomplete", { status: 200 });
+      }
+
+      const made = calls(request.input);
+
+      if (systemPrompt(request).includes("## Parallel review: sheet reviewer")) {
+        const input = outputs(SheetInput, request).at(0);
+
+        if (!input) throw new Error("Sheet reviewer input is missing its sheet");
+        const own = input.sheet.id;
+
+        const rendered = outputs(Rendered, request).find(
+          (result) => result.artifact.sheetId === own,
+        );
+
+        if (!rendered) return response([{ name: "render_sheet", arguments: { sheetId: own } }]);
+
+        if (own === input.inventory[0]?.id) {
+          if (made.includes("segment_objects") || made.includes("record_finding")) {
+            afterSam++;
+
+            return reviewOwnSheet(request, own);
+          }
+
+          // SAM is sent while the peer's model request is on the wire.
+          await Promise.race([peerHeld.promise, Bun.sleep(5000)]);
+
+          return response([
+            kind === "segment_objects"
+              ? {
+                  name: "segment_objects",
+                  arguments: {
+                    artifactId: rendered.artifact.id,
+                    prompt: { kind: "concept", text: "luminaires" },
+                  },
+                }
+              : {
+                  name: "record_finding",
+                  arguments: findingOn([own], [rendered.artifact.id], {
+                    x: 100,
+                    y: 100,
+                    width: 60,
+                    height: 40,
+                  }),
+                },
+          ]);
+        }
+
+        if (!made.includes("record_coverage_batch")) {
+          peerHeld.resolve();
+
+          // Hold this request until the failed SAM request has been settled.
+          for (let wait = 0; wait < 500; wait++) {
+            const review =
+              current && (await current.run(current.packets.list(current.projectId)))[0];
+
+            if (
+              review?.state !== "running" ||
+              review.parallel?.sheets.some((sheet) => sheet.state === "failed")
+            )
+              break;
+            await Bun.sleep(10);
+          }
+        }
+
+        return reviewOwnSheet(request, own);
+      }
+
+      const stage = outputs(CoordinatorInput, request).at(-1)?.stage;
+      stages.push(stage ?? "unknown");
+
+      if (stage === "setup") return response([], "Project configuration recorded.");
+
+      return coordinate(request);
+    };
+
+    const session = await open(directory, transport, true, undefined, "observe", parallel);
+    current = session;
+
+    try {
+      const sheets = (await session.snapshot()).sheets;
+
+      const started = await session.run(
+        session.packets.start(await session.request("Review the whole drawing set.")),
+      );
+
+      const finished = await until(session, started.id, "uncertain");
+      const [first, second] = finished.parallel?.sheets ?? [];
+
+      // The failed request is never sent again, and its reviewer sends nothing further.
+      expect(samSends).toBe(1);
+      expect(afterSam).toBe(0);
+      expect(first?.sheetId).toBe(sheets[0]?.id);
+      expect(first?.state).toBe("failed");
+      expect(first?.providerFailure?.category).toBe(
+        kind === "segment_objects" ? "http" : "response",
+      );
+      expect(first?.providerFailure?.httpStatus).toBe(kind === "segment_objects" ? 500 : 200);
+      expect(second?.state).toBe("completed");
+      expect(second?.notes?.summary).toContain("reviewed");
+      expect(stages.at(-1)).toBe("coordination");
+      expect(finished.error).toContain("1 of 2 sheet reviewers stopped");
+
+      if (kind === "finding zoom") {
+        expect(finished.findings).toHaveLength(1);
+        expect(finished.findings[0]?.focus).toBeUndefined();
+      }
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  120000,
+);
+
 test("every sheet reviewer opens from the setup snapshot after a peer adds a source, across a restart", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-packet-parallel-snapshot-"));
   const openings = new Map<string, string>();
