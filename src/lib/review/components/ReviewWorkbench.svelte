@@ -190,6 +190,20 @@
 
   let newProjectName = $state("");
   let draft = $state("");
+
+  // Counts edits and replacements of the draft, so an acknowledged send clears only the text it
+  // submitted. The composer stays editable while a send is pending.
+  let draftRevision = 0;
+
+  function replaceDraft(text: string) {
+    draft = text;
+    draftRevision++;
+  }
+
+  function clearSubmittedDraft(revision: number) {
+    if (revision === draftRevision) replaceDraft("");
+  }
+
   let expandedProjects = $state.raw<ReadonlyArray<string>>([]);
 
   let createFindingOpen = $state(false);
@@ -942,7 +956,7 @@
     await chooseConversation(snapshot?.conversations[0]?.id ?? null, false);
     reviewFindingId = null;
     executionStatus = null;
-    draft = "";
+    replaceDraft("");
     closeSource();
   }
 
@@ -1026,6 +1040,7 @@
     const text = draft.trim();
 
     if (!text || busy) return;
+    const submitted = draftRevision;
 
     if (reviewMode === "review" && activePacketReview?.state === "running") {
       busy = true;
@@ -1050,7 +1065,7 @@
       if (result.ok) {
         steeringCommand = null;
         receivePacketReview(result.value);
-        draft = "";
+        clearSubmittedDraft(submitted);
         notice = "Follow-up queued for this review. MOKE will apply it at the next tool boundary.";
         await refresh();
       } else error = result.error.message;
@@ -1088,12 +1103,10 @@
           selection: { mode: scopeMode, revisionId: scopeRevision.id, sheetIds: selectedSheetIds },
         },
         location,
-        () => {
-          draft = "";
-        },
+        () => clearSubmittedDraft(submitted),
       );
     } else if (await runCommand(command)) {
-      draft = "";
+      clearSubmittedDraft(submitted);
       notice = "Note saved.";
     }
 
@@ -1626,7 +1639,7 @@
     if (location === "cloud") void refreshWorkspaceEstimate();
     callLimit = saved?.callLimit;
     selectedConversationId = id;
-    draft = id === null ? "" : (conversationViews.get(id)?.draft ?? "");
+    replaceDraft(id === null ? "" : (conversationViews.get(id)?.draft ?? ""));
     mobileNavigationOpen = false;
     closeFindings();
     await tick();
@@ -2596,6 +2609,9 @@
                 id="chat-message"
                 bind:this={composerInput}
                 bind:value={draft}
+                oninput={() => {
+                  draftRevision++;
+                }}
                 rows="2"
                 maxlength="32000"
                 placeholder={reviewMode === "review"
