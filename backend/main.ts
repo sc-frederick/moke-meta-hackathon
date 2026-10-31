@@ -63,7 +63,10 @@ const program = Effect.gen(function* () {
         Layer.mergeAll(
           BackendHandlers.pipe(Layer.provide(Application.layer(config, entry))),
           RpcSerialization.layerNdjson,
-          Logger.layer([logger]),
+        ).pipe(
+          // Construction, its scoped background fibers and later operations all log to the file.
+          // Stdout carries only the readiness envelope.
+          Layer.provideMerge(Logger.layer([logger])),
         ),
       ),
     ),
