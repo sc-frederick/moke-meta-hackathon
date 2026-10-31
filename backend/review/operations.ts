@@ -300,22 +300,17 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
             return yield* new ReviewInputError({
               message: "The selected evidence is not a bounded source image.",
             });
-          const chunks: Array<Buffer> = [];
 
-          for (let offset = 0; offset < artifact.byteLength; offset += 256 * 1024) {
-            const result = yield* config.documents.read(
-              artifact.sha256,
-              "image/png",
-              offset,
-              256 * 1024,
-            );
-
-            chunks.push(Buffer.from(result.base64, "base64"));
-          }
+          // One verified read; renderer chunk reads are for the bounded RPC transport.
+          const bytes = yield* config.documents.readVerified(
+            artifact.sha256,
+            "image/png",
+            16 * 1024 * 1024,
+          );
 
           const converted = yield* Effect.tryPromise({
             try: async () => {
-              const image = new Bun.Image(Buffer.concat(chunks));
+              const image = new Bun.Image(bytes);
               const metadata = await image.metadata();
               const scale = Math.min(1, 2048 / Math.max(metadata.width, metadata.height));
               const width = Math.max(1, Math.round(metadata.width * scale));

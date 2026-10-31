@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { Cause, Effect, Exit, Fiber } from "effect";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { Cause, Effect, Exit, Fiber, Metric, Result } from "effect";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { artifactBytesVerified } from "../../backend/documents/artifact-store.ts";
 import { Documents, pdfJobConcurrency } from "../../backend/documents/documents.ts";
 import { readSource } from "../../backend/packet-review/sources.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
@@ -448,6 +449,76 @@ test("render refuses an original replaced by another valid PDF and records nothi
     await rm(directory, { recursive: true, force: true });
   }
 }, 60000);
+
+test("chunked artifact reads hash the file once and still reject altered or truncated files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-documents-chunks-"));
+  const bytes = crypto.getRandomValues(new Uint8Array(1024 * 1024 + 4321));
+  const sha256 = Bun.SHA256.hash(bytes, "hex");
+  const path = join(directory, "artifacts", `${sha256}.png`);
+  const chunk = 256 * 1024;
+
+  try {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const documents = yield* Documents;
+        yield* Effect.promise(() => mkdir(join(directory, "artifacts")));
+        yield* Effect.promise(() => writeFile(path, bytes));
+
+        const verified = Effect.map(Metric.value(artifactBytesVerified), (state) => state.count);
+
+        const readAll = Effect.gen(function* () {
+          const parts: Array<Buffer> = [];
+
+          for (let offset = 0; offset < bytes.byteLength; offset += chunk) {
+            const part = yield* documents.read(sha256, "image/png", offset, chunk);
+            expect(part.totalBytes).toBe(bytes.byteLength);
+            parts.push(Buffer.from(part.base64, "base64"));
+          }
+
+          return Buffer.concat(parts);
+        });
+
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(bytes.byteLength);
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(bytes.byteLength);
+
+        const whole = yield* documents.readVerified(sha256, "image/png", 16 * 1024 * 1024);
+        expect(Buffer.compare(Buffer.from(whole), Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(2 * bytes.byteLength);
+
+        const bounded = yield* Effect.result(documents.readVerified(sha256, "image/png", 1024));
+        expect(
+          Result.isFailure(bounded) &&
+            Schema.is(DocumentError)(bounded.failure) &&
+            bounded.failure.reason === "limit",
+        ).toBe(true);
+
+        const altered = Uint8Array.from(bytes);
+        altered[chunk + 7] = (altered[chunk + 7] ?? 0) ^ 0xff;
+
+        for (const changed of [altered, bytes.subarray(0, bytes.byteLength - 1)]) {
+          yield* Effect.promise(() => writeFile(path, changed));
+          const result = yield* Effect.result(documents.read(sha256, "image/png", chunk, chunk));
+          expect(Result.isFailure(result)).toBe(true);
+
+          if (Result.isFailure(result))
+            expect(result.failure.message).toContain("hash does not match");
+        }
+
+        // The restored original is verified again before it is served.
+        yield* Effect.promise(() => writeFile(path, bytes));
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+      }).pipe(
+        Effect.provide(documentsLayer(directory)),
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.scoped,
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("drawing-sized sheets and focused boxes fit the hard pixel ceiling with accurate actual-DPI transforms", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-large-drawing-"));

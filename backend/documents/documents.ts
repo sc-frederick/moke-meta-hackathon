@@ -1,7 +1,13 @@
 import { Context, Effect, Layer, Semaphore } from "effect";
 import { availableParallelism } from "node:os";
 import { DocumentError, Region, ReviewStorageError, Sheet } from "#lib/review/contracts.ts";
-import { artifactPath, readArtifactChunk, storeBytes, storeFile } from "./artifact-store.ts";
+import {
+  artifactPath,
+  verifiedArtifactReader,
+  readVerifiedArtifact,
+  storeBytes,
+  storeFile,
+} from "./artifact-store.ts";
 import { type DocumentsConfig, DocumentsLimits } from "./config.ts";
 import { validatePdfSource } from "./pdf-validation.ts";
 import { validateRenderRequest } from "./render-bounds.ts";
@@ -44,6 +50,12 @@ export class Documents extends Context.Service<
       offset: number,
       limit: number,
     ) => Effect.Effect<{ base64: string; totalBytes: number }, DocumentError | ReviewStorageError>;
+    /** Read and verify a whole stored artifact once, for backend processing within a size bound. */
+    readonly readVerified: (
+      sha256: string,
+      mediaType: "application/pdf" | "image/png",
+      maxBytes: number,
+    ) => Effect.Effect<Uint8Array, DocumentError | ReviewStorageError>;
     /** Store a retrieved PDF by content hash and extract its embedded text from a one-based page. */
     readonly extractText: (
       bytes: Uint8Array,
@@ -61,6 +73,11 @@ export class Documents extends Context.Service<
       Documents,
       Effect.gen(function* () {
         const pdfJobs = yield* Semaphore.make(pdfJobConcurrency);
+
+        const reads = verifiedArtifactReader(
+          config.dataDirectory,
+          DocumentsLimits.verifiedReadBytes,
+        );
 
         const withPdfJob = <A, E>(operation: (worker: PdfWorkerSession) => Effect.Effect<A, E>) =>
           Effect.scoped(
@@ -84,6 +101,7 @@ export class Documents extends Context.Service<
               Effect.gen(function* () {
                 yield* validatePdfSource(source);
                 const stored = yield* storeFile(config.dataDirectory, source, "application/pdf");
+                reads.forget(stored.sha256, "application/pdf");
 
                 const pdfPath = artifactPath(
                   config.dataDirectory,
@@ -104,12 +122,10 @@ export class Documents extends Context.Service<
           inspectStored: (sha256) =>
             withPdfJob((worker) =>
               Effect.gen(function* () {
-                const verified = yield* readArtifactChunk(
+                const verified = yield* readVerifiedArtifact(
                   config.dataDirectory,
                   sha256,
                   "application/pdf",
-                  0,
-                  1,
                 );
 
                 const pdfPath = artifactPath(config.dataDirectory, sha256, "application/pdf");
@@ -118,7 +134,7 @@ export class Documents extends Context.Service<
 
                 return new ImportedPdf({
                   sha256,
-                  byteLength: verified.totalBytes,
+                  byteLength: verified.bytes.byteLength,
                   pages: inspected.pages,
                 });
               }),
@@ -171,6 +187,7 @@ export class Documents extends Context.Service<
 
                 const pngBytes = Buffer.from(rendered.pngBase64, "base64");
                 const stored = yield* storeBytes(config.dataDirectory, pngBytes, "image/png");
+                reads.forget(stored.sha256, "image/png");
 
                 return new RenderedPdf({
                   sha256: stored.sha256,
@@ -185,8 +202,12 @@ export class Documents extends Context.Service<
               }),
             ),
 
-          read: (sha256, mediaType, offset, limit) =>
-            readArtifactChunk(config.dataDirectory, sha256, mediaType, offset, limit),
+          read: reads.chunk,
+
+          readVerified: (sha256, mediaType, maxBytes) =>
+            readVerifiedArtifact(config.dataDirectory, sha256, mediaType, maxBytes).pipe(
+              Effect.map((verified) => verified.bytes),
+            ),
 
           extractText: (bytes, firstPage, maxCharacters) =>
             withPdfJob((worker) =>
@@ -205,6 +226,7 @@ export class Documents extends Context.Service<
                   });
 
                 const stored = yield* storeBytes(config.dataDirectory, bytes, "application/pdf");
+                reads.forget(stored.sha256, "application/pdf");
 
                 const pdfPath = artifactPath(
                   config.dataDirectory,
