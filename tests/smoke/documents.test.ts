@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { Effect, Exit, Fiber } from "effect";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { Cause, Effect, Exit, Fiber, Metric, Result } from "effect";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Documents } from "../../backend/documents/documents.ts";
+import { artifactBytesVerified } from "../../backend/documents/artifact-store.ts";
+import { Documents, pdfJobConcurrency } from "../../backend/documents/documents.ts";
 import { readSource } from "../../backend/packet-review/sources.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -11,7 +12,16 @@ import { transformPoint } from "#lib/review/geometry.ts";
 import { fileURLToPath } from "node:url";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import { Schema } from "effect";
-import { Region, Sheet, ProjectId, RevisionId, SheetId } from "#lib/review/contracts.ts";
+import {
+  DocumentError,
+  OperationId,
+  Region,
+  Sheet,
+  ProjectId,
+  RevisionId,
+  SheetId,
+} from "#lib/review/contracts.ts";
+import { importProject, openReviewOperations, shiftRegion } from "../fixtures/review-operations.ts";
 
 const sheetId = (value: string) => Schema.decodeUnknownSync(SheetId)(value);
 const projectId = (value: string) => Schema.decodeUnknownSync(ProjectId)(value);
@@ -300,27 +310,213 @@ test("read returns bounded chunks for stored artifacts", async () => {
   }
 });
 
-test("import interruption cancels in-flight PDF work", async () => {
+test("import interruption stops each started worker and releases every PDF job slot", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-cancel-"));
+  const started = await mkdtemp(join(tmpdir(), "moke-documents-started-"));
   const source = join(fixtureDirectory, "original.pdf");
-  process.env.MOKE_PDF_WORKER_DELAY_MS = "500";
+  // Workers report each accepted job, then hold it far beyond this test.
+  process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY = started;
+  process.env.MOKE_PDF_WORKER_DELAY_MS = "600000";
 
   try {
-    const exit = await Effect.runPromise(
+    await Effect.runPromise(
       Effect.gen(function* () {
         const documents = yield* Documents;
-        const fiber = yield* Effect.forkScoped(documents.importPdf(source));
-        yield* Effect.sleep("50 millis");
-        yield* Fiber.interrupt(fiber);
 
-        return yield* Fiber.await(fiber);
+        // Fill every job slot, so one leaked slot would block the import that follows.
+        const fibers = yield* Effect.forEach(Array.from({ length: pdfJobConcurrency }), () =>
+          Effect.forkChild(documents.importPdf(source)),
+        );
+
+        const pids = yield* Effect.promise(() => startedWorkers(started, pdfJobConcurrency));
+
+        for (const pid of pids) expect(running(pid)).toBe(true);
+
+        for (const fiber of fibers) {
+          yield* Fiber.interrupt(fiber);
+          const exit = yield* Fiber.await(fiber);
+          expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+        }
+
+        // Interruption completes only after each owned worker process has exited.
+        for (const pid of pids) expect(running(pid)).toBe(false);
+        expect(
+          yield* Effect.promise(() => readdir(join(dataDirectory, "artifacts", ".staging"))),
+        ).toEqual([]);
+
+        delete process.env.MOKE_PDF_WORKER_DELAY_MS;
+        const next = yield* documents.importPdf(source).pipe(Effect.timeout("30 seconds"));
+        expect(next.pages.length).toBe(1);
+        expect(
+          yield* Effect.promise(() => startedWorkers(started, pdfJobConcurrency + 1)),
+        ).toHaveLength(pdfJobConcurrency + 1);
       }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
     );
-
-    expect(Exit.isFailure(exit)).toBe(true);
   } finally {
+    delete process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY;
     delete process.env.MOKE_PDF_WORKER_DELAY_MS;
     await rm(dataDirectory, { recursive: true, force: true });
+    await rm(started, { recursive: true, force: true });
+  }
+}, 60000);
+
+/** Wait for the job-start handshake of `count` workers and return their process IDs. */
+async function startedWorkers(directory: string, count: number) {
+  const deadline = Date.now() + 30_000;
+
+  for (;;) {
+    const names = await readdir(directory);
+
+    if (names.length >= count)
+      return Promise.all(
+        names.map(async (name) => Number(await readFile(join(directory, name), "utf8"))),
+      );
+
+    if (Date.now() > deadline) throw new Error(`Only ${names.length} PDF workers started.`);
+    await Bun.sleep(10);
+  }
+}
+
+function running(pid: number) {
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test("render refuses an original replaced by another valid PDF and records nothing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-documents-integrity-"));
+  const source = join(directory, "plans.pdf");
+  await writeFile(source, createHeroPdf("A"));
+
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const documents = yield* Documents;
+          const { review, artifactRecords } = yield* openReviewOperations(directory, documents);
+          const projectId = yield* importProject(review, source);
+          const state = yield* review.snapshot(projectId, 0);
+          const sheet = state.sheets[0];
+          const revision = state.revisions[0];
+
+          if (sheet === undefined || revision === undefined)
+            return yield* Effect.die("Missing fixture sheet");
+
+          const request = {
+            projectId,
+            sheetId: sheet.id,
+            operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+            region: new Region({ x: 60, y: 360, width: 230, height: 300 }),
+            dpi: 72,
+          };
+
+          yield* review.render(request);
+          const artifacts = join(directory, "artifacts");
+          // Revision B is a valid PDF with the same page geometry and different content.
+          yield* Effect.promise(() =>
+            writeFile(join(artifacts, `${revision.sha256}.pdf`), createHeroPdf("B")),
+          );
+          const images = yield* Effect.promise(() => readdir(artifacts));
+          const records = yield* artifactRecords(projectId);
+
+          const direct = yield* Effect.flip(
+            documents.render(revision.sha256, sheet, shiftRegion(request.region, { x: 1 }), 72),
+          );
+
+          const recorded = yield* Effect.flip(
+            review.render({
+              ...request,
+              operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+              region: shiftRegion(request.region, { y: -60 }),
+            }),
+          );
+
+          for (const failure of [direct, recorded]) {
+            expect(Schema.is(DocumentError)(failure)).toBe(true);
+            expect(failure.message).toBe("The original PDF does not match its recorded hash.");
+          }
+
+          expect(yield* Effect.promise(() => readdir(artifacts))).toEqual(images);
+          expect(yield* artifactRecords(projectId)).toBe(records);
+        }).pipe(Effect.provide(documentsLayer(directory))),
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 60000);
+
+test("chunked artifact reads hash the file once and still reject altered or truncated files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-documents-chunks-"));
+  const bytes = crypto.getRandomValues(new Uint8Array(1024 * 1024 + 4321));
+  const sha256 = Bun.SHA256.hash(bytes, "hex");
+  const path = join(directory, "artifacts", `${sha256}.png`);
+  const chunk = 256 * 1024;
+
+  try {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const documents = yield* Documents;
+        yield* Effect.promise(() => mkdir(join(directory, "artifacts")));
+        yield* Effect.promise(() => writeFile(path, bytes));
+
+        const verified = Effect.map(Metric.value(artifactBytesVerified), (state) => state.count);
+
+        const readAll = Effect.gen(function* () {
+          const parts: Array<Buffer> = [];
+
+          for (let offset = 0; offset < bytes.byteLength; offset += chunk) {
+            const part = yield* documents.read(sha256, "image/png", offset, chunk);
+            expect(part.totalBytes).toBe(bytes.byteLength);
+            parts.push(Buffer.from(part.base64, "base64"));
+          }
+
+          return Buffer.concat(parts);
+        });
+
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(bytes.byteLength);
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(bytes.byteLength);
+
+        const whole = yield* documents.readVerified(sha256, "image/png", 16 * 1024 * 1024);
+        expect(Buffer.compare(Buffer.from(whole), Buffer.from(bytes))).toBe(0);
+        expect(yield* verified).toBe(2 * bytes.byteLength);
+
+        const bounded = yield* Effect.result(documents.readVerified(sha256, "image/png", 1024));
+        expect(
+          Result.isFailure(bounded) &&
+            Schema.is(DocumentError)(bounded.failure) &&
+            bounded.failure.reason === "limit",
+        ).toBe(true);
+
+        const altered = Uint8Array.from(bytes);
+        altered[chunk + 7] = (altered[chunk + 7] ?? 0) ^ 0xff;
+
+        for (const changed of [altered, bytes.subarray(0, bytes.byteLength - 1)]) {
+          yield* Effect.promise(() => writeFile(path, changed));
+          const result = yield* Effect.result(documents.read(sha256, "image/png", chunk, chunk));
+          expect(Result.isFailure(result)).toBe(true);
+
+          if (Result.isFailure(result))
+            expect(result.failure.message).toContain("hash does not match");
+        }
+
+        // The restored original is verified again before it is served.
+        yield* Effect.promise(() => writeFile(path, bytes));
+        expect(Buffer.compare(yield* readAll, Buffer.from(bytes))).toBe(0);
+      }).pipe(
+        Effect.provide(documentsLayer(directory)),
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.scoped,
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

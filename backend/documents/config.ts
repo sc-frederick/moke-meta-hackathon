@@ -18,4 +18,6 @@ export const DocumentsLimits = {
   minDpi: 24,
   maxOutputPixels: 16_000_000,
   maxReadChunkBytes: 256 * 1024,
+  /** Verified artifact bytes held so chunked reads hash each file once. */
+  verifiedReadBytes: 64 * 1024 * 1024,
 } as const;

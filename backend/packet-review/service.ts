@@ -2255,15 +2255,16 @@ export class PacketReviews extends Context.Service<
                       "Render this packet's source region before segmenting it.",
                     );
 
-                  const snapshot = await run(
-                    asExecution(config.review.snapshot(row.project_id, 0)),
+                  const artifact = await run(
+                    config.review
+                      .artifact(row.project_id, request.artifactId)
+                      .pipe(
+                        Effect.mapError(() =>
+                          error("input", "SAM source artifact is unavailable."),
+                        ),
+                      ),
                   );
 
-                  const artifact = snapshot.artifacts.find(
-                    (item) => item.id === request.artifactId,
-                  );
-
-                  if (!artifact) throw error("input", "SAM source artifact is unavailable.");
                   const image = await run(config.review.port.readImage(artifact));
 
                   const sam = await segment(

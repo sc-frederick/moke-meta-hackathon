@@ -10,10 +10,11 @@ export const WorkerInspectRequest = Schema.TaggedStruct("Inspect", {
   pdfPath: Schema.NonEmptyString,
 });
 
-/** Render one bounded PDF region using the imported page metadata. */
+/** Render one bounded PDF region using the imported page metadata and original hash. */
 export const WorkerRenderRequest = Schema.TaggedStruct("Render", {
   id: RequestId,
   pdfPath: Schema.NonEmptyString,
+  sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   pageIndex: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 199 })),
   region: Region,
   rotation: Schema.Literals([0, 90, 180, 270]),
