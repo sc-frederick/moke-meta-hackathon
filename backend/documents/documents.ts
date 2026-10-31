@@ -19,7 +19,7 @@ import type { WorkerTextResult } from "./worker-messages.ts";
  * Each PDF job runs in its own worker process, so jobs can overlap. Parallel sheet reviewers
  * request renders at the same time; one core stays free for the backend and SQL.
  */
-const pdfJobConcurrency = Math.max(1, Math.min(4, availableParallelism() - 1));
+export const pdfJobConcurrency = Math.max(1, Math.min(4, availableParallelism() - 1));
 
 /** PDF import, bounded rendering, and artifact chunk reads for review evidence. */
 export class Documents extends Context.Service<

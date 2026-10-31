@@ -4,7 +4,8 @@
  */
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
 import { containsRegion, transformRegion, invertTransform } from "#lib/review/geometry.ts";
@@ -258,12 +259,6 @@ async function renderRegion(
     const [a, b, c, d, e, f] = baseTransform;
     const pdfToPixels = Schema.decodeUnknownSync(Affine)([a, b, c, d, e - bounds.x, f - bounds.y]);
 
-    if (process.env.MOKE_PDF_WORKER_DELAY_MS) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, Number(process.env.MOKE_PDF_WORKER_DELAY_MS)),
-      );
-    }
-
     await renderTask.promise;
     const pngBase64 = canvas.toBuffer("image/png").toString("base64");
     const inverted = invertTransform(pdfToPixels);
@@ -397,6 +392,17 @@ async function handleRequest(line: string) {
     });
 
     return;
+  }
+
+  // Test hooks: record each accepted job with this process ID, then hold it before PDF work.
+  const started = process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY;
+
+  if (started) writeFileSync(join(started, `${decoded._tag}.${randomUUID()}`), String(process.pid));
+
+  if (process.env.MOKE_PDF_WORKER_DELAY_MS) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, Number(process.env.MOKE_PDF_WORKER_DELAY_MS)),
+    );
   }
 
   if (WorkerRequest.guards.Inspect(decoded)) {

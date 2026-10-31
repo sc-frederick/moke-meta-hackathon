@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { Effect, Exit, Fiber } from "effect";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { Cause, Effect, Exit, Fiber } from "effect";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Documents } from "../../backend/documents/documents.ts";
+import { Documents, pdfJobConcurrency } from "../../backend/documents/documents.ts";
 import { readSource } from "../../backend/packet-review/sources.ts";
 import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -300,29 +300,82 @@ test("read returns bounded chunks for stored artifacts", async () => {
   }
 });
 
-test("import interruption cancels in-flight PDF work", async () => {
+test("import interruption stops each started worker and releases every PDF job slot", async () => {
   const dataDirectory = await mkdtemp(join(tmpdir(), "moke-documents-cancel-"));
+  const started = await mkdtemp(join(tmpdir(), "moke-documents-started-"));
   const source = join(fixtureDirectory, "original.pdf");
-  process.env.MOKE_PDF_WORKER_DELAY_MS = "500";
+  // Workers report each accepted job, then hold it far beyond this test.
+  process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY = started;
+  process.env.MOKE_PDF_WORKER_DELAY_MS = "600000";
 
   try {
-    const exit = await Effect.runPromise(
+    await Effect.runPromise(
       Effect.gen(function* () {
         const documents = yield* Documents;
-        const fiber = yield* Effect.forkScoped(documents.importPdf(source));
-        yield* Effect.sleep("50 millis");
-        yield* Fiber.interrupt(fiber);
 
-        return yield* Fiber.await(fiber);
+        // Fill every job slot, so one leaked slot would block the import that follows.
+        const fibers = yield* Effect.forEach(Array.from({ length: pdfJobConcurrency }), () =>
+          Effect.forkChild(documents.importPdf(source)),
+        );
+
+        const pids = yield* Effect.promise(() => startedWorkers(started, pdfJobConcurrency));
+
+        for (const pid of pids) expect(running(pid)).toBe(true);
+
+        for (const fiber of fibers) {
+          yield* Fiber.interrupt(fiber);
+          const exit = yield* Fiber.await(fiber);
+          expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+        }
+
+        // Interruption completes only after each owned worker process has exited.
+        for (const pid of pids) expect(running(pid)).toBe(false);
+        expect(
+          yield* Effect.promise(() => readdir(join(dataDirectory, "artifacts", ".staging"))),
+        ).toEqual([]);
+
+        delete process.env.MOKE_PDF_WORKER_DELAY_MS;
+        const next = yield* documents.importPdf(source).pipe(Effect.timeout("30 seconds"));
+        expect(next.pages.length).toBe(1);
+        expect(
+          yield* Effect.promise(() => startedWorkers(started, pdfJobConcurrency + 1)),
+        ).toHaveLength(pdfJobConcurrency + 1);
       }).pipe(Effect.provide(documentsLayer(dataDirectory)), Effect.scoped),
     );
-
-    expect(Exit.isFailure(exit)).toBe(true);
   } finally {
+    delete process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY;
     delete process.env.MOKE_PDF_WORKER_DELAY_MS;
     await rm(dataDirectory, { recursive: true, force: true });
+    await rm(started, { recursive: true, force: true });
   }
-});
+}, 60000);
+
+/** Wait for the job-start handshake of `count` workers and return their process IDs. */
+async function startedWorkers(directory: string, count: number) {
+  const deadline = Date.now() + 30_000;
+
+  for (;;) {
+    const names = await readdir(directory);
+
+    if (names.length >= count)
+      return Promise.all(
+        names.map(async (name) => Number(await readFile(join(directory, name), "utf8"))),
+      );
+
+    if (Date.now() > deadline) throw new Error(`Only ${names.length} PDF workers started.`);
+    await Bun.sleep(10);
+  }
+}
+
+function running(pid: number) {
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 test("drawing-sized sheets and focused boxes fit the hard pixel ceiling with accurate actual-DPI transforms", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-large-drawing-"));
