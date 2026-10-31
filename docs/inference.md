@@ -55,12 +55,32 @@ Meta's [rate limits](https://dev.meta.ai/docs/pricing-rate-limits) for Spark 1.3
 are 3,000 requests and 4,000,000 tokens a minute, shared by every key on a team;
 response headers confirmed them for the configured key. Meta reads images returned
 in tool results, and accepted 300 small tool-result images in one request.
-HTTP 429 and 529 mean the provider refused the request before generating, so the
-adapter resends it up to six times, honouring `Retry-After` (otherwise backing off
-from 2 seconds up to 60). Meta also answers a served model with HTTP 404
-`model_not_found` now and then (1 in 8 requests for one team's key on 2026-10-30);
-nothing is generated, so it is resent the same way. Other failures are not resent. Large packets review each sheet in its own
-conversation; see [parallel packet reviews](review-runtime.md#parallel-packet-reviews).
+The Baseten hackathon key reports 100 requests and 2,000,000 tokens a minute
+(2026-10-31). Its request limiter allows about 50 requests at once, and
+[Baseten counts cached input](https://docs.baseten.co/inference/model-apis/pricing-and-limits#rate-limits)
+toward the token limit. `bun run check:api-keys` prints both keys' current limits.
+
+### Rate-limit pacing and refusals
+
+Every request on a key in the backend process passes through one shared pacer
+(`backend/inference/pacing.ts`). It holds at most half a minute of requests and
+estimated tokens, replenishes them continuously, and releases requests in arrival
+order. Each response's `x-ratelimit-limit-*` and `x-ratelimit-remaining-*` headers
+update it. Both providers send them. The pacer waits before the durable request
+attempt is recorded, so a cancel or shutdown during the wait leaves nothing
+unresolved, and the 300-second request deadline starts only when the request is sent.
+
+HTTP 429 and 529 mean the provider refused the request before generating. The
+refusal starts one cooldown that every conversation on the key waits out, so
+parallel sheet reviewers do not retry into the same limit. The cooldown honours
+`Retry-After`. Otherwise it starts at 2 seconds and doubles up to 60 when requests
+sent after it began are refused again. Baseten's 429 carries no `Retry-After`. Meta
+also answers a served model with HTTP 404 `model_not_found` now and then (1 in 8
+requests for one team's key on 2026-10-30). Nothing is generated, so that request
+alone is resent after its own backoff. A refused request is resent within the same
+admitted attempt for up to 10 minutes or 40 sends. Other failures are not resent.
+Large packets review each sheet in its own conversation; see
+[parallel packet reviews](review-runtime.md#parallel-packet-reviews).
 
 Baseten
 advertises a [1M-token context for Spark Open](https://www.baseten.co/blog/muse-spark-open-launch/)
@@ -122,7 +142,11 @@ least 90% of prompt tokens served from cache (`cacheRead / (input + cacheRead)`)
   Meta receives it as `prompt_cache_key` with `prompt_cache_retention: "24h"`;
   Baseten receives it as `x-session-affinity`. Each count check uses its own key.
   Pi's per-conversation session ID is not forwarded, because per-session keys would
-  split reviewers that share a prefix.
+  split reviewers that share a prefix. On Baseten (2026-10-31), a prefix cached under
+  one `x-session-affinity` value was never reused by requests with a different value,
+  so each extra key would pay the full prefix again. Twelve parallel 4-turn
+  conversations on one key had 91.7% of prompt tokens cached, against 88.7% with no
+  header. See [Baseten rate limits and caching](research/baseten-rate-limits.md).
 - **Shared fields first.** A sheet reviewer's opening message lists the request,
   scope, inventory, project configuration and sources before its own sheet, so
   peers reuse the same prefix.

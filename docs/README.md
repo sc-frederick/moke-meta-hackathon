@@ -23,6 +23,7 @@ Start with [Moke's README](../README.md) for the product, workflow, and screensh
 - [Review packages](research/review-packages.md): complete export/restore and interrupted replacement recovery.
 - [SAM integration](research/sam-integration.md): image geometry, intent ledger, source fences, and proposals.
 - [PDF packaging](research/pdf-packaging.md): renderer assets and historical packaging measurements.
+- [Baseten rate limits and caching](research/baseten-rate-limits.md): measured key limits, 429 shape, session affinity and the request pacer.
 
 ## Drawing experiments
 

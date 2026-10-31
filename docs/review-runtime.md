@@ -31,7 +31,10 @@ The review moves through three stages, recorded in `PacketReview.parallel`:
 1. **Setup.** The coordinator inventories the packet, opens the cover and code sheets, and records
    the project configuration and governing sources.
 2. **Sheets.** One conversation per sheet with unsettled checks. They run `concurrency` at a time:
-   32 on Meta (3,000 requests and 4M tokens a minute per team) and 4 on Baseten. A sheet reviewer can
+   32 on Meta (3,000 requests and 4M tokens a minute per team) and 16 on Baseten (100 requests and
+   2M tokens a minute for the hackathon key). Sixteen Baseten reviewers send about 40 requests a
+   minute; the shared [request pacer](inference.md#rate-limit-pacing-and-refusals) holds bursts and
+   refusals inside the key's limits. A sheet reviewer can
    open and record coverage only for its own sheet. It records findings visible on that sheet. It
    cannot record missing-content findings, because it cannot search the other sheets. It ends with
    `finish_sheet` notes: summary, key facts, cross-references and suspected gaps. A reviewer that

@@ -1,4 +1,4 @@
-import { Effect, Redacted, Schema } from "effect";
+import { Effect, Option, Redacted, Schema } from "effect";
 
 const providers = [
   {
@@ -44,6 +44,8 @@ const ChatCompletion = Schema.fromJsonString(
   }),
 );
 
+const RateLimit = Schema.FiniteFromString.check(Schema.isGreaterThan(0));
+
 class ApiKeyCheckFailed extends Schema.TaggedError<ApiKeyCheckFailed>()("ApiKeyCheckFailed", {
   message: Schema.String,
 }) {}
@@ -86,7 +88,13 @@ const checkProvider = Effect.fn("checkProvider")(function* (provider: (typeof pr
         signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
       });
 
-      return { ok: response.ok, status: response.status, body: await response.text() };
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: await response.text(),
+        requestsPerMinute: response.headers.get("x-ratelimit-limit-requests"),
+        tokensPerMinute: response.headers.get("x-ratelimit-limit-tokens"),
+      };
     },
     catch: () =>
       new ApiKeyCheckFailed({
@@ -110,6 +118,15 @@ const checkProvider = Effect.fn("checkProvider")(function* (provider: (typeof pr
         }),
     ),
   );
+
+  // Both providers report the key's per-minute limits; the desktop paces requests within them.
+  const limit = (value: string | null) =>
+    Option.getOrUndefined(Schema.decodeUnknownOption(RateLimit)(value));
+
+  return {
+    requestsPerMinute: limit(response.requestsPerMinute),
+    tokensPerMinute: limit(response.tokensPerMinute),
+  };
 });
 
 const program = Effect.gen(function* () {
@@ -125,8 +142,14 @@ const program = Effect.gen(function* () {
 
           return false;
         },
-        onSuccess: () => {
-          console.log(`[PASS] ${provider.name}: authenticated and received a text completion.`);
+        onSuccess: (limits) => {
+          console.log(
+            `[PASS] ${provider.name}: authenticated and received a text completion.${
+              limits.requestsPerMinute === undefined || limits.tokensPerMinute === undefined
+                ? ""
+                : ` Key limits: ${limits.requestsPerMinute.toLocaleString("en-US")} requests and ${limits.tokensPerMinute.toLocaleString("en-US")} tokens a minute.`
+            }`,
+          );
 
           return true;
         },
