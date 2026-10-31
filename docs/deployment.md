@@ -57,7 +57,8 @@ Electron starts one backend and sends its schema-validated startup configuration
 over a private stdin pipe. The backend migrates the database, binds an ephemeral
 port on `127.0.0.1`, and returns a versioned, schema-validated readiness message.
 The HTTP hop uses framed NDJSON so progress arrives while a subscription remains
-open. Effect RPC encodes and decodes every request, success, and known application
+open. Request bodies are limited to 512 KiB, which every bounded command fits
+after UTF-8 and JSON escaping; the desktop reports a larger body as an input error. Effect RPC encodes and decodes every request, success, and known application
 failure. A random per-launch bearer credential authorizes Electron; the backend
 rejects browser-origin requests. The credential stays in the two processes and
 is absent from command-line arguments, renderer capabilities, and logs.
