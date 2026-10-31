@@ -1,4 +1,4 @@
-import { Option, Redacted, Schema } from "effect";
+import { Option, Predicate, Redacted, Schema } from "effect";
 import { createHash } from "node:crypto";
 
 /** Per-minute request and token allowances a provider enforces for one credential. */
@@ -19,6 +19,8 @@ export const reportedRateLimits = {
 /** Monotonic time and timers; tests supply a manual clock. */
 export interface PacerClock {
   readonly now: () => number;
+  /** Wall-clock milliseconds since the epoch, read only to convert an HTTP-date Retry-After. */
+  readonly wall: () => number;
   /** Run `callback` after `ms` milliseconds; the returned function cancels it. */
   readonly schedule: (callback: () => void, ms: number) => () => void;
   readonly random: () => number;
@@ -27,6 +29,7 @@ export interface PacerClock {
 const systemClock: PacerClock = {
   // The WSL and Windows wall clocks have jumped backwards mid-run; pacing needs monotonic time.
   now: () => performance.now(),
+  wall: () => Date.now(),
   schedule: (callback, ms) => {
     const timer = setTimeout(callback, ms);
 
@@ -62,11 +65,27 @@ interface Waiter {
  */
 const burstFraction = 0.5;
 
-/** Shared backoff after a refusal without Retry-After: 2 s doubling to 60 s, with jitter. */
+/**
+ * Shared backoff after a refusal without Retry-After: 2 s doubling to 60 s, with jitter. The cap
+ * applies only to this local backoff; a provider's own Retry-After is honoured in full.
+ */
 const cooldownBaseMs = 2_000;
 const cooldownMaxMs = 60_000;
 
 const RateHeader = Schema.FiniteFromString.check(Schema.isGreaterThanOrEqualTo(0));
+
+/**
+ * Retry-After is delay-seconds or an HTTP-date (RFC 9110 section 10.2.3). Only the IMF-fixdate form
+ * senders must generate is read; an obsolete date form is treated as malformed.
+ */
+const RetryAfter = Schema.Union([
+  Schema.String.check(Schema.isPattern(/^\d{1,9}$/)).pipe(Schema.decodeTo(Schema.FiniteFromString)),
+  Schema.String.check(
+    Schema.isPattern(
+      /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/,
+    ),
+  ).pipe(Schema.decodeTo(Schema.DateFromString)),
+]);
 
 /** Read one numeric rate-limit header; absent or malformed values are ignored. */
 function rateHeader(headers: Headers, name: string) {
@@ -105,6 +124,46 @@ export class RequestPacer {
   /** The per-minute limits currently applied. */
   get limits(): RateLimits {
     return this.#limits;
+  }
+
+  /** The current time on the pacer's monotonic clock, the clock of every lease's `dispatchedAt`. */
+  now() {
+    return this.#clock.now();
+  }
+
+  /**
+   * The wait a response's Retry-After asks for, in milliseconds, from delay-seconds or an HTTP-date
+   * on the wall clock. Absent, malformed, zero and past values ask for none, so local backoff applies.
+   */
+  retryAfter(headers: Headers): number | undefined {
+    const requested = Option.map(
+      Option.flatMap(
+        Option.fromNullishOr(headers.get("retry-after")),
+        Schema.decodeUnknownOption(RetryAfter),
+      ),
+      (value) => (Predicate.isNumber(value) ? value * 1000 : value.getTime() - this.#clock.wall()),
+    );
+
+    return Option.getOrUndefined(Option.filter(requested, (ms) => ms > 0));
+  }
+
+  /** Wait `ms` on the pacer's clock without holding capacity. Rejects on abort. */
+  sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(signal.reason);
+
+      const onAbort = () => {
+        cancel();
+        reject(signal?.reason);
+      };
+
+      const cancel = this.#clock.schedule(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   /**
@@ -175,8 +234,8 @@ export class RequestPacer {
 
   /**
    * Hold every waiting request after a refusal. `retryAfterMs` comes from the provider when it
-   * sends one; otherwise the shared backoff doubles only for refusals of requests dispatched after
-   * the previous cooldown began. Returns the remaining cooldown.
+   * sends one and is honoured in full; otherwise the shared backoff doubles only for refusals of
+   * requests dispatched after the previous cooldown began. Returns the remaining cooldown.
    */
   refused(refusal: Refusal, dispatchedAt: number, retryAfterMs?: number) {
     const now = this.#clock.now();
@@ -194,7 +253,7 @@ export class RequestPacer {
     const delay =
       retryAfterMs === undefined
         ? backoff / 2 + this.#clock.random() * (backoff / 2)
-        : Math.min(cooldownMaxMs, retryAfterMs);
+        : retryAfterMs;
 
     this.#cooldownUntil = Math.max(this.#cooldownUntil, now + delay);
     this.#pump();

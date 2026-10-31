@@ -1239,7 +1239,31 @@ test("recent image window drops old images three at a time and keeps metadata wi
   const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
 
   if (model === undefined) throw new Error("Pinned model missing");
-  const context = { messages: [{ role: "user" as const, content: images, timestamp: 0 }] };
+
+  // The model has seen the first seven images; only the eighth is new to this request.
+  const context = {
+    messages: [
+      { role: "user" as const, content: images.slice(0, 7), timestamp: 0 },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "Inspected the first seven images." }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: 0,
+      },
+      { role: "user" as const, content: images.slice(7), timestamp: 0 },
+    ],
+  };
 
   const phase = {
     name: "pi.durable.phase",
