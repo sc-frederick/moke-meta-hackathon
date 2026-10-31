@@ -300,6 +300,9 @@ export class CommandReceipt extends Schema.Class<CommandReceipt>("CommandReceipt
   version: Version,
 }) {}
 
+/** Several full 200-page revisions; keeps sheet-list commands inside the backend request limit. */
+const commandSheetLimit = 1000;
+
 const ScopedCommand = {
   commandId: CommandId,
   projectId: ProjectId,
@@ -317,7 +320,7 @@ export const ReviewCommand = Schema.Union([
   }),
   Schema.TaggedStruct("AssignSheetDiscipline", {
     ...ScopedCommand,
-    sheetIds: Schema.NonEmptyArray(SheetId),
+    sheetIds: Schema.NonEmptyArray(SheetId).check(Schema.isMaxLength(commandSheetLimit)),
     discipline: Schema.NullOr(ReviewDiscipline),
   }),
   Schema.TaggedStruct("ConfirmSheet", {
@@ -366,7 +369,7 @@ export const ReviewCommand = Schema.Union([
         confirmed: Schema.Boolean,
         content: Schema.Literals(["changed", "unchanged", "removed", "unresolved"]),
       }),
-    ),
+    ).check(Schema.isMaxLength(commandSheetLimit)),
   }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 

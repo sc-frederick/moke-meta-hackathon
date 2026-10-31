@@ -12,7 +12,7 @@ import type {
   ImageContent,
 } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import { Option, Predicate, Redacted, Schema } from "effect";
+import { Effect, Option, Predicate, Redacted, Schema, Semaphore } from "effect";
 import { createHash } from "node:crypto";
 import { type PacerLease, type Refusal, RequestPacer, sharedPacer } from "./pacing.ts";
 import { parseResponseReceipt } from "./response.ts";
@@ -62,6 +62,16 @@ const imageFileLifetimeSeconds = 24 * 60 * 60;
 
 /** A failed upload falls back to inline base64 and is not retried for five minutes. */
 const imageFileRetryMs = 5 * 60_000;
+
+/** One review uploads at most this many request images at once; later images wait their turn. */
+const imageUploadConcurrency = 8;
+
+/** One Files upload, shared by every request of a review that carries the same image bytes. */
+interface ImageUpload {
+  readonly reusableUntil: number;
+  /** Await the file ID until `signal` aborts; when no request still waits, the upload stops. */
+  readonly join: (signal: AbortSignal | undefined) => Promise<string | null>;
+}
 
 const MetaFile = Schema.Struct({
   id: Schema.String.check(Schema.isPattern(/^file-[A-Za-z0-9_-]{1,128}$/)),
@@ -113,14 +123,10 @@ function pacingEstimate(transcript: TranscriptContext) {
 /** A dispatch the provider refused before generating anything, kept to decide how to resend it. */
 interface RefusedDispatch {
   readonly kind: Refusal | "model_not_found";
-  readonly response: Response;
-}
-
-/** Provider-requested wait in milliseconds, when it sends Retry-After seconds. */
-function retryAfterMs(response: Response) {
-  const requested = Number(response.headers.get("retry-after"));
-
-  return Number.isFinite(requested) && requested > 0 ? requested * 1000 : undefined;
+  /** The wait the provider's Retry-After asked for, when valid. */
+  readonly retryAfterMs: number | undefined;
+  /** The shared cooldown a rate-limit or capacity refusal started; zero for a routing refusal. */
+  readonly cooldownMs: number;
 }
 
 /**
@@ -160,16 +166,14 @@ async function refusalOf(response: Response): Promise<Refusal | "model_not_found
 }
 
 /**
- * Wait before resending one request after a routing refusal, honouring Retry-After seconds. Rate
- * limits and capacity refusals wait in the shared pacer instead, so all conversations back off.
+ * Wait before resending one request after a routing refusal, honouring Retry-After in full; only
+ * the local backoff is capped. Rate limits and capacity refusals wait in the shared pacer instead,
+ * so all conversations back off.
  */
-function refusalDelay(response: Response, retry: number) {
-  const requested = retryAfterMs(response);
+function refusalDelay(retryAfterMs: number | undefined, retry: number) {
   const backoff = Math.min(60_000, 2_000 * 2 ** retry);
 
-  return requested === undefined
-    ? backoff / 2 + Math.random() * (backoff / 2)
-    : Math.min(60_000, requested);
+  return retryAfterMs ?? backoff / 2 + Math.random() * (backoff / 2);
 }
 
 /** Short, stable routing key for one shared prompt prefix; it carries no names or prompt text. */
@@ -210,6 +214,14 @@ interface ProviderAdmission {
   readonly begin: (phase: RequestPhase, fingerprint: string) => Promise<string | null>;
   readonly send: (phase: RequestPhase) => Promise<void>;
   readonly complete: (phase: RequestPhase, receipt: string) => Promise<void>;
+  /**
+   * Record that the provider refused every send of this attempt before generating anything, so it
+   * cannot have been charged; `end` follows as settled. Without it the attempt stays unresolved.
+   */
+  readonly refused?: (
+    phase: RequestPhase,
+    diagnostic: typeof ProviderFailure.Type,
+  ) => Promise<void>;
   readonly end: (
     uncertain: boolean,
     diagnostic?: typeof ProviderFailure.Type,
@@ -266,14 +278,19 @@ function requestBounds(body: string) {
  * Keep recent delivered pixels in a bounded stateless request; retain all source metadata and receipts.
  * The window drops the oldest images `step` at a time, so an earlier request position changes once
  * per step instead of on every new image. Each change recomputes the provider's cached prefix.
+ * Images after the latest assistant turn have never reached the model, so the window drops only
+ * older images to make room for them. A fresh batch beyond the bounds keeps its newest images.
  */
 function boundedImageContext(
   transcript: TranscriptContext,
   limits = { images: 6, step: 3, imageBytes: 1024 * 1024, totalBytes: 2 * 1024 * 1024 },
 ): TranscriptContext {
   const images: Array<{ readonly part: ImageContent; readonly bytes: number }> = [];
+  let seen = 0;
 
   for (const message of transcript.messages) {
+    if (message.role === "assistant") seen = images.length;
+
     if (
       (message.role !== "user" && message.role !== "toolResult") ||
       Predicate.isString(message.content)
@@ -289,15 +306,23 @@ function boundedImageContext(
     }
   }
 
+  // The step stops short at the first fresh image, then resumes once those images are older.
+  const firstFresh = Math.max(seen, images.length - limits.images);
+
   let cut =
     images.length <= limits.images
       ? 0
-      : Math.ceil((images.length - limits.images) / limits.step) * limits.step;
+      : Math.min(
+          firstFresh,
+          Math.ceil((images.length - limits.images) / limits.step) * limits.step,
+        );
 
   const retainedBytes = () => images.slice(cut).reduce((total, image) => total + image.bytes, 0);
 
-  while (cut < images.length - 1 && retainedBytes() > limits.totalBytes)
-    cut = Math.min(images.length - 1, cut + limits.step);
+  while (cut < firstFresh && retainedBytes() > limits.totalBytes)
+    cut = Math.min(firstFresh, cut + limits.step);
+
+  while (cut < images.length - 1 && retainedBytes() > limits.totalBytes) cut++;
 
   const retained = new Set(images.slice(cut).map((image) => image.part));
 
@@ -457,66 +482,124 @@ export function createAdmittedModels(
 
   const imageFiles =
     selected.provider === "meta" && (configuration.imageFiles ?? configuration.route === "live")
-      ? new Map<string, { readonly id: Promise<string | null>; readonly reusableUntil: number }>()
+      ? new Map<string, ImageUpload>()
       : undefined;
 
-  /** Upload one delivered image once; concurrent requests for the same bytes share the upload. */
-  const imageFileId = (files: NonNullable<typeof imageFiles>, image: string) => {
+  const uploadSlots = Semaphore.makeUnsafe(imageUploadConcurrency);
+
+  /** Send one image to the Files API once a slot is free; any failure or stop leaves it inline. */
+  const uploadImage = (image: string, sha256: string, signal: AbortSignal) =>
+    Effect.runPromise(
+      Effect.tryPromise(async (stopped) => {
+        const mediaType = image.slice("data:".length, image.indexOf(";"));
+        const form = new FormData();
+        form.append("purpose", "user_data");
+        form.append("expires_after[anchor]", "created_at");
+        form.append("expires_after[seconds]", String(imageFileLifetimeSeconds));
+        form.append(
+          "file",
+          new File(
+            [Buffer.from(image.slice(image.indexOf(",") + 1), "base64")],
+            `${sha256}.${mediaType.slice("image/".length)}`,
+            { type: mediaType },
+          ),
+        );
+
+        const response = await (configuration.transport ?? globalThis.fetch)(`${baseUrl}/files`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${Redacted.value(configuration.apiKey)}` },
+          body: form,
+          signal: AbortSignal.any([stopped, AbortSignal.timeout(60_000)]),
+        });
+
+        if (!response.ok) {
+          await response.body?.cancel();
+
+          return null;
+        }
+
+        return Option.getOrNull(
+          Option.map(
+            Schema.decodeUnknownOption(MetaFile)(await response.json()),
+            (file) => file.id,
+          ),
+        );
+      }).pipe(Semaphore.withPermit(uploadSlots)),
+      { signal },
+    ).catch(() => null);
+
+  /**
+   * Upload one delivered image once; concurrent requests for the same bytes share the upload. Each
+   * request stops waiting when its own signal aborts, and the upload stops only when none waits.
+   */
+  const imageFileId = (
+    files: NonNullable<typeof imageFiles>,
+    image: string,
+    signal: AbortSignal | undefined,
+  ) => {
     const sha256 = createHash("sha256").update(image).digest("hex");
     const known = files.get(sha256);
 
-    if (known !== undefined && known.reusableUntil > Date.now()) return known.id;
-    const mediaType = image.slice("data:".length, image.indexOf(";"));
+    if (known !== undefined && known.reusableUntil > Date.now()) return known.join(signal);
+    const lifetime = new AbortController();
+    const id = uploadImage(image, sha256, lifetime.signal);
+    let settled = false;
+    let waiters = 0;
 
-    const id = (async () => {
-      const form = new FormData();
-      form.append("purpose", "user_data");
-      form.append("expires_after[anchor]", "created_at");
-      form.append("expires_after[seconds]", String(imageFileLifetimeSeconds));
-      form.append(
-        "file",
-        new File(
-          [Buffer.from(image.slice(image.indexOf(",") + 1), "base64")],
-          `${sha256}.${mediaType.slice("image/".length)}`,
-          { type: mediaType },
-        ),
-      );
-
-      const response = await (configuration.transport ?? globalThis.fetch)(`${baseUrl}/files`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${Redacted.value(configuration.apiKey)}` },
-        body: form,
-        signal: AbortSignal.timeout(60_000),
-      });
-
-      if (!response.ok) {
-        await response.body?.cancel();
-
-        return null;
-      }
-
-      return Option.getOrNull(
-        Option.map(Schema.decodeUnknownOption(MetaFile)(await response.json()), (file) => file.id),
-      );
-    })().catch(() => null);
-
-    files.set(sha256, {
-      id,
+    const upload: ImageUpload = {
       reusableUntil: Date.now() + (imageFileLifetimeSeconds - 3600) * 1000,
-    });
+      join: (waiter) => {
+        if (settled) return id;
+
+        if (waiter?.aborted) return Promise.reject(waiter.reason);
+        waiters++;
+
+        // A request that cannot be cancelled holds the upload until it settles.
+        if (waiter === undefined) return id;
+
+        return new Promise((resolve, reject) => {
+          const leave = () => {
+            waiters--;
+
+            // A stopped upload is forgotten, so the next request uploads again without waiting.
+            if (waiters === 0 && !settled) {
+              lifetime.abort();
+
+              if (files.get(sha256) === upload) files.delete(sha256);
+            }
+
+            reject(waiter.reason);
+          };
+
+          waiter.addEventListener("abort", leave, { once: true });
+          void id.then((uploaded) => {
+            waiter.removeEventListener("abort", leave);
+            resolve(uploaded);
+          });
+        });
+      },
+    };
+
+    files.set(sha256, upload);
     void id.then((uploaded) => {
-      if (uploaded === null)
-        files.set(sha256, { id, reusableUntil: Date.now() + imageFileRetryMs });
+      settled = true;
+
+      if (uploaded === null && files.get(sha256) === upload)
+        files.set(sha256, { ...upload, reusableUntil: Date.now() + imageFileRetryMs });
     });
 
-    return id;
+    return upload.join(signal);
   };
 
   /** Replace inline images with Files API references; an image whose upload failed stays inline. */
-  const referenceImages = async (value: Schema.MutableJson): Promise<Schema.MutableJson> => {
+  const referenceImages = async (
+    value: Schema.MutableJson,
+    signal: AbortSignal | undefined,
+  ): Promise<Schema.MutableJson> => {
     if (imageFiles === undefined) return value;
 
-    if (Array.isArray(value)) return Promise.all(value.map(referenceImages));
+    if (Array.isArray(value))
+      return Promise.all(value.map((child) => referenceImages(child, signal)));
 
     if (!Predicate.isObject(value)) return value;
 
@@ -531,7 +614,7 @@ export function createAdmittedModels(
       Predicate.isString(image) &&
       image.startsWith("data:image/")
     ) {
-      const id = await imageFileId(imageFiles, image);
+      const id = await imageFileId(imageFiles, image, signal);
 
       return id === null
         ? value
@@ -540,7 +623,7 @@ export function createAdmittedModels(
 
     return Object.fromEntries(
       await Promise.all(
-        entries.map(async ([key, child]) => [key, await referenceImages(child)] as const),
+        entries.map(async ([key, child]) => [key, await referenceImages(child, signal)] as const),
       ),
     );
   };
@@ -572,6 +655,9 @@ export function createAdmittedModels(
       let dispatched = false;
       let dispatchedAt = 0;
       let refusal: RefusedDispatch | undefined;
+      // Set while the latest send was refused and no later send has reached the provider, so the
+      // attempt provably generated nothing. Network and stream failures leave it unset.
+      let refusedUnsent = false;
 
       /** Reset the per-dispatch outcome before the SDK sends, or resends, the request. */
       const nextDispatch = (current: PacerLease) => {
@@ -622,6 +708,8 @@ export function createAdmittedModels(
         // Wait for rate-limit capacity before the durable attempt exists, so a cancel or shutdown
         // while waiting leaves nothing unresolved. The SDK's deadline starts after this wait.
         lease = await pacer.acquire(estimate, options?.signal);
+        // The refusal budget runs on the pacer's clock from this first release.
+        const admittedAt = lease.dispatchedAt;
         const cached = await admission.begin(phase, fingerprint);
         admitted = true;
 
@@ -657,6 +745,7 @@ export function createAdmittedModels(
             )
               throw new Error("Transport admission denied");
             dispatched = true;
+            refusedUnsent = false;
 
             // One durable attempt covers every resend of a request the provider refused.
             if (!sent) {
@@ -677,15 +766,21 @@ export function createAdmittedModels(
               // resending it cannot duplicate paid work. Parallel sheet reviewers rely on this.
               const refused = await refusalOf(response);
 
+              const retryAfterMs =
+                refused === undefined ? undefined : pacer.retryAfter(response.headers);
+
               // Start the shared cooldown before anything returns capacity to the pacer, or a
               // waiting conversation would be released into the same refusal.
-              if (refused === "rate_limit" || refused === "overloaded")
-                pacer.refused(refused, dispatchedAt, retryAfterMs(response));
+              const cooldownMs =
+                refused === "rate_limit" || refused === "overloaded"
+                  ? pacer.refused(refused, dispatchedAt, retryAfterMs)
+                  : 0;
 
               pacer.observe(response.headers);
 
               if (refused !== undefined) {
-                refusal = { kind: refused, response };
+                refusal = { kind: refused, retryAfterMs, cooldownMs };
+                refusedUnsent = true;
                 await response.body?.cancel();
                 transportFailure = "http";
                 rejectionDetail = refused === "rate_limit" ? "rate_limit" : "unclassified";
@@ -760,15 +855,20 @@ export function createAdmittedModels(
           // A refused request counted against the request limit but used no tokens.
           current.settle(0);
 
+          // Rate limits and capacity refusals already started the shared cooldown.
+          const waitMs =
+            refused.kind === "model_not_found"
+              ? refusalDelay(refused.retryAfterMs, refusals)
+              : refused.cooldownMs;
+
+          // A resend that could go out only after the budget ends the attempt now, without waiting.
           if (
             refusals + 1 >= maxRefusals ||
-            performance.now() - started > refusalBudgetMs ||
+            pacer.now() + waitMs - admittedAt > refusalBudgetMs ||
             options?.signal?.aborted
           )
             response = result;
-          // Rate limits and capacity refusals already started the shared cooldown.
-          else if (refused.kind === "model_not_found")
-            await Bun.sleep(refusalDelay(refused.response, refusals));
+          else if (refused.kind === "model_not_found") await pacer.sleep(waitMs, options?.signal);
         }
 
         if (response.stopReason === "error" || response.stopReason === "aborted") {
@@ -808,23 +908,28 @@ export function createAdmittedModels(
         if (dispatched) lease?.settle(estimate);
         else lease?.refund();
 
-        if (admitted)
-          await admission
-            .end(
-              !completed,
-              {
-                category:
-                  transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
-                phase: failurePhase,
-                elapsedMs: Math.max(0, performance.now() - started),
-                httpStatus,
-                detail: rejectionDetail ?? "unclassified",
-                requestImages,
-                requestBytes,
-              },
-              phase,
-            )
-            .catch(() => undefined);
+        if (admitted) {
+          const diagnostic: typeof ProviderFailure.Type = {
+            category: transportFailure ?? (failurePhase === "admission" ? "admission" : "response"),
+            phase: failurePhase,
+            elapsedMs: Math.max(0, performance.now() - started),
+            httpStatus,
+            detail: rejectionDetail ?? "unclassified",
+            requestImages,
+            requestBytes,
+          };
+
+          // A request refused on every send, by the provider or past the refusal budget, is a
+          // definite outcome. Anything that may have reached generation stays unresolved.
+          await (
+            refusedUnsent && phase !== undefined && admission.refused !== undefined
+              ? admission.refused(phase, diagnostic).then(
+                  () => admission.end(false, diagnostic, phase),
+                  () => admission.end(true, diagnostic, phase),
+                )
+              : admission.end(!completed, diagnostic, phase)
+          ).catch(() => undefined);
+        }
 
         const message: AssistantMessage = {
           role: "assistant",
@@ -880,6 +985,7 @@ export function createAdmittedModels(
         if (imageFiles !== undefined && payload.input !== undefined)
           changes.input = await referenceImages(
             Schema.decodeUnknownSync(Schema.MutableJson)(JSON.parse(JSON.stringify(payload.input))),
+            options?.signal,
           );
 
         if (admission.packetReview)

@@ -30,6 +30,18 @@ const Protocol4CloudWorkerProgress = priorWorkerProgress(4, [
   "moke-packet-review-v5",
 ]);
 
+// Protocol 5 shipped with v6 before v7 gave parallel roles their own tool lists.
+const Protocol5CloudWorkerProgress = Schema.Union([
+  CloudWorkerProgress,
+  Schema.Struct({
+    ...CloudWorkerProgress.fields,
+    identity: Schema.Struct({
+      ...CloudEngineIdentity.fields,
+      packetPrompt: Schema.Literal("moke-packet-review-v6"),
+    }),
+  }),
+]);
+
 /** Unmarked receipts were saved by protocol 2 or 3 desktops, never by protocol 4. */
 const UnmarkedCloudWorkerProgress = Schema.Union([
   Protocol3CloudWorkerProgress,
@@ -41,7 +53,7 @@ const UnmarkedCloudWorkerProgress = Schema.Union([
 ]);
 
 const RecoverableCloudWorkerProgress = Schema.Union([
-  CloudWorkerProgress,
+  Protocol5CloudWorkerProgress,
   Protocol4CloudWorkerProgress,
   UnmarkedCloudWorkerProgress,
 ]);
@@ -75,7 +87,7 @@ export const parseCloudWorkerProgress = Effect.fn("parseCloudWorkerProgress")(fu
         ? Protocol3CloudWorkerProgress
         : record.workerProtocol === 4
           ? Protocol4CloudWorkerProgress
-          : CloudWorkerProgress;
+          : Protocol5CloudWorkerProgress;
 
   const progress = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
     Effect.mapError(

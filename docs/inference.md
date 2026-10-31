@@ -73,12 +73,16 @@ unresolved, and the 300-second request deadline starts only when the request is 
 HTTP 429 and 529 mean the provider refused the request before generating. The
 refusal starts one cooldown that every conversation on the key waits out, so
 parallel sheet reviewers do not retry into the same limit. The cooldown honours
-`Retry-After`. Otherwise it starts at 2 seconds and doubles up to 60 when requests
-sent after it began are refused again. Baseten's 429 carries no `Retry-After`. Meta
+`Retry-After` in full, as delay-seconds or an HTTP-date. Otherwise, or when it is
+zero or malformed, it starts at 2 seconds and doubles up to 60 when requests sent
+after it began are refused again. Baseten's 429 carries no `Retry-After`. Meta
 also answers a served model with HTTP 404 `model_not_found` now and then (1 in 8
 requests for one team's key on 2026-10-30). Nothing is generated, so that request
 alone is resent after its own backoff. A refused request is resent within the same
-admitted attempt for up to 10 minutes or 40 sends. Other failures are not resent.
+admitted attempt for up to 10 minutes or 40 sends, and stops at once if its next
+send could go out only after the 10 minutes. A packet request refused on every
+send generated nothing, so the review pauses without an unresolved request and
+says it was not charged; Resume continues it. Other failures are not resent.
 Large packets review each sheet in its own conversation; see
 [parallel packet reviews](review-runtime.md#parallel-packet-reviews).
 
@@ -155,11 +159,14 @@ least 90% of prompt tokens served from cache (`cacheRead / (input + cacheRead)`)
 - **Append-only history.** Meta packet requests keep every image. Baseten packet
   requests (8 images) and count checks (6 images) drop the oldest images several
   at a time (4 and 3) instead of one per turn, so an earlier position changes once
-  per step.
+  per step. Images added since the model's last turn are never dropped for older
+  ones; the step stops short of them.
 - **Images by reference.** Live Meta requests upload each delivered image once to
   the [Files API](https://dev.meta.ai/docs/file-handling) (`purpose=user_data`,
   24-hour expiry) and send its `file_id`, so later turns no longer resend base64.
   A failed upload leaves that image inline and is not retried for five minutes.
+  A review uploads at most eight images at once. An upload stops when every request
+  waiting for it is cancelled, and the next request uploads that image again.
 
 A probe on 2026-10-30 confirmed that Meta accepts `file_id` images inside
 `function_call_output` and reads them, that a base64 request after the matching

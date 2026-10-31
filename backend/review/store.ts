@@ -51,7 +51,11 @@ export const AgentMutation = Schema.Union([
   Schema.TaggedStruct("Propose", { proposal: CountProposal }),
   Schema.TaggedStruct("Evaluate", {}),
   Schema.TaggedStruct("Message", { text: Schema.NonEmptyString }),
-  Schema.TaggedStruct("Render", { detail: DetailRequest, artifact: Artifact }),
+  Schema.TaggedStruct("Render", {
+    detail: DetailRequest,
+    artifact: Artifact,
+    renderIdentity: Schema.String,
+  }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 
 const PayloadRows = Schema.Array(Schema.Struct({ payload: Schema.String }));
@@ -115,7 +119,28 @@ export class ReviewStore extends Context.Service<
       projectId: typeof ProjectId.Type,
       artifactId: typeof ArtifactId.Type,
     ) => Effect.Effect<Artifact, typeof ReviewError.Type>;
-    readonly saveRender: (artifact: Artifact) => Effect.Effect<Artifact, typeof ReviewError.Type>;
+    /** The sheet and its revision for one render, without reading the rest of the workbench. */
+    readonly renderSource: (
+      projectId: typeof ProjectId.Type,
+      sheetId: typeof SheetId.Type,
+    ) => Effect.Effect<{ sheet: Sheet; revision: Revision }, typeof ReviewError.Type>;
+    /** The image an earlier render operation recorded, if that operation already ran. */
+    readonly renderOperation: (
+      projectId: typeof ProjectId.Type,
+      operationId: typeof OperationId.Type,
+    ) => Effect.Effect<Artifact | undefined, typeof ReviewError.Type>;
+    /** A stored image of this sheet with the same render identity, reusable by new operations. */
+    readonly reusableRender: (
+      projectId: typeof ProjectId.Type,
+      sheetId: typeof SheetId.Type,
+      identity: string,
+    ) => Effect.Effect<Artifact | undefined, typeof ReviewError.Type>;
+    /** Record an operation's receipt, storing its image only when no equal render exists. */
+    readonly saveRender: (
+      operationId: typeof OperationId.Type,
+      identity: string,
+      artifact: Artifact,
+    ) => Effect.Effect<Artifact, typeof ReviewError.Type>;
     readonly agent: (
       fence: ExecutionFence,
       mutation: typeof AgentMutation.Type,
@@ -156,6 +181,24 @@ export class ReviewStore extends Context.Service<
         return yield* Effect.forEach(rows, (row) =>
           Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(row.payload),
         );
+      });
+
+      const record = Effect.fn("ReviewStore.record")(function* <A, I>(
+        schema: Schema.Codec<A, I>,
+        projectId: typeof ProjectId.Type,
+        kind: string,
+        id: string,
+      ) {
+        const rows =
+          yield* sql`SELECT payload FROM review_records WHERE project_id=${projectId} AND id=${id} AND kind=${kind}`.pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(PayloadRows)),
+          );
+
+        const row = rows[0];
+
+        if (row === undefined) return undefined;
+
+        return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(row.payload);
       });
 
       const save = (
@@ -297,6 +340,72 @@ export class ReviewStore extends Context.Service<
           events,
           sheetCorrespondence,
         });
+      });
+
+      const firstArtifact = (rows: typeof PayloadRows.Type) => {
+        const row = rows[0];
+
+        return row === undefined
+          ? Effect.succeed(undefined)
+          : Schema.decodeUnknownEffect(Schema.fromJsonString(Artifact))(row.payload);
+      };
+
+      const renderOperation = (
+        projectId: typeof ProjectId.Type,
+        operationId: typeof OperationId.Type,
+      ) =>
+        sql`SELECT a.payload FROM review_render_operations o JOIN review_records a ON a.project_id=o.project_id AND a.id=o.artifact_id AND a.kind='artifact' WHERE o.project_id=${projectId} AND o.operation_id=${operationId}`.pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(PayloadRows)),
+          Effect.flatMap(firstArtifact),
+        );
+
+      const reusableRender = (
+        projectId: typeof ProjectId.Type,
+        sheetId: typeof SheetId.Type,
+        identity: string,
+      ) =>
+        sql`SELECT a.payload FROM review_render_operations o JOIN review_records a ON a.project_id=o.project_id AND a.id=o.artifact_id AND a.kind='artifact' WHERE o.project_id=${projectId} AND o.sheet_id=${sheetId} AND o.render_identity=${identity} ORDER BY o.rowid LIMIT 1`.pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(PayloadRows)),
+          Effect.flatMap(firstArtifact),
+        );
+
+      /** Every render operation keeps its own receipt; equal renders share one immutable image. */
+      const recordRender = Effect.fn("ReviewStore.recordRender")(function* (
+        operationId: typeof OperationId.Type,
+        identity: string,
+        artifact: Artifact,
+      ) {
+        const previous = yield* renderOperation(artifact.projectId, operationId);
+
+        if (previous !== undefined) {
+          const same =
+            previous.sheetId === artifact.sheetId &&
+            previous.dpi === artifact.dpi &&
+            JSON.stringify(previous.region) === JSON.stringify(artifact.region);
+
+          if (!same)
+            return yield* new ReviewConflict({
+              message: "This render operation ID was reused for a different source region.",
+            });
+
+          return previous;
+        }
+
+        if (artifact.sheetId === null)
+          return yield* failure("Only a rendered source sheet can be recorded as a render.");
+        // A concurrent operation may have stored the same render first; keep its image.
+        const existing = yield* reusableRender(artifact.projectId, artifact.sheetId, identity);
+
+        if (existing === undefined) {
+          if (artifact.operationId !== operationId)
+            return yield* failure("A reused render must already be stored for this source.");
+          yield* save("artifact", artifact);
+        }
+
+        const stored = existing ?? artifact;
+        yield* sql`INSERT INTO review_render_operations (project_id,operation_id,sheet_id,render_identity,artifact_id) VALUES (${stored.projectId},${operationId},${artifact.sheetId},${identity},${stored.id})`;
+
+        return stored;
       });
 
       const staleFinding = Effect.fn("ReviewStore.staleFinding")(function* (finding: Finding) {
@@ -1120,21 +1229,22 @@ export class ReviewStore extends Context.Service<
                   artifact.sheetId === finding.drawnSheetId ||
                   artifact.sheetId === finding.scheduledSheetId;
 
-                if (
-                  !allowed ||
-                  artifact.projectId !== project.id ||
-                  String(artifact.operationId) !== String(fence.commandId)
-                )
+                if (!allowed || artifact.projectId !== project.id)
                   return yield* failure(
                     "The rendered evidence is outside this execution's selected sources.",
                   );
-                yield* save("artifact", artifact);
+
+                const stored = yield* recordRender(
+                  Schema.decodeUnknownSync(OperationId)(fence.commandId),
+                  mutation.renderIdentity,
+                  artifact,
+                );
 
                 return yield* finish(
                   fence.commandId,
                   hash,
                   project,
-                  artifact.id,
+                  stored.id,
                   "SourceInspection",
                   mutation.detail.missingFact,
                 );
@@ -1152,8 +1262,7 @@ export class ReviewStore extends Context.Service<
         artifact: (projectId, artifactId) =>
           safe(
             Effect.gen(function* () {
-              const artifacts = yield* records(Artifact, projectId, "artifact");
-              const artifact = artifacts.find((item) => item.id === artifactId);
+              const artifact = yield* record(Artifact, projectId, "artifact", artifactId);
 
               if (artifact === undefined)
                 return yield* failure("The artifact does not belong to this project.");
@@ -1161,42 +1270,40 @@ export class ReviewStore extends Context.Service<
               return artifact;
             }),
           ),
-        saveRender: (artifact) =>
+        renderSource: (projectId, sheetId) =>
+          safe(
+            Effect.gen(function* () {
+              const sheet = yield* record(Sheet, projectId, "sheet", sheetId);
+
+              const revision =
+                sheet === undefined
+                  ? undefined
+                  : yield* record(Revision, projectId, "revision", sheet.revisionId);
+
+              if (sheet === undefined || revision === undefined)
+                return yield* failure("The source sheet is outside this project.");
+
+              return { sheet, revision };
+            }),
+          ),
+        renderOperation: (projectId, operationId) => safe(renderOperation(projectId, operationId)),
+        reusableRender: (projectId, sheetId, identity) =>
+          safe(reusableRender(projectId, sheetId, identity)),
+        saveRender: (operationId, identity, artifact) =>
           safe(
             sql.withTransaction(
               Effect.gen(function* () {
-                const state = yield* snapshot(artifact.projectId, 0);
+                const sheet =
+                  artifact.sheetId === null
+                    ? undefined
+                    : yield* record(Sheet, artifact.projectId, "sheet", artifact.sheetId);
 
-                const sheet = state.sheets.find(
-                  (item) => item.id === artifact.sheetId && item.revisionId === artifact.revisionId,
-                );
-
-                if (sheet === undefined)
+                if (sheet === undefined || sheet.revisionId !== artifact.revisionId)
                   return yield* failure(
                     "The rendered source does not belong to this project revision.",
                   );
 
-                const previous = state.artifacts.find(
-                  (item) => item.operationId === artifact.operationId,
-                );
-
-                if (previous !== undefined) {
-                  const same =
-                    previous.sheetId === artifact.sheetId &&
-                    previous.dpi === artifact.dpi &&
-                    JSON.stringify(previous.region) === JSON.stringify(artifact.region);
-
-                  if (!same)
-                    return yield* new ReviewConflict({
-                      message: "This render operation ID was reused for a different source region.",
-                    });
-
-                  return previous;
-                }
-
-                yield* save("artifact", artifact);
-
-                return artifact;
+                return yield* recordRender(operationId, identity, artifact);
               }),
             ),
           ),

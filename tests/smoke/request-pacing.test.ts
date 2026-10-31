@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { type PacerClock, type PacerLease, RequestPacer } from "../../backend/inference/pacing.ts";
 
+/** Wall time when every manual clock starts. */
+const startedAt = Date.UTC(2026, 9, 31, 12, 0, 0);
+
 /** A clock that moves only when the test advances it, firing due timers in order. */
 function manualClock() {
   let now = 0;
@@ -8,6 +11,7 @@ function manualClock() {
 
   const clock: PacerClock = {
     now: () => now,
+    wall: () => startedAt + now,
     schedule: (callback, ms) => {
       const timer = { at: now + ms, callback, live: true };
       timers.push(timer);
@@ -195,3 +199,47 @@ test("token reservations wait for capacity and return what the provider did not 
   const immediate = await pacer.acquire(60_000);
   expect(immediate.dispatchedAt).toBe(clock.now());
 });
+
+test("a provider Retry-After is honoured in full from delay-seconds or an HTTP-date", async () => {
+  const { clock, advance } = manualClock();
+  const pacer = new RequestPacer({ requestsPerMinute: 6000, tokensPerMinute: 10_000_000 }, clock);
+  const retryAfter = (value: string) => pacer.retryAfter(new Headers({ "retry-after": value }));
+
+  expect(retryAfter("120")).toBe(120_000);
+  expect(retryAfter(new Date(startedAt + 90_000).toUTCString())).toBe(90_000);
+  expect(pacer.retryAfter(new Headers())).toBeUndefined();
+
+  // Zero, past and malformed values ask for no wait, so the local backoff applies instead.
+  for (const value of ["0", new Date(startedAt - 1000).toUTCString(), "soon", "1.5", "-5"])
+    expect(retryAfter(value)).toBeUndefined();
+
+  // Two minutes is twice the local backoff's cap, and no request is released before it ends.
+  const refused = await pacer.acquire(1);
+  expect(pacer.refused("overloaded", refused.dispatchedAt, retryAfter("120"))).toBe(120_000);
+
+  const order: Array<string> = [];
+  const controller = new AbortController();
+  const abandoned = pacer.acquire(1, controller.signal);
+  const next = track(pacer, clock, "next", order);
+
+  // A cancelled wait leaves the queue during the provider's cooldown.
+  controller.abort(new Error("cancelled"));
+  expect(abandoned).rejects.toThrow("cancelled");
+  await advance(119_999);
+  expect(order).toEqual([]);
+  await advance(1);
+  expect(order).toEqual(["next@120000"]);
+  await next;
+});
+
+test.each(["0", "soon"])(
+  "a refusal with Retry-After %p waits out the local backoff",
+  async (value) => {
+    const { clock } = manualClock();
+    const pacer = new RequestPacer({ requestsPerMinute: 6000, tokensPerMinute: 10_000_000 }, clock);
+    const lease = await pacer.acquire(1);
+
+    const requested = pacer.retryAfter(new Headers({ "retry-after": value }));
+    expect(pacer.refused("rate_limit", lease.dispatchedAt, requested)).toBe(2000);
+  },
+);

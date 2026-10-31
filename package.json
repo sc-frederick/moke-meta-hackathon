@@ -27,6 +27,7 @@
     "format:check": "bun fmt --check",
     "test": "bun test ./tests/smoke",
     "test:sam": "bun scripts/test-sam.ts",
+    "test:lint-rule-cli": "bun tools/oxlint/anti-slop/rules/require-readable-spacing-cli.test.ts",
     "reconcile:fixtures": "bun scripts/reconcile-fixtures.ts",
     "test:e2e": "bun scripts/isolated-desktop.ts --project=desktop",
     "verify": "bun run check && bun run test && bun run build && bun run test:e2e",
@@ -43,8 +44,7 @@
   },
   "dependencies": {
     "effect": "4.0.4",
-    "electron-effect-rpc": "1.0.1",
-    "modal": "0.11.1"
+    "electron-effect-rpc": "1.0.1"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.4.0",
@@ -77,6 +77,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "electron": "44.7.2",
     "electron-builder": "26.15.3",
+    "modal": "0.11.1",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2005",
     "pdfjs-dist": "6.4.299",

@@ -24,6 +24,13 @@ export class BackendUnavailable extends Schema.TaggedError<BackendUnavailable>()
 
 const Path = Schema.String.check(Schema.isMinLength(1));
 
+/**
+ * Largest request body the Bun API reads. Every bounded command fits after UTF-8 and JSON
+ * escaping, which can expand one UTF-16 unit to six bytes: a 32,000-character message or 200
+ * sheet labels stay under about 210 KB. A larger body is refused with HTTP 413.
+ */
+export const backendRequestMaxBytes = 512 * 1024;
+
 const ProcessingConfiguration = Schema.Struct({
   workerCommand: Schema.NonEmptyArray(Path),
   assetsDirectory: Path,

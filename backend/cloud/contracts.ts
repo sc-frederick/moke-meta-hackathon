@@ -39,13 +39,16 @@ export const CloudEngineIdentity = Schema.Struct({
   codeIndex: Schema.Literal(cloudEngineIdentity.codeIndex),
 });
 
+/** The worker refuses less review time than this; setup and upload spend from the same limit. */
+export const cloudWorkerMinimumTimeoutMs = 60_000;
+
 /** Credentials are supplied to the exec process separately from its source package. */
 export const CloudWorkerRequest = Schema.Struct({
   id: CloudReviewId,
   identity: CloudEngineIdentity,
   request: CloudReviewRequest,
   timeoutMs: Schema.Int.check(
-    Schema.isBetween({ minimum: 60_000, maximum: 3_600_000 }),
+    Schema.isBetween({ minimum: cloudWorkerMinimumTimeoutMs, maximum: 3_600_000 }),
     Schema.isMultipleOf(1000),
   ),
 });
@@ -98,6 +101,12 @@ export type CloudReviewRecord = typeof CloudReviewRecord.Type;
 
 /** Provider injection uses the canonical application route and a separately supplied secret. */
 export const CloudProvider = InferenceConfiguration;
+
+/** Cloud outbound policy admits exactly these provider routes. */
+export const cloudProviderEndpoints = {
+  meta: "https://api.meta.ai/v1",
+  baseten: "https://inference.baseten.co/v1",
+} as const;
 
 /** The chosen chat connection plus optional tool-provider connections contain placeholder keys only. */
 export const CloudProviders = Schema.NonEmptyArray(CloudProvider);

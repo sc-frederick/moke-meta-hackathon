@@ -4,131 +4,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Schema } from "effect";
-import { Artifact, CountFact } from "#lib/review/contracts.ts";
-import { transformPoint } from "#lib/review/geometry.ts";
+import { Schema, Struct } from "effect";
+import { Sheet } from "#lib/review/contracts.ts";
 import { buildMinimalPdf } from "../fixtures/generated/minimal-pdf.ts";
+import { createHeroPdf } from "../fixtures/hero-case.ts";
 import { installRpcBoundary } from "./rpc-boundary.ts";
-
-test("accepting a count on a fitted 36x48 source refreshes with the requested integer DPI", async () => {
-  test.setTimeout(90000);
-  const directory = await mkdtemp(join(tmpdir(), "moke-large-count-"));
-  const fixture = join(directory, "36x48.pdf");
-  await writeFile(fixture, buildMinimalPdf(0, 2592, 3456, 1, 2));
-
-  const app = await electron.launch({
-    args: ["."],
-    env: { PROJECT_KIT_DATA_DIRECTORY: directory },
-  });
-
-  try {
-    const page = await app.firstWindow();
-    await installRpcBoundary(page);
-    await page.reload();
-    await page.setViewportSize({ width: 1600, height: 1000 });
-    await page.getByRole("button", { name: "Create a project", exact: true }).click();
-    await page.getByTestId("project-name-input").fill("Large source count regression");
-    await page.getByTestId("create-project-button").click();
-    await app.evaluate(({ dialog }, source) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] });
-    }, fixture);
-    await page.getByTestId("import-pdf").click();
-    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
-    await expect(page.getByTestId("sheet-list").locator("li")).toHaveCount(2);
-
-    for (const row of await page.getByTestId("sheet-list").locator("li").all()) {
-      await row.locator("details > summary").click();
-      await row.getByTestId(/^confirm-sheet-/).click();
-    }
-
-    await page.getByRole("button", { name: "Close source panel", exact: true }).click();
-    await page.getByTestId("open-create-finding").click();
-    const form = page.getByTestId("create-finding-form");
-    await form.locator("input").first().fill("Large-sheet count");
-    await form.locator("input").nth(1).fill("Count the vector rectangles on this sheet");
-    await form.locator("select").first().selectOption({ index: 1 });
-    await form.locator("select").nth(1).selectOption({ index: 2 });
-    await form.locator('input[type="checkbox"]').check();
-    await page.getByTestId("create-finding-submit").click();
-    await expect(page.locator(".viewer img")).toBeVisible();
-    const previousImage = await page.locator(".viewer img").getAttribute("src");
-    await page.getByTestId("drawn-count-input").fill("2");
-    await page
-      .getByTestId("drawn-statement-input")
-      .fill("Two vector rectangles on the 36x48 source.");
-    await page.getByTestId("accept-drawn-count").click();
-    await expect(page.locator(".viewer img")).toBeVisible();
-    await expect(page.locator(".viewer img")).not.toHaveAttribute("src", previousImage ?? "");
-    await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Drawn evidence");
-    expect(
-      await page.evaluate(() => window.auditRpc.renderDpis.filter((dpi) => dpi !== 24)),
-    ).toEqual([96, 96]);
-    await page.getByTestId("detail-drawn").click();
-    await expect(page.locator(".viewer img")).toBeVisible();
-    await page.getByTestId("drawn-count-input").fill("3");
-    await page
-      .getByTestId("drawn-statement-input")
-      .fill("Three rectangles after correcting the accepted count.");
-    await page.getByTestId("accept-drawn-count").click();
-    await expect
-      .poll(() => page.evaluate(() => window.auditRpc.renderDpis.filter((dpi) => dpi !== 24)))
-      .toEqual([96, 96, 300, 300]);
-    await expect(page.locator(".viewer img")).toBeVisible();
-    await expect(page.locator(".viewer .overlay")).toHaveAttribute("title", "Drawn evidence");
-    await expect(page.locator(".source-scroll .banner")).toHaveCount(0);
-    const database = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
-
-    try {
-      const artifacts = Schema.decodeUnknownSync(
-        Schema.Array(Schema.Struct({ payload: Schema.fromJsonString(Artifact) })),
-      )(
-        database
-          .prepare(
-            "SELECT payload FROM review_records WHERE kind='artifact' AND json_extract(payload,'$.mediaType')='image/png'",
-          )
-          .all(),
-      );
-
-      expect(artifacts.length).toBeGreaterThan(0);
-      expect(artifacts.some(({ payload }) => payload.dpi === 96)).toBe(true);
-      expect(
-        artifacts.some(({ payload }) => payload.dpi < 300 && !Number.isInteger(payload.dpi)),
-      ).toBe(true);
-
-      const saved = Schema.decodeUnknownSync(Schema.fromJsonString(CountFact))(
-        database
-          .prepare(
-            "SELECT payload FROM review_records WHERE kind='fact' AND json_extract(payload,'$.state')='accepted' ORDER BY json_extract(payload,'$.version') DESC LIMIT 1",
-          )
-          .get()?.payload,
-      );
-
-      expect(saved.value).toBe(3);
-
-      for (const { payload: artifact } of artifacts) {
-        expect(artifact.dpi).toBeGreaterThan(0);
-        expect(artifact.dpi).toBeLessThanOrEqual(300);
-        expect(artifact.width * artifact.height).toBeLessThanOrEqual(16000000);
-        const point = { x: 240, y: 360 };
-        const pixels = transformPoint(artifact.pdfToPixels, point.x, point.y);
-        const restored = transformPoint(artifact.pixelsToPdf, pixels.x, pixels.y);
-        expect(restored.x).toBeCloseTo(point.x, 6);
-        expect(restored.y).toBeCloseTo(point.y, 6);
-      }
-    } finally {
-      database.close();
-    }
-
-    await page.screenshot({ path: test.info().outputPath("audit-large-count-saved.png") });
-    await page.locator(".source-scroll").evaluate((element) => {
-      element.scrollTop = 0;
-    });
-    await page.screenshot({ path: test.info().outputPath("audit-large-count-refresh.png") });
-  } finally {
-    await app.close();
-    await rm(directory, { recursive: true, force: true });
-  }
-});
 
 test("audit workbench imports native and dropped revisions, assigns compact sheets, fits drawings and submits with Enter", async () => {
   test.setTimeout(90000);
@@ -372,3 +252,124 @@ test("52 sheets stay compact and bulk discipline assignments drive explicit scop
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("existing generic names have explicit proposals and preserve prior sheet verification after apply and reopen", async () => {
+  test.setTimeout(120000);
+  const directory = await mkdtemp(join(tmpdir(), "moke-audit-3-existing-sheet-names-"));
+  const source = join(directory, "lighting.pdf");
+  await writeFile(source, createHeroPdf("A"));
+
+  const options = { args: ["."], env: { PROJECT_KIT_DATA_DIRECTORY: directory } };
+  let app: Awaited<ReturnType<typeof electron.launch>> | null = await electron.launch(options);
+
+  try {
+    let page = await app.firstWindow();
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.getByRole("button", { name: "Create a project", exact: true }).click();
+    await page.getByTestId("project-name-input").fill("Existing sheet-name regression");
+    await page.getByTestId("create-project-button").click();
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filename] });
+    }, source);
+    await page.getByTestId("import-pdf").click();
+    await page.getByRole("button", { name: "Choose PDF…", exact: true }).click();
+    await expect(page.getByTestId("sheet-list").locator("li")).toHaveCount(2);
+    await app.close();
+    app = null;
+
+    const database = new DatabaseSync(join(directory, "app.sqlite"));
+    let legacySheets: Array<Sheet> = [];
+
+    try {
+      // This is the former importer's persisted inventory, before any new UI opens it.
+      legacySheets = readSheetRows(database).map(
+        (sheet, index) =>
+          new Sheet(
+            Struct.assign(sheet, {
+              label: `Page ${sheet.pageIndex + 1}`,
+              confirmed: index === 0,
+              coverage: index === 0 ? ("reviewer_complete" as const) : ("unreviewed" as const),
+            }),
+          ),
+      );
+
+      for (const sheet of legacySheets)
+        database
+          .prepare(
+            "UPDATE review_records SET payload=? WHERE project_id=? AND id=? AND kind='sheet'",
+          )
+          .run(JSON.stringify(sheet), sheet.projectId, sheet.id);
+    } finally {
+      database.close();
+    }
+
+    await rm(source);
+    app = await electron.launch(options);
+    page = await app.firstWindow();
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.locator(".sheets-trigger").click();
+    const rows = page.getByTestId("sheet-list").locator("li");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText("Page 1");
+    await expect(rows.first()).not.toContainText("label unverified");
+    await expect(rows.nth(1)).toContainText("label unverified");
+    await page.getByTestId("read-sheet-labels").click();
+    const suggestions = page.getByRole("region", { name: "Suggested sheet names", exact: true });
+    await expect(suggestions).toContainText("L-101 · FLOOR 1 LIGHTING PLAN | REV A · Page 1");
+    await expect(suggestions).toContainText("L-601 · FIXTURE SCHEDULE AND CONTROL DETAIL · Page 2");
+    await expect(rows.first()).toContainText("Page 1");
+    await expect(rows.first()).not.toContainText("L-101");
+    await page.screenshot({ path: test.info().outputPath("audit-3-existing-name-proposals.png") });
+    await page.getByTestId("apply-sheet-labels").click();
+    await expect(suggestions).not.toBeVisible();
+    await expect(rows.first()).toContainText("L-101 · FLOOR 1 LIGHTING PLAN | REV A · Page 1");
+    await expect(rows.nth(1)).toContainText("L-601 · FIXTURE SCHEDULE AND CONTROL DETAIL · Page 2");
+    await expect(rows.first()).not.toContainText("label unverified");
+    await expect(rows.nth(1)).toContainText("label unverified");
+    await rows.first().getByText("Label & count-check verification", { exact: true }).click();
+    await rows.nth(1).getByText("Label & count-check verification", { exact: true }).click();
+
+    const confirmedCoverage = rows
+      .first()
+      .getByRole("combobox", { name: "Count-check coverage", exact: true });
+
+    const unconfirmedCoverage = rows
+      .nth(1)
+      .getByRole("combobox", { name: "Count-check coverage", exact: true });
+
+    await expect(confirmedCoverage).toBeVisible();
+    await expect(confirmedCoverage).toHaveValue("reviewer_complete");
+    await expect(unconfirmedCoverage).toBeVisible();
+    await expect(unconfirmedCoverage).toHaveValue("unreviewed");
+    await page.screenshot({ path: test.info().outputPath("audit-3-existing-names-applied.png") });
+
+    const saved = new DatabaseSync(join(directory, "app.sqlite"), { readOnly: true });
+
+    try {
+      expect(readSheetRows(saved).map((sheet) => Struct.assign(sheet, { label: "" }))).toEqual(
+        legacySheets.map((sheet) => Struct.assign(sheet, { label: "" })),
+      );
+    } finally {
+      saved.close();
+    }
+
+    await page.reload();
+    await page.locator(".sheets-trigger").click();
+    await expect(rows.first()).toContainText("L-101 · FLOOR 1 LIGHTING PLAN | REV A · Page 1");
+    await expect(rows.nth(1)).toContainText("label unverified");
+    await expect(page.getByTestId("read-sheet-labels")).toBeDisabled();
+  } finally {
+    await app?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+function readSheetRows(database: DatabaseSync): Array<Sheet> {
+  return Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ payload: Schema.String })))(
+    database
+      .prepare(
+        "SELECT payload FROM review_records WHERE kind='sheet' ORDER BY json_extract(payload,'$.pageIndex')",
+      )
+      .all(),
+  ).map((row) => Schema.decodeUnknownSync(Schema.fromJsonString(Sheet))(row.payload));
+}

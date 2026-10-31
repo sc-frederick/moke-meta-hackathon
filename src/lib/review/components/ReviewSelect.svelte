@@ -51,6 +51,11 @@
       (current ?? menu?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
   }
 
+  // A control disabled by a later update stops offering choices; focus stays where the reader is.
+  $effect(() => {
+    if (disabled && open) close(false);
+  });
+
   function navigate(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -127,8 +132,9 @@
       class="option"
       role="option"
       aria-selected={value === option.value}
-      disabled={option.disabled}
+      disabled={disabled || option.disabled}
       onclick={() => {
+        if (disabled || option.disabled) return;
         onChange(option.value);
         close();
       }}

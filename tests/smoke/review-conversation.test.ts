@@ -29,9 +29,9 @@ import {
   ExecutionError,
   type ExecutionStatus,
   type ReviewDiscipline,
+  type ReviewDisciplineSelection,
 } from "#lib/review/execution.ts";
-import { sendReviewMessage } from "#lib/review/conversation.ts";
-import { reviewModels } from "#lib/review/models.ts";
+import { reviewModels, type ReviewModelId } from "#lib/review/models.ts";
 
 const id = () => Schema.decodeUnknownSync(CommandId)(crypto.randomUUID());
 const budget = new ExecutionBudget({ maxCalls: 2, maxInputTokens: 64000, maxOutputTokens: 256 });
@@ -104,9 +104,9 @@ test("model choice uses its provider credential, freezes on replay, and records 
         budget,
       };
 
-      const sent = await sendReviewMessage(session.client, submission);
+      const sent = await send(session, submission);
 
-      if (!sent.saved || !sent.execution) throw new Error(sent.error ?? "Missing execution");
+      if (!sent.execution) throw new Error(sent.error?.message ?? "Missing execution");
       const status = await completed(session, sent.execution);
       expect(status.model).toBe(model.id);
       expect(status.provider).toBe(model.provider);
@@ -123,12 +123,12 @@ test("model choice uses its provider credential, freezes on replay, and records 
       expect(answer?.origin?.elapsedMs).toBeGreaterThanOrEqual(0);
       const before = requests.length;
 
-      const replay = await sendReviewMessage(session.client, {
+      const replay = await send(session, {
         ...submission,
         model: model.id === "muse-wonder-1.0" ? "muse-spark-1.3" : "muse-wonder-1.0",
       });
 
-      expect(replay.saved && replay.execution === null).toBe(true);
+      expect(replay.execution).toBeNull();
       expect(requests).toHaveLength(before);
     }
   } finally {
@@ -281,22 +281,6 @@ async function fixture(transport?: ProviderTransport, includeBaseten = false) {
 
   const execution = await runtime.runPromise(ReviewExecution);
 
-  const call = async <A, E extends typeof ReviewError.Type | ExecutionError>(
-    effect: Effect.Effect<A, E>,
-  ) => {
-    const result = await Effect.runPromise(Effect.result(effect));
-
-    return Result.isSuccess(result)
-      ? { ok: true as const, value: result.success }
-      : { ok: false as const, error: result.failure };
-  };
-
-  const client = {
-    command: (command: typeof ReviewCommand.Type) => call(review.command(command)),
-    startExecution: (request: Parameters<typeof execution.start>[0]) =>
-      call(execution.start(request)),
-  };
-
   const project = await Effect.runPromise(
     review.command(
       ReviewCommand.cases.CreateProject.make({ commandId: id(), name: "Conversation review" }),
@@ -369,7 +353,6 @@ async function fixture(transport?: ProviderTransport, includeBaseten = false) {
     state,
     command,
     execution,
-    client,
     findingId,
     projectId: project.projectId,
     dispose: async () => {
@@ -379,6 +362,45 @@ async function fixture(transport?: ProviderTransport, includeBaseten = false) {
       await rm(directory, { recursive: true, force: true });
     },
   };
+}
+
+/** A reviewer send: the message is saved once, then its count review is admitted. */
+interface ReviewSubmission {
+  readonly command: typeof ReviewCommand.cases.PostMessage.Type;
+  readonly executionCommandId: typeof CommandId.Type;
+  readonly findingId: typeof FindingId.Type;
+  readonly discipline: typeof ReviewDisciplineSelection.Type;
+  readonly model?: typeof ReviewModelId.Type;
+  readonly budget: ExecutionBudget;
+}
+
+/** Save the message, then start its review with the saved message identity, as the composer does. */
+async function send(session: Awaited<ReturnType<typeof fixture>>, submission: ReviewSubmission) {
+  const saved = await session.command(submission.command);
+
+  const request = {
+    commandId: submission.executionCommandId,
+    projectId: submission.command.projectId,
+    findingId: submission.findingId,
+    budget: submission.budget,
+    reviewRequest: {
+      conversationId: submission.command.conversationId,
+      messageId: saved.entityId,
+      discipline: submission.discipline,
+    },
+  };
+
+  const started = await Effect.runPromise(
+    Effect.result(
+      session.execution.start(
+        submission.model === undefined ? request : { ...request, model: submission.model },
+      ),
+    ),
+  );
+
+  return Result.isSuccess(started)
+    ? { execution: started.success, error: null }
+    : { execution: null, error: started.failure };
 }
 
 async function completed(session: Awaited<ReturnType<typeof fixture>>, status: ExecutionStatus) {
@@ -482,11 +504,9 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
         budget,
       };
 
-      const sent = await sendReviewMessage(session.client, submission);
-      expect(sent.saved).toBe(true);
+      const sent = await send(session, submission);
 
-      if (!sent.saved || sent.execution === null)
-        throw new Error(sent.error ?? "Review did not start");
+      if (sent.execution === null) throw new Error(sent.error?.message ?? "Review did not start");
       lastExecution = await completed(session, sent.execution);
       const firstRequest = requests.at(-2) ?? "";
       expect(firstRequest).toContain(scope.heading);
@@ -499,8 +519,7 @@ test("a real conversation send routes Moke disciplines, isolates requests, and p
       for (const other of scopes.filter((item) => item.id !== scope.id))
         expect(firstRequest).not.toContain(other.heading);
       const beforeReplay = requests.length;
-      const replay = await sendReviewMessage(session.client, submission);
-      expect(replay.saved).toBe(true);
+      await send(session, submission);
       expect(requests).toHaveLength(beforeReplay);
     }
 
@@ -559,7 +578,7 @@ test("missing credentials preserve the saved request and return an actionable ad
 
     if (conversation === undefined) throw new Error("Missing conversation");
 
-    const sent = await sendReviewMessage(session.client, {
+    const sent = await send(session, {
       command: ReviewCommand.cases.PostMessage.make({
         commandId: id(),
         projectId: session.projectId,
@@ -573,9 +592,8 @@ test("missing credentials preserve the saved request and return an actionable ad
       budget,
     });
 
-    expect(sent.saved).toBe(true);
-    expect(sent.error).toContain("Message saved. Review did not start:");
-    expect(sent.error).toContain("credential");
+    expect(sent.execution).toBeNull();
+    expect(sent.error?.message).toContain("credential");
     expect((await Effect.runPromise(session.execution.setup)).configured).toBe(false);
     const saved = await session.state();
     expect(saved.messages.filter((message) => message.text === "Inspect this count.")).toHaveLength(
@@ -600,7 +618,7 @@ test.each([
 
     if (conversation === undefined) throw new Error("Missing conversation");
 
-    const sent = await sendReviewMessage(session.client, {
+    const sent = await send(session, {
       command: ReviewCommand.cases.PostMessage.make({
         commandId: id(),
         projectId: session.projectId,
@@ -614,8 +632,7 @@ test.each([
       budget,
     });
 
-    if (!sent.saved || sent.execution === null)
-      throw new Error(sent.error ?? "Review did not start");
+    if (sent.execution === null) throw new Error(sent.error?.message ?? "Review did not start");
     await completed(session, sent.execution);
     const saved = await session.state();
     const answer = saved.messages.find((message) => message.role === "application");

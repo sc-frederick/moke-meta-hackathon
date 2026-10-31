@@ -1,16 +1,25 @@
 import { PacketReviewRpc } from "../src/lib/review/packet.ts";
 import { Effect, Option, Schema, Stream } from "effect";
-import { ReviewError, ReviewRpc, ReviewStorageError } from "../src/lib/review/contracts.ts";
+import {
+  ReviewError,
+  ReviewInputError,
+  ReviewRpc,
+  ReviewStorageError,
+} from "../src/lib/review/contracts.ts";
 import { CloudReviewRpc, CloudReviewError } from "../src/lib/review/cloud.ts";
-import { BackendApi } from "./backend.ts";
+import { BackendApi, requestTooLarge } from "./backend.ts";
 import { ExecutionError, ExecutionRpc } from "../src/lib/review/execution.ts";
+
+const tooLarge = "This request is too large to send. Shorten the text or select fewer sheets.";
 
 const mapError = (message: string) =>
   Effect.mapError((cause: unknown) =>
-    Option.match(Schema.decodeUnknownOption(ReviewError)(cause), {
-      onNone: () => new ReviewStorageError({ message }),
-      onSome: (value) => value,
-    }),
+    requestTooLarge(cause)
+      ? new ReviewInputError({ message: tooLarge })
+      : Option.match(Schema.decodeUnknownOption(ReviewError)(cause), {
+          onNone: () => new ReviewStorageError({ message }),
+          onSome: (value) => value,
+        }),
   );
 
 /** Forward the renderer's typed review contract; application work stays in the Bun backend. */
@@ -47,11 +56,13 @@ export const ExecutionProxy = ExecutionRpc.toLayer(
     const safe = Effect.mapError((cause) =>
       cause instanceof ExecutionError
         ? cause
-        : new ExecutionError({
-            reason: "unavailable",
-            message:
-              "Review execution is unavailable. Reopen the application or check provider configuration.",
-          }),
+        : requestTooLarge(cause)
+          ? new ExecutionError({ reason: "input", message: tooLarge })
+          : new ExecutionError({
+              reason: "unavailable",
+              message:
+                "Review execution is unavailable. Reopen the application or check provider configuration.",
+            }),
     );
 
     return {
@@ -84,10 +95,12 @@ export const PacketProxy = PacketReviewRpc.toLayer(
     const safe = Effect.mapError((cause) =>
       cause instanceof ExecutionError
         ? cause
-        : new ExecutionError({
-            reason: "unavailable",
-            message: "The packet review operation is unavailable.",
-          }),
+        : requestTooLarge(cause)
+          ? new ExecutionError({ reason: "input", message: tooLarge })
+          : new ExecutionError({
+              reason: "unavailable",
+              message: "The packet review operation is unavailable.",
+            }),
     );
 
     return {
@@ -124,10 +137,13 @@ export const CloudReviewProxy = CloudReviewRpc.toLayer(
       Option.match(Schema.decodeUnknownOption(CloudReviewError)(cause), {
         onSome: (error) => error,
         onNone: () =>
-          new CloudReviewError({
-            reason: "unavailable",
-            message: "Cloud review is unavailable. Reconnect before changing execution location.",
-          }),
+          requestTooLarge(cause)
+            ? new CloudReviewError({ reason: "limit", message: tooLarge })
+            : new CloudReviewError({
+                reason: "unavailable",
+                message:
+                  "Cloud review is unavailable. Reconnect before changing execution location.",
+              }),
       }),
     );
 

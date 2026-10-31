@@ -4,7 +4,8 @@
  */
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
 import { containsRegion, transformRegion, invertTransform } from "#lib/review/geometry.ts";
@@ -62,10 +63,16 @@ function classifyLoadError(cause: unknown): typeof WorkerFailure.Type {
   };
 }
 
-function loadDocument(pdfPath: string) {
+/** The bytes read for PDF.js are not the recorded original. */
+class SourceMismatch extends Error {}
+
+function loadDocument(pdfPath: string, sha256?: string) {
   const data = new Uint8Array(readFileSync(pdfPath));
 
   if (data.byteLength > DocumentsLimits.maxSourceBytes) throw new Error("limit exceeded");
+
+  // Hash the exact buffer PDF.js receives, so a replaced file cannot pass as the original.
+  if (sha256 !== undefined && Bun.SHA256.hash(data, "hex") !== sha256) throw new SourceMismatch();
 
   return getDocument({
     data,
@@ -186,6 +193,7 @@ async function inspectPdf(id: string, pdfPath: string) {
 async function renderRegion(
   id: string,
   pdfPath: string,
+  sha256: string,
   pageIndex: number,
   region: Region,
   rotation: 0 | 90 | 180 | 270,
@@ -195,7 +203,7 @@ async function renderRegion(
   let loading: ReturnType<typeof loadDocument> | undefined;
 
   try {
-    loading = loadDocument(pdfPath);
+    loading = loadDocument(pdfPath, sha256);
     const document = await loading.promise;
 
     if (pageIndex >= document.numPages) {
@@ -258,12 +266,6 @@ async function renderRegion(
     const [a, b, c, d, e, f] = baseTransform;
     const pdfToPixels = Schema.decodeUnknownSync(Affine)([a, b, c, d, e - bounds.x, f - bounds.y]);
 
-    if (process.env.MOKE_PDF_WORKER_DELAY_MS) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, Number(process.env.MOKE_PDF_WORKER_DELAY_MS)),
-      );
-    }
-
     await renderTask.promise;
     const pngBase64 = canvas.toBuffer("image/png").toString("base64");
     const inverted = invertTransform(pdfToPixels);
@@ -286,6 +288,17 @@ async function renderRegion(
     writeResponse(Schema.decodeUnknownSync(WorkerSuccess)({ id, ok: true, result }));
     page.cleanup();
   } catch (error) {
+    if (error instanceof SourceMismatch) {
+      writeResponse({
+        id,
+        ok: false,
+        reason: "unavailable",
+        message: "The original PDF does not match its recorded hash.",
+      });
+
+      return;
+    }
+
     if (error instanceof Error && /abort|cancel/i.test(error.message)) {
       writeResponse({ id, ok: false, reason: "cancelled", message: "The render was cancelled." });
 
@@ -399,6 +412,17 @@ async function handleRequest(line: string) {
     return;
   }
 
+  // Test hooks: record each accepted job with this process ID, then hold it before PDF work.
+  const started = process.env.MOKE_PDF_WORKER_STARTED_DIRECTORY;
+
+  if (started) writeFileSync(join(started, `${decoded._tag}.${randomUUID()}`), String(process.pid));
+
+  if (process.env.MOKE_PDF_WORKER_DELAY_MS) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, Number(process.env.MOKE_PDF_WORKER_DELAY_MS)),
+    );
+  }
+
   if (WorkerRequest.guards.Inspect(decoded)) {
     await inspectPdf(decoded.id, decoded.pdfPath);
 
@@ -414,6 +438,7 @@ async function handleRequest(line: string) {
   await renderRegion(
     decoded.id,
     decoded.pdfPath,
+    decoded.sha256,
     decoded.pageIndex,
     decoded.region,
     decoded.rotation,

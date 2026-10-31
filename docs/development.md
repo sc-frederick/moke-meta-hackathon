@@ -6,22 +6,32 @@ by `svelte-check --tsgo` for Effect diagnostics.
 
 ## Commands
 
-| Command                    | Purpose                                                                   |
-| -------------------------- | ------------------------------------------------------------------------- |
-| `bun run dev`              | Build the Electron/Bun entrypoints and launch the app with Vite           |
-| `bun run check`            | TypeScript, Svelte/Effect diagnostics, design study, lint, and formatting |
-| `bun run format`           | Apply Bun formatting                                                      |
-| `bun run test`             | Run application smoke tests                                               |
-| `bun run build`            | Build the static UI, Electron shell, Bun backend, PDF worker, and assets  |
-| `bun run test:e2e`         | Drive the built Electron app through Playwright                           |
-| `bun run verify`           | Run checks, smoke tests, builds, and Electron flows                       |
-| `bun run package:desktop`  | Build installers without publishing                                       |
-| `bun run test:packaged`    | Run the desktop flows against exactly one packaged executable             |
-| `bun run test:screenshots` | Refresh the screenshots linked from the README                            |
+| Command                    | Purpose                                                                  |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `bun run dev`              | Build Electron, the PDF worker and assets; run Vite and Bun from source  |
+| `bun run check`            | TypeScript and Svelte/Effect diagnostics, lint, and formatting           |
+| `bun run format`           | Apply Bun formatting                                                     |
+| `bun run test`             | Run application smoke tests                                              |
+| `bun run build`            | Build the static UI, Electron shell, Bun backend, PDF worker, and assets |
+| `bun run test:e2e`         | Drive the built Electron app through Playwright                          |
+| `bun run verify`           | Run checks, smoke tests, builds, and Electron flows                      |
+| `bun run package:desktop`  | Build installers without publishing                                      |
+| `bun run test:packaged`    | Run the desktop flows against exactly one packaged executable            |
+| `bun run test:screenshots` | Refresh the screenshots linked from the README                           |
 
-Linux Electron tests require an X display. Use `DISPLAY=:0` with an existing
-desktop or `xvfb-run -a` on a headless host. Windows and macOS use their native
-desktop sessions. CI checks and packages all three platforms.
+Local Electron tests run only on Linux, through `scripts/isolated-desktop.ts`.
+It never uses an existing desktop. It needs unprivileged user namespaces for
+`unshare --user --map-root-user --mount --net --ipc --pid`, plus `mount`, `ip`,
+`Xvfb` and `xdpyinfo`. Inside private user, mount, network, PID and IPC
+namespaces it starts its own Xvfb on `:99`, strips inherited display, D-Bus and
+audio variables, and refuses to run while the desktop display `:0` is reachable.
+Set `MOKE_XVFB_BINARY` when `Xvfb` is not on `PATH`. Setting `DISPLAY` or wrapping
+the command in `xvfb-run` has no effect: the runner discards inherited display
+variables, and the Playwright fixtures refuse runs that bypass it. The fixed
+display's lock is `/tmp/.X99-lock`, so run one desktop suite per host at a time.
+On macOS or Windows the command fails before Electron starts. Native desktop sessions are used only on disposable
+GitHub-hosted runners (`GITHUB_ACTIONS=true` and
+`RUNNER_ENVIRONMENT=github-hosted`). CI checks and packages all three platforms.
 
 The toolchain uses Bun for installs, scripts, formatting, tests, and builds.
 SvelteKit 3 runs Vite on Bun. Oxlint retains the vendored rules in
@@ -49,7 +59,11 @@ deduplication, and recovery.
 Normal tests require no provider keys or private drawing pack. Provider adapters
 use local HTTP endpoints or injected transports. Poppler-dependent experiments
 skip when `pdftoppm` is unavailable; production PDF-worker tests still run.
-Vendored lint tests are outside Bun's application test root.
+Vendored lint tests are outside Bun's application test root. After changing a
+local rule customization, run `bun run test:lint-rule-cli`. It drives the
+repository's Oxlint through Bun with the spacing rule: bad input fails, `--fix`
+writes the expected files, and a second pass is stable. The other vendored rule
+tests use the upstream runner and are not part of this repository's commands.
 
 Run one smoke suite with `bun test ./tests/smoke/review.test.ts`. Electron tests
 need `bun run build` first. The Playwright `desktop` project runs the regular
@@ -67,8 +81,9 @@ provider availability or model accuracy.
 ```sh
 bun run build
 bun run test:screenshots
-# Headless Linux: xvfb-run -a bun run test:screenshots
 ```
+
+The screenshot run uses the same private Linux display runner as `test:e2e`.
 
 The Electron flow creates its own two-sheet PDFs and browser profile in a
 temporary data directory.

@@ -20,6 +20,8 @@ import {
   WarmSandbox,
   WarmSandboxMessage,
   cloudEngineIdentity,
+  cloudProviderEndpoints,
+  cloudWorkerMinimumTimeoutMs,
   type CloudReviewRecord,
 } from "./contracts.ts";
 import { CloudSandbox } from "./service.ts";
@@ -590,7 +592,7 @@ export const modalSandboxLayer = (
             const now = yield* Clock.currentTimeMillis;
             const remainingMs = Math.floor((record.expiresAt - now) / 1000) * 1000;
 
-            if (remainingMs < 60_000)
+            if (remainingMs < cloudWorkerMinimumTimeoutMs)
               return yield* new CloudReviewError({
                 reason: "limit",
                 message:
@@ -613,12 +615,7 @@ export const modalSandboxLayer = (
             let policy = new ExperimentalOutboundPolicy();
 
             for (const connection of providers) {
-              if (
-                connection.baseUrl !==
-                (connection.provider === "meta"
-                  ? "https://api.meta.ai/v1"
-                  : "https://inference.baseten.co/v1")
-              )
+              if (connection.baseUrl !== cloudProviderEndpoints[connection.provider])
                 return yield* new CloudReviewError({
                   reason: "configuration",
                   message: "Cloud reviews require canonical provider endpoints.",

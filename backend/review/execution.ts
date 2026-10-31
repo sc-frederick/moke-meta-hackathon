@@ -559,6 +559,17 @@ export class ReviewExecution extends Context.Service<
                     }),
                   ),
                 ),
+              // Every send was refused before generation, so nothing was charged. The attempt is
+              // withdrawn instead of left unresolved, and the run ends as failed.
+              refused: (phase) =>
+                runPromise(
+                  store.query(
+                    Effect.gen(function* () {
+                      const sql = yield* SqlClient.SqlClient;
+                      yield* sql`DELETE FROM review_execution_attempts WHERE journal_id=${run.journal_id} AND task_id=${phase["task.id"]} AND attempt=${phase.attempt} AND status='uncertain' AND owner_generation=${owner.generation}`;
+                    }),
+                  ),
+                ),
               end: (uncertain) => leave(run, uncertain),
             });
 

@@ -44,7 +44,7 @@ conversation in the selected project.
    disagreement describes the selected count comparison. Reviewer closed and
    Completed task remain separate, explicit reviewer controls.
 
-[Conversation admission](../../src/lib/review/conversation.ts), the
+[Conversation admission](../../src/lib/review/components/ReviewWorkbench.svelte), the
 [finding inspector](../../src/lib/review/components/FindingInspector.svelte), and
 the [deterministic check](../../src/lib/review/checks.ts) enforce these separate
 steps. Model messages and completed inspections do not accept facts, confirm

@@ -91,6 +91,13 @@ While it names an active cloud review, all local domain writes, PDF imports,
 render writes, execution controls, and restores are fenced. Read-only review
 snapshots and existing artifact reads remain available. Closing or reopening the
 desktop preserves this fence. A lost connection never releases it.
+The file keeps every receipt, up to 1,000, within an 8 MiB budget that writes and
+reads share. A refused write leaves the previous file in place. Retries compare
+a SHA-256 digest of the request. Imported and cancelled receipts drop their
+finding preview and selected sheet list, about 1 KiB each. A new review is
+admitted only if its receipt and 512 KiB of progress still fit; otherwise it fails
+before allocation or upload. A larger file from an earlier build is compacted the
+same way on the next launch, keeping the active owner and command identities.
 Complete package exports remain available as backups of the preserved local
 workspace; they do not include cloud changes until results have been imported.
 
@@ -259,7 +266,11 @@ related Modal usage. Moke does not read a Modal wallet or promise a dollar cap.
 Configure account budgets in Modal separately from these runtime limits.
 Transfer and setup consume the same deadline used to claim warm capacity.
 Exec timeouts are rounded down to whole seconds, as required by the SDK; a
-transfer leaving less than one minute fails before inference dispatch.
+transfer leaving less than one minute fails before inference dispatch. A 1-minute
+limit can therefore never dispatch, so Send refuses it before preflight,
+allocation or upload and asks for 2 minutes or more. Moke does not add review
+time beyond the configured limit; whether a minimum above 1 minute or a full
+minute after setup is wanted is an open product decision.
 
 The uploaded part of the source package reaches an acknowledged external directory
 snapshot before inference dispatch; files skipped at Send are already committed in
@@ -372,6 +383,36 @@ outbound header policies. Packet findings, coverage, evidence and reports return
 through the same complete-package boundary. Packet controls and finding completion
 are fenced while the cloud owns the workspace.
 
+### Current admission and recovery
+
+New reviews are admitted only to a protocol-5 worker whose identity matches this
+build exactly: package engine `review-pi-1.4.0-v1`, count prompt
+`moke-selected-coordination-v2`, packet prompt `moke-packet-review-v7`, and the
+current instruction revision and code index version. Every new ownership receipt
+records `workerProtocol: 5`. An image with a different identity fails the
+identity probe before transfer. Migrations are not part of the identity: a worker
+restores only packages whose migration history is a prefix of its own, so an
+image built before a new migration passes the probe and refuses the package after
+upload. Publish a matching image with `bun run modal:image` whenever worker code,
+prompts, migrations or the code index change.
+
+Recovery only observes work already `dispatching` or `running`; it never
+redispatches or restarts a model. Earlier identities must still match the current
+engine, count prompt and instruction revision, and omit the code index:
+
+| Receipt `workerProtocol`                  | Progress accepted while dispatched           |
+| ----------------------------------------- | -------------------------------------------- |
+| Absent, saved by protocol-2 or 3 desktops | Protocol 2 or 3 with packet prompts v1 to v3 |
+| `3`                                       | Protocol 3 with packet prompts v1 to v3      |
+| `4`                                       | Protocol 4 with packet prompts v3 to v5      |
+| `5`                                       | Protocol 5 with packet prompt v6 or v7       |
+
+Receipts in every other phase accept only current progress.
+
+### Protocol history
+
+Each entry records what an upgrade required when it shipped.
+
 **Protocol 4** adds the workspace cache: new receipts record the cache Volume and
 `workerProtocol: 4`, and the worker fills skipped files from `/cache` before
 restore. Publish a new worker image with `bun run modal:image` before sending
@@ -392,14 +433,20 @@ before transfer. New receipts record `workerProtocol: 5`. Receipts already
 dispatched to protocol-4 workers stay readable and accept protocol-4 progress
 with packet prompts v3 to v5 only.
 
+Packet prompt `moke-packet-review-v7` gives each parallel role and stage its own
+tool list and builds every sheet reviewer's opening from a saved setup snapshot.
+Publish a new worker image with `bun run modal:image` before sending v7 reviews;
+a v6 image fails the identity probe before transfer. Jobs already sent to a v6
+worker stay readable.
+
 The protocol-3 handshake required support for explicit revision, selected-sheet
 and persisted-discipline scope, and includes both packet and count prompt versions.
 The operator deployment above now supplies that matching worker. Rebuild and
 publish again when worker code, prompts or migrations change. Protocol-2 workers
 would discard the new selection fields and fail the handshake before admitting
 new model work. This deployment requirement is separate from recovery
-of reviews already dispatched to protocol-2 workers. New ownership receipts save
-`workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
+of reviews already dispatched to protocol-2 workers. Protocol-3 desktops saved new
+ownership receipts with `workerProtocol: 3`. Unmarked receipts in `dispatching` or `running` may recover
 protocol-2 progress with the same engine, count/packet prompt and instruction
 identities and matching job ID. Unmarked protocol-3 receipts remain readable too.
 Recovery only observes existing work; it never redispatches or restarts a model.
