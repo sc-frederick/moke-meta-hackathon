@@ -4,7 +4,13 @@
   "directories": {
     "output": "release"
   },
-  "files": ["build/**/*", "dist/electron/**/*", "dist/preload/**/*", "package.json"],
+  "files": [
+    "build/**/*",
+    "dist/electron/**/*",
+    "dist/preload/**/*",
+    "desktop/icons/icon.png",
+    "package.json"
+  ],
   "extraResources": [
     {
       "from": "migrations",
@@ -19,16 +25,19 @@
   "asar": true,
   "forceCodeSigning": false,
   "mac": {
+    "icon": "desktop/icons/icon.png",
     "target": ["dmg", "zip"],
     "identity": "-",
     "hardenedRuntime": false,
     "category": "public.app-category.productivity"
   },
   "win": {
+    "icon": "desktop/icons/icon.ico",
     "target": ["nsis"],
-    "signAndEditExecutable": false
+    "signExecutable": false
   },
   "linux": {
+    "icon": "desktop/icons/icon.png",
     "target": ["AppImage", "deb"],
     "category": "Utility",
     "syncDesktopName": true,
