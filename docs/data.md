@@ -90,6 +90,13 @@ non-empty revision into its payload at start, so a resume or cloud run uses the
 checklist the review began with. Saves are refused while the cloud owns the
 workspace, like other local writes.
 
+Migration 0012 adds two indexes for the check that local reviews have finished
+before a cloud transfer: model attempts by run and status, and packet reviews by
+their payload state. It changes no rows or query results. Packages record their
+migration history, and a worker accepts only a prefix of its own, so a cloud
+worker image built before 0012 rejects packages from this build. Publish a
+rebuilt image with the desktop that adds a migration.
+
 When `record_project` names a jurisdiction, the host reads project configuration,
 source metadata without text, citations and agency comments from the 200 most
 recent packet reviews in other conversations. It offers those from the same state
