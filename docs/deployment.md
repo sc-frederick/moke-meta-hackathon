@@ -43,7 +43,10 @@ and patched Svelte/Effect component checks remain enabled.
 
 Each installer includes a native `app-backend` executable in `resources/backend`,
 outside `app.asar`, a native `pdf-worker`, the matching canvas addon, PDF.js worker/fonts/CMaps/WASM
-assets, licenses, and immutable SQL migrations. No system Bun or Node is
+assets, licenses, and immutable SQL migrations. `scripts/prepare-pdf-assets.ts`
+stages PDF.js from an explicit runtime allowlist: the legacy worker module plus
+the CMap, standard font and WASM directories with their licenses. Source maps,
+minified duplicates and the web viewer are not shipped. No system Bun or Node is
 required by the packaged app. CI launches the packaged application after building
 its installers on each OS, verifying the compiled backend and renderer together.
 

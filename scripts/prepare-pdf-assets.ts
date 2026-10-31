@@ -1,7 +1,7 @@
 /**
  * Stage pdfjs-dist assets and the platform @napi-rs/canvas native library beside the backend build.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,9 +28,22 @@ export function canvasNativeFileName(platform = process.platform, arch = process
   return `skia.${pkg}.node`;
 }
 
-/** Copy pdfjs and native canvas binaries into `dist/backend/pdf-assets`. */
-function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url)), "..")) {
-  const outputRoot = join(root, "dist/backend/pdf-assets");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * PDF.js files the PDF worker loads at runtime, relative to the package root. The main module
+ * is compiled into the worker executable. CMaps, standard fonts and WASM image decoders keep
+ * their license files; source maps, minified duplicates and the web viewer are not staged.
+ */
+export const pdfjsRuntimeAssets = [
+  "legacy/build/pdf.worker.mjs",
+  "cmaps",
+  "standard_fonts",
+  "wasm",
+] as const;
+
+/** Copy the PDF.js runtime allowlist and native canvas binaries into `dist/backend/pdf-assets`. */
+export function preparePdfAssets(outputRoot = join(root, "dist/backend/pdf-assets")) {
   const pdfjsSource = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
   const nativePackage = canvasNativePackage();
 
@@ -42,6 +55,8 @@ function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url))
   const nativeFile = readFileSync(join(nativeSourceDir, `skia.${nativeBasename}.node`));
 
   mkdirSync(join(outputRoot, "native"), { recursive: true });
+  // Replace the whole tree so files from an earlier, broader staging cannot ship.
+  rmSync(join(outputRoot, "pdfjs"), { recursive: true, force: true });
   mkdirSync(join(outputRoot, "pdfjs"), { recursive: true });
   const canvasSource = join(root, "node_modules/@napi-rs/canvas");
   const canvasModule = join(outputRoot, "modules/@napi-rs/canvas");
@@ -63,8 +78,8 @@ function preparePdfAssets(root = resolve(dirname(fileURLToPath(import.meta.url))
     cpSync(join(nativeSourceDir, "icudtl.dat"), join(outputRoot, "native/icudtl.dat"));
   }
 
-  for (const segment of ["cmaps", "standard_fonts", "wasm", "legacy"]) {
-    cpSync(join(pdfjsSource, segment), join(outputRoot, "pdfjs", segment), { recursive: true });
+  for (const asset of pdfjsRuntimeAssets) {
+    cpSync(join(pdfjsSource, asset), join(outputRoot, "pdfjs", asset), { recursive: true });
   }
 
   const nativeName = canvasNativeFileName();
