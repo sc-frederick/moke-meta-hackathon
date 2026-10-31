@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Semaphore } from "effect";
+import { Cache, Context, Effect, Equal, Hash, Layer, Semaphore } from "effect";
 import { availableParallelism } from "node:os";
 import { DocumentError, Region, ReviewStorageError, Sheet } from "#lib/review/contracts.ts";
 import {
@@ -11,6 +11,7 @@ import {
 import { type DocumentsConfig, DocumentsLimits } from "./config.ts";
 import { validatePdfSource } from "./pdf-validation.ts";
 import { validateRenderRequest } from "./render-bounds.ts";
+import { renderIdentity } from "./render-identity.ts";
 import { ImportedPdf, RenderedPdf } from "./types.ts";
 import {
   openPdfWorker,
@@ -26,6 +27,25 @@ import type { WorkerTextResult } from "./worker-messages.ts";
  * request renders at the same time; one core stays free for the backend and SQL.
  */
 export const pdfJobConcurrency = Math.max(1, Math.min(4, availableParallelism() - 1));
+
+/** Concurrent requests for the same render identity join one worker render. */
+class RenderJob implements Equal.Equal {
+  constructor(
+    readonly identity: string,
+    readonly originalSha256: string,
+    readonly sheet: Sheet,
+    readonly region: Region,
+    readonly dpi: number,
+  ) {}
+
+  [Equal.symbol](that: Equal.Equal): boolean {
+    return that instanceof RenderJob && that.identity === this.identity;
+  }
+
+  [Hash.symbol](): number {
+    return Hash.string(this.identity);
+  }
+}
 
 /** PDF import, bounded rendering, and artifact chunk reads for review evidence. */
 export class Documents extends Context.Service<
@@ -95,6 +115,71 @@ export class Documents extends Context.Service<
             Effect.interruptible,
           );
 
+        const renderJob = (job: RenderJob) =>
+          withPdfJob((worker) =>
+            Effect.gen(function* () {
+              if (!/^[a-f0-9]{64}$/.test(job.originalSha256)) {
+                return yield* new DocumentError({
+                  reason: "invalid",
+                  message: "The original hash is not valid.",
+                });
+              }
+
+              const pdfPath = artifactPath(
+                config.dataDirectory,
+                job.originalSha256,
+                "application/pdf",
+              );
+
+              yield* Effect.try({
+                try: () => Bun.file(pdfPath).size,
+                catch: () =>
+                  new DocumentError({
+                    reason: "unavailable",
+                    message: "The original PDF is missing.",
+                  }),
+              });
+
+              if (job.sheet.pageIndex < 0 || job.sheet.pageIndex > 199) {
+                return yield* new DocumentError({
+                  reason: "invalid",
+                  message: "The sheet page index is invalid.",
+                });
+              }
+
+              const fitted = yield* validateRenderRequest(job.sheet, job.region, job.dpi);
+
+              // The worker verifies the original's hash on the exact bytes it renders.
+              const rendered = yield* workerRender(worker, {
+                pdfPath,
+                sha256: job.originalSha256,
+                pageIndex: job.sheet.pageIndex,
+                region: job.region,
+                rotation: job.sheet.rotation,
+                userUnit: job.sheet.userUnit,
+                dpi: fitted.dpi,
+              });
+
+              const pngBytes = Buffer.from(rendered.pngBase64, "base64");
+              const stored = yield* storeBytes(config.dataDirectory, pngBytes, "image/png");
+              reads.forget(stored.sha256, "image/png");
+
+              return new RenderedPdf({
+                sha256: stored.sha256,
+                byteLength: stored.byteLength,
+                width: rendered.width,
+                height: rendered.height,
+                region: job.region,
+                dpi: fitted.dpi,
+                pdfToPixels: rendered.pdfToPixels,
+                pixelsToPdf: rendered.pixelsToPdf,
+              });
+            }),
+          );
+
+        // Entries live only while a render is in flight; finished renders are reused from SQL.
+        const renders = yield* Cache.make({ lookup: renderJob, capacity: 256, timeToLive: 0 });
+
         return Documents.of({
           importPdf: (source) =>
             withPdfJob((worker) =>
@@ -141,65 +226,19 @@ export class Documents extends Context.Service<
             ),
 
           render: (originalSha256, sheet, region, dpi) =>
-            withPdfJob((worker) =>
-              Effect.gen(function* () {
-                if (!/^[a-f0-9]{64}$/.test(originalSha256)) {
-                  return yield* new DocumentError({
-                    reason: "invalid",
-                    message: "The original hash is not valid.",
-                  });
-                }
-
-                const pdfPath = artifactPath(
-                  config.dataDirectory,
-                  originalSha256,
-                  "application/pdf",
-                );
-
-                yield* Effect.try({
-                  try: () => Bun.file(pdfPath).size,
-                  catch: () =>
-                    new DocumentError({
-                      reason: "unavailable",
-                      message: "The original PDF is missing.",
-                    }),
-                });
-
-                if (sheet.pageIndex < 0 || sheet.pageIndex > 199) {
-                  return yield* new DocumentError({
-                    reason: "invalid",
-                    message: "The sheet page index is invalid.",
-                  });
-                }
-
-                const fitted = yield* validateRenderRequest(sheet, region, dpi);
-
-                // The worker verifies the original's hash on the exact bytes it renders.
-                const rendered = yield* workerRender(worker, {
-                  pdfPath,
-                  sha256: originalSha256,
-                  pageIndex: sheet.pageIndex,
-                  region,
-                  rotation: sheet.rotation,
-                  userUnit: sheet.userUnit,
-                  dpi: fitted.dpi,
-                });
-
-                const pngBytes = Buffer.from(rendered.pngBase64, "base64");
-                const stored = yield* storeBytes(config.dataDirectory, pngBytes, "image/png");
-                reads.forget(stored.sha256, "image/png");
-
-                return new RenderedPdf({
-                  sha256: stored.sha256,
-                  byteLength: stored.byteLength,
-                  width: rendered.width,
-                  height: rendered.height,
-                  region,
-                  dpi: fitted.dpi,
-                  pdfToPixels: rendered.pdfToPixels,
-                  pixelsToPdf: rendered.pixelsToPdf,
-                });
-              }),
+            validateRenderRequest(sheet, region, dpi).pipe(
+              Effect.flatMap((fitted) =>
+                Cache.get(
+                  renders,
+                  new RenderJob(
+                    renderIdentity(originalSha256, sheet, region, fitted.dpi),
+                    originalSha256,
+                    sheet,
+                    region,
+                    dpi,
+                  ),
+                ),
+              ),
             ),
 
           read: reads.chunk,

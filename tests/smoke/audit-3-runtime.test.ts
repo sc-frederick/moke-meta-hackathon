@@ -356,7 +356,14 @@ test("a Spark Open tool batch retains eight fresh images and rejects the ninth b
             index,
             id: `image-${index}`,
             type: "function",
-            function: { name: "render_sheet", arguments: JSON.stringify({ sheetId: page }) },
+            // Distinct crops: identical renders share one stored image and one evidence ID.
+            function: {
+              name: "render_sheet",
+              arguments: JSON.stringify({
+                sheetId: page,
+                region: { x: 20 * index, y: 20, width: 100, height: 100 },
+              }),
+            },
           }))
         : [];
 

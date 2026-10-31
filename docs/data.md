@@ -90,6 +90,16 @@ non-empty revision into its payload at start, so a resume or cloud run uses the
 checklist the review began with. Saves are refused while the cloud owns the
 workspace, like other local writes.
 
+Migration 0013 adds `review_render_operations`, a receipt for each render
+operation. Renders with the same source hash, page, rotation, UserUnit, exact
+region, effective DPI and renderer version share one immutable image artifact, so
+reopened previews and repeated model crops neither rasterize again nor add
+artifact records. Each operation still replays to its own receipt. Renders made
+before 0013 keep their receipts but record no renderer, so they are not reused.
+The renderer version changes with the pinned PDF.js or canvas version. Rendering
+checks the original's hash on the exact bytes given to PDF.js; a replaced
+original fails and stores no image.
+
 When `record_project` names a jurisdiction, the host reads project configuration,
 source metadata without text, citations and agency comments from the 200 most
 recent packet reviews in other conversations. It offers those from the same state

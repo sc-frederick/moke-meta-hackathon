@@ -48,12 +48,11 @@ export function pdfDocuments(dataDirectory: string) {
 export const openReviewOperations = Effect.fn("test.openReviewOperations")(function* (
   directory: string,
   documents: Documents["Service"] | undefined,
+  migrations = resolve("migrations"),
 ) {
   const owner = yield* acquireDataDirectoryOwnership(directory);
   const filename = join(directory, "app.sqlite");
-  yield* Effect.scoped(
-    migrateDatabase(filename, resolve("migrations"), join(directory, "backups")),
-  );
+  yield* Effect.scoped(migrateDatabase(filename, migrations, join(directory, "backups")));
   const queries = yield* Semaphore.make(1);
   const connection = SqliteClient.layer({ filename });
 

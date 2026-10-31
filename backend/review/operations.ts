@@ -21,6 +21,7 @@ import type { Documents } from "../documents/documents.ts";
 import type { DataDirectoryOwnership } from "../ownership.ts";
 import { ExecutionEvidence, ExecutionImage, type ExecutionPort } from "./execution-port.ts";
 import { validateRenderRequest } from "../documents/render-bounds.ts";
+import { renderIdentity } from "../documents/render-identity.ts";
 import { invertTransform } from "#lib/review/geometry.ts";
 import {
   AgentInput,
@@ -51,63 +52,77 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
   const unavailable = () =>
     new ReviewInputError({ message: "PDF processing is not configured for this launch." });
 
+  /** Narrow SQL reads plan a render; only a render with no equal stored image reaches PDF.js. */
   const render = Effect.fn("Review.render")(function* (request: typeof RenderSource.Type) {
-    if (config.documents === undefined) return yield* unavailable();
-    const state = yield* snapshot(request.projectId, 0);
+    const documents = config.documents;
 
-    const sheet = state.sheets.find((item) => item.id === request.sheetId);
-    const original = state.revisions.find((revision) => revision.id === sheet?.revisionId);
+    if (documents === undefined) return yield* unavailable();
 
-    if (!sheet || !original)
-      return yield* new ReviewInputError({ message: "The source sheet is outside this project." });
-    const fitted = yield* validateRenderRequest(sheet, request.region, request.dpi);
+    const plan = yield* query(
+      Effect.gen(function* () {
+        const store = yield* ReviewStore;
+        const { sheet, revision } = yield* store.renderSource(request.projectId, request.sheetId);
+        const fitted = yield* validateRenderRequest(sheet, request.region, request.dpi);
+        const identity = renderIdentity(revision.sha256, sheet, request.region, fitted.dpi);
+        const previous = yield* store.renderOperation(request.projectId, request.operationId);
 
-    const previous = state.artifacts.find(
-      (artifact) => artifact.operationId === request.operationId,
+        if (previous !== undefined) {
+          if (
+            previous.sheetId !== request.sheetId ||
+            Math.abs(previous.dpi - fitted.dpi) > 1e-9 ||
+            JSON.stringify(previous.region) !== JSON.stringify(request.region)
+          )
+            return yield* new ReviewInputError({
+              message: "A render operation cannot be reused for different source inputs.",
+            });
+
+          return { sheet, revision, identity, artifact: previous };
+        }
+
+        const artifact = yield* store.reusableRender(request.projectId, sheet.id, identity);
+
+        return { sheet, revision, identity, artifact };
+      }),
     );
 
-    if (previous !== undefined) {
-      if (
-        previous.sheetId !== request.sheetId ||
-        Math.abs(previous.dpi - fitted.dpi) > 1e-9 ||
-        JSON.stringify(previous.region) !== JSON.stringify(request.region)
-      )
-        return yield* new ReviewInputError({
-          message: "A render operation cannot be reused for different source inputs.",
-        });
+    if (plan.artifact !== undefined) return { identity: plan.identity, artifact: plan.artifact };
 
-      return previous;
-    }
-
-    const result = yield* config.documents.render(
-      original.sha256,
-      sheet,
+    const result = yield* documents.render(
+      plan.revision.sha256,
+      plan.sheet,
       request.region,
       request.dpi,
     );
 
-    return new Artifact({
-      sha256: result.sha256,
-      byteLength: result.byteLength,
-      width: result.width,
-      height: result.height,
-      region: result.region,
-      dpi: result.dpi,
-      pdfToPixels: result.pdfToPixels,
-      pixelsToPdf: result.pixelsToPdf,
-      id: Schema.decodeUnknownSync(ArtifactId)(randomUUID()),
-      projectId: request.projectId,
-      revisionId: original.id,
-      sheetId: sheet.id,
-      mediaType: "image/png",
-      operationId: request.operationId,
-    });
+    return {
+      identity: plan.identity,
+      artifact: new Artifact({
+        sha256: result.sha256,
+        byteLength: result.byteLength,
+        width: result.width,
+        height: result.height,
+        region: result.region,
+        dpi: result.dpi,
+        pdfToPixels: result.pdfToPixels,
+        pixelsToPdf: result.pixelsToPdf,
+        id: Schema.decodeUnknownSync(ArtifactId)(randomUUID()),
+        projectId: request.projectId,
+        revisionId: plan.revision.id,
+        sheetId: plan.sheet.id,
+        mediaType: "image/png",
+        operationId: request.operationId,
+      }),
+    };
   });
 
   const source = (request: typeof RenderSource.Type) =>
     render(request).pipe(
-      Effect.flatMap((artifact) =>
-        query(Effect.flatMap(ReviewStore, (store) => store.saveRender(artifact))),
+      Effect.flatMap(({ identity, artifact }) =>
+        query(
+          Effect.flatMap(ReviewStore, (store) =>
+            store.saveRender(request.operationId, identity, artifact),
+          ),
+        ),
       ),
     );
 
@@ -425,7 +440,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
           );
         yield* own(fence.ownerGeneration);
 
-        const artifact = yield* toExecution(
+        const { identity, artifact } = yield* toExecution(
           render({
             projectId: fence.projectId,
             sheetId: detail.sheetId,
@@ -436,7 +451,7 @@ export function createReviewOperations(config: ReviewOperationsConfiguration) {
         );
 
         const mutation = Schema.decodeUnknownSync(AgentMutation)(
-          AgentMutation.cases.Render.make({ detail, artifact }),
+          AgentMutation.cases.Render.make({ detail, artifact, renderIdentity: identity }),
         );
 
         const receipt = yield* toExecution(
