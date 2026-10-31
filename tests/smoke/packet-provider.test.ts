@@ -1136,3 +1136,117 @@ test("one review uploads at most eight request images at once", async () => {
   for (let index = 0; index < 12; index++)
     expect(session.sent[0]).toContain(`"file_id":"file-${index}"`);
 });
+
+test("the SDK request deadline is diagnosed as timeout rather than caller cancellation", async () => {
+  let diagnostic: typeof ProviderFailure.Type | undefined;
+  let sends = 0;
+
+  const admitted = createAdmittedModels(
+    {
+      provider: "baseten",
+      apiKey: Redacted.make("timeout-fixture"),
+      route: "recorded",
+      timeoutMs: 10,
+      transport: async (_input, init) => {
+        sends++;
+
+        return await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+
+          if (!signal) throw new Error("The SDK request has no cancellation signal");
+          const fail = () => reject(signal.reason);
+
+          if (signal.aborted) fail();
+          else signal.addEventListener("abort", fail, { once: true });
+        });
+      },
+    },
+    {
+      packetReview: true,
+      maxInputTokens: 1048576,
+      maxOutputTokens: 1048576,
+      begin: async () => null,
+      send: async () => undefined,
+      complete: async () => undefined,
+      end: async (_uncertain, failure) => {
+        diagnostic = failure;
+      },
+    },
+  );
+
+  const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+  if (!model) throw new Error("The fixture model was not registered");
+  await admitted.telemetry.startSpan(
+    {
+      name: "pi.durable.phase",
+      attributes: { "task.id": 1, "task.name": "pi.generation", phase: "request", attempt: 1 },
+    },
+    (telemetry) =>
+      admitted.models.completeSimple(
+        model,
+        {
+          messages: [{ role: "user", content: "Review the fixture.", timestamp: 0 }],
+        },
+        { telemetry },
+      ),
+  );
+  expect(diagnostic?.category).toBe("timeout");
+  expect(diagnostic?.phase).toBe("dispatch");
+  expect(sends).toBe(1);
+});
+
+test.each([
+  ["Too many images: 9 (max 8)", "image_limit"],
+  ["Maximum context length exceeded", "context_limit"],
+] as const)(
+  "provider rejection (%s) retains a safe reason without the raw echoed body",
+  async (message, detail) => {
+    let diagnostic: typeof ProviderFailure.Type | undefined;
+
+    const admitted = createAdmittedModels(
+      {
+        provider: "baseten",
+        apiKey: Redacted.make("diagnostic-fixture"),
+        route: "recorded",
+        transport: async () =>
+          Response.json(
+            { error: { message, code: "400", echoedPrivateInput: "must-not-escape" } },
+            { status: 400 },
+          ),
+      },
+      {
+        packetReview: true,
+        maxInputTokens: 1048576,
+        maxOutputTokens: 1048576,
+        begin: async () => null,
+        send: async () => undefined,
+        complete: async () => undefined,
+        end: async (_uncertain, failure) => {
+          diagnostic = failure;
+        },
+      },
+    );
+
+    const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+    if (!model) throw new Error("Missing diagnostic fixture model");
+
+    const result = await admitted.telemetry.startSpan(
+      {
+        name: "pi.durable.phase",
+        attributes: { "task.id": 1, "task.name": "pi.generation", phase: "request", attempt: 1 },
+      },
+      (telemetry) =>
+        admitted.models.completeSimple(
+          model,
+          { messages: [{ role: "user", content: "Synthetic diagnostic.", timestamp: 0 }] },
+          { telemetry },
+        ),
+    );
+
+    expect(diagnostic?.detail).toBe(detail);
+    expect(diagnostic?.httpStatus).toBe(400);
+    expect(JSON.stringify({ diagnostic, result })).not.toContain("must-not-escape");
+  },
+);

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { Schema } from "effect";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   initializePacketCoverage,
   packetCoverageProgress,
@@ -7,6 +10,14 @@ import {
 } from "#lib/review/packet-coverage.ts";
 import { PacketCoverage, PacketScope, PacketSheet } from "#lib/review/packet.ts";
 import { reviewDisciplines } from "#lib/review/execution.ts";
+import {
+  coverageGateText,
+  decodeRequest,
+  open,
+  response,
+  strings,
+  until,
+} from "../fixtures/packet-review.ts";
 
 const sheet = Schema.decodeUnknownSync(PacketSheet)({
   id: "90000000-0000-4000-8000-000000000001",
@@ -171,3 +182,68 @@ test("whole-set coverage also accounts for each supplied sheet", () => {
     }),
   ).toBe(false);
 });
+
+test.each([
+  { maxCalls: undefined, rejections: 1 },
+  { maxCalls: 6, rejections: 0 },
+] as const)(
+  "an early finish is returned for unopened sheets once unless the user set a call budget (%j)",
+  async ({ maxCalls, rejections }) => {
+    const directory = await mkdtemp(join(tmpdir(), "moke-audit3-finish-gate-"));
+    let step = 0;
+    let history: ReadonlyArray<string> = [];
+
+    const finish = (summary: string) =>
+      response([{ name: "finish_review", arguments: { summary, missingInputs: [] } }]);
+
+    const session = await open(
+      directory,
+      async (_url, init) => {
+        history = strings(decodeRequest(init));
+
+        if (step === 0) {
+          step++;
+
+          return response([{ name: "inventory_packet", arguments: {} }]);
+        }
+
+        // Finish immediately; an unbudgeted review is sent back until the gate gives up.
+        if (step <= rejections + 1) {
+          step++;
+
+          return finish(step > rejections + 1 ? "Finished with recorded gaps." : "Early finish");
+        }
+
+        return response([], "Finished with recorded gaps.");
+      },
+      true,
+      undefined,
+      "observe",
+    );
+
+    try {
+      const request = await session.request(
+        "Review the whole set.",
+        maxCalls === undefined ? undefined : { maxCalls },
+      );
+
+      const started = await session.run(session.packets.start(request));
+      const completed = await until(session, started.id, "completed");
+      expect(completed.finished).toBe(true);
+      expect(completed.summary).toBe("Finished with recorded gaps.");
+
+      const gates = history.filter((text) => text.includes(coverageGateText));
+      expect(gates).toHaveLength(rejections);
+
+      if (rejections > 0) {
+        expect(gates[0]).toContain("2 of 2 requested sheets were never opened");
+        expect(gates[0]).toContain("record_coverage_batch");
+        expect(gates[0]).toContain("That next call is accepted");
+      }
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  120000,
+);

@@ -365,3 +365,111 @@ test("resubmittal closure retains its revision target across an uninspected foll
     await rm(directory, { recursive: true, force: true });
   }
 }, 120000);
+
+test.each([
+  "missing",
+  "not shown",
+  "omitted",
+  "does not contain",
+  "no battery calculations or NAC voltage-drop tables",
+  "no schedules",
+  "no matrices",
+  "not located",
+  "not found",
+  "lacking input labels",
+  "clipped in the supplied PDF",
+] as const)(
+  "an absence claim (%s) requires source search even as a Needs input recommendation",
+  async (wording) => {
+    const directory = await mkdtemp(join(tmpdir(), "moke-audit3-absence-"));
+    let step = 0;
+    let inventory: PacketReview | undefined;
+    let artifact: Artifact | undefined;
+    let rejection = "";
+
+    const session = await open(directory, async (_url, init) => {
+      const request = decodeRequest(init);
+
+      switch (step++) {
+        case 0:
+          return response([{ name: "inventory_packet", arguments: {} }]);
+        case 1:
+          inventory = outputs(PacketReview, request).at(-1);
+
+          if (!inventory?.sheets[0]) throw new Error("Missing source inventory");
+
+          return response([
+            { name: "render_sheet", arguments: { sheetId: inventory.sheets[0].id } },
+          ]);
+        case 2:
+          artifact = outputs(Schema.Struct({ artifact: Artifact }), request).at(-1)?.artifact;
+
+          if (!inventory?.sheets[0] || !artifact) throw new Error("Missing source image");
+
+          return response([
+            {
+              name: "record_finding",
+              arguments: {
+                title: wording.startsWith("no ") ? wording : `Battery calculation ${wording}`,
+                discipline: "fire_alarm",
+                severity: "Critical",
+                status: "Needs input",
+                classification: "Recommendation",
+                locations: [
+                  {
+                    sheetId: inventory.sheets[0].id,
+                    detail: "Calculation page",
+                    region:
+                      artifact.region === null
+                        ? null
+                        : {
+                            x: artifact.region.x,
+                            y: artifact.region.y,
+                            width: artifact.region.width,
+                            height: artifact.region.height,
+                          },
+                  },
+                ],
+                observed:
+                  wording === "does not contain"
+                    ? "The packet does not contain a battery calculation."
+                    : wording.startsWith("no ")
+                      ? `The packet contains ${wording}.`
+                      : `The battery calculation is ${wording}.`,
+                correction: "Supply battery calculation.",
+                evidenceIds: [artifact.id],
+                evidenceNote: "",
+                citationIds: [],
+                calculationIds: [],
+                priorCommentId: null,
+              },
+            },
+          ]);
+        default:
+          rejection = strings(request).join("\n");
+
+          return response(
+            [],
+            "Source search remains incomplete; no missing calculation claim released.",
+          );
+      }
+    });
+
+    try {
+      const started = await session.run(
+        session.packets.start(await session.request("Review the fire alarm calculation.")),
+      );
+
+      const completed = await until(session, started.id, "failed");
+      expect(completed.findings).toHaveLength(0);
+      expect(completed.finished).toBe(false);
+      expect(completed.error).toContain("without recording a completed source review");
+      expect(completed.summary).toContain("Source search remains incomplete");
+      expect(rejection).toContain("absenceCheck");
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  120000,
+);
