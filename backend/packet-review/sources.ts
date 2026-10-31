@@ -529,7 +529,7 @@ export const readSource = Effect.fn("PacketReview.readSource")(function* (
     });
 
   if (contentType === "application/pdf" || body.startsWith("%PDF-"))
-    return yield* readPdfSource(updated, initial, bytes, options);
+    return yield* readPdfSource(updated, url, bytes, options);
 
   if (
     (contentType && !/^(?:text\/|application\/(?:xhtml\+xml|xml|json)$)/.test(contentType)) ||
