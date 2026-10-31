@@ -10,6 +10,7 @@ import {
   BackendReady,
   BackendRpc,
   BackendUnavailable,
+  backendRequestMaxBytes,
 } from "../src/lib/backend-rpc.ts";
 import { Application, BackendHandlers, type ApplicationEntry } from "./application.ts";
 
@@ -104,7 +105,7 @@ const program = Effect.gen(function* () {
         Bun.serve({
           hostname: "127.0.0.1",
           port: 0,
-          maxRequestBodySize: 64 * 1024,
+          maxRequestBodySize: backendRequestMaxBytes,
           idleTimeout: 0, // Authenticated progress streams can be quiet during bounded provider operations.
           fetch(request) {
             if (request.headers.get("origin") !== null) return new Response(null, { status: 403 });

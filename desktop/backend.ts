@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Redacted, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { RpcClient, type RpcClientError, RpcSerialization } from "effect/rpc";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
+import { RpcClient, RpcClientError, RpcSerialization } from "effect/rpc";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -81,6 +81,13 @@ const readiness = (child: ChildProcessWithoutNullStreams) =>
       () => new BackendUnavailable({ message: "The Bun backend could not become ready." }),
     ),
   );
+
+/** The Bun API refused this request body as too large; resending it unchanged cannot succeed. */
+export const requestTooLarge = (cause: unknown) =>
+  cause instanceof RpcClientError.RpcClientError &&
+  cause.reason instanceof HttpClientError.HttpClientErrorSchema &&
+  cause.reason.cause instanceof HttpClientError.StatusCodeError &&
+  cause.reason.cause.response.status === 413;
 
 /** A scoped, schema-validated client for the privately authenticated Bun process. */
 export class BackendApi extends Context.Service<
@@ -176,7 +183,16 @@ export class BackendApi extends Context.Service<
               client,
               HttpClientRequest.setHeader("authorization", `Bearer ${Redacted.value(token)}`),
             ),
-        }).pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(RpcSerialization.layerNdjson));
+        }).pipe(
+          // A refused request keeps its HTTP status instead of becoming an empty-response defect.
+          Layer.provide(
+            Layer.effect(
+              HttpClient.HttpClient,
+              Effect.map(HttpClient.HttpClient, HttpClient.filterStatusOk),
+            ).pipe(Layer.provide(FetchHttpClient.layer)),
+          ),
+          Layer.provide(RpcSerialization.layerNdjson),
+        );
 
         const context = yield* Layer.build(protocol);
         const api = yield* RpcClient.make(BackendRpc).pipe(Effect.provide(context));
