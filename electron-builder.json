@@ -25,7 +25,7 @@
   "asar": true,
   "forceCodeSigning": false,
   "mac": {
-    "icon": "desktop/icons/icon.png",
+    "icon": "desktop/icons/icon.icns",
     "target": ["dmg", "zip"],
     "identity": "-",
     "hardenedRuntime": false,
