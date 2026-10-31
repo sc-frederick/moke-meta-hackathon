@@ -11,7 +11,16 @@ import { transformPoint } from "#lib/review/geometry.ts";
 import { fileURLToPath } from "node:url";
 import { canvasNativeFileName, canvasNativePackage } from "../../scripts/prepare-pdf-assets.ts";
 import { Schema } from "effect";
-import { Region, Sheet, ProjectId, RevisionId, SheetId } from "#lib/review/contracts.ts";
+import {
+  DocumentError,
+  OperationId,
+  Region,
+  Sheet,
+  ProjectId,
+  RevisionId,
+  SheetId,
+} from "#lib/review/contracts.ts";
+import { importProject, openReviewOperations, shiftRegion } from "../fixtures/review-operations.ts";
 
 const sheetId = (value: string) => Schema.decodeUnknownSync(SheetId)(value);
 const projectId = (value: string) => Schema.decodeUnknownSync(ProjectId)(value);
@@ -376,6 +385,69 @@ function running(pid: number) {
     return false;
   }
 }
+
+test("render refuses an original replaced by another valid PDF and records nothing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-documents-integrity-"));
+  const source = join(directory, "plans.pdf");
+  await writeFile(source, createHeroPdf("A"));
+
+  try {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const documents = yield* Documents;
+          const { review, artifactRecords } = yield* openReviewOperations(directory, documents);
+          const projectId = yield* importProject(review, source);
+          const state = yield* review.snapshot(projectId, 0);
+          const sheet = state.sheets[0];
+          const revision = state.revisions[0];
+
+          if (sheet === undefined || revision === undefined)
+            return yield* Effect.die("Missing fixture sheet");
+
+          const request = {
+            projectId,
+            sheetId: sheet.id,
+            operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+            region: new Region({ x: 60, y: 360, width: 230, height: 300 }),
+            dpi: 72,
+          };
+
+          yield* review.render(request);
+          const artifacts = join(directory, "artifacts");
+          // Revision B is a valid PDF with the same page geometry and different content.
+          yield* Effect.promise(() =>
+            writeFile(join(artifacts, `${revision.sha256}.pdf`), createHeroPdf("B")),
+          );
+          const images = yield* Effect.promise(() => readdir(artifacts));
+          const records = yield* artifactRecords(projectId);
+
+          const direct = yield* Effect.flip(
+            documents.render(revision.sha256, sheet, shiftRegion(request.region, { x: 1 }), 72),
+          );
+
+          const recorded = yield* Effect.flip(
+            review.render({
+              ...request,
+              operationId: Schema.decodeUnknownSync(OperationId)(crypto.randomUUID()),
+              region: shiftRegion(request.region, { y: -60 }),
+            }),
+          );
+
+          for (const failure of [direct, recorded]) {
+            expect(Schema.is(DocumentError)(failure)).toBe(true);
+            expect(failure.message).toBe("The original PDF does not match its recorded hash.");
+          }
+
+          expect(yield* Effect.promise(() => readdir(artifacts))).toEqual(images);
+          expect(yield* artifactRecords(projectId)).toBe(records);
+        }).pipe(Effect.provide(documentsLayer(directory))),
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 60000);
 
 test("drawing-sized sheets and focused boxes fit the hard pixel ceiling with accurate actual-DPI transforms", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-large-drawing-"));

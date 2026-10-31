@@ -63,10 +63,16 @@ function classifyLoadError(cause: unknown): typeof WorkerFailure.Type {
   };
 }
 
-function loadDocument(pdfPath: string) {
+/** The bytes read for PDF.js are not the recorded original. */
+class SourceMismatch extends Error {}
+
+function loadDocument(pdfPath: string, sha256?: string) {
   const data = new Uint8Array(readFileSync(pdfPath));
 
   if (data.byteLength > DocumentsLimits.maxSourceBytes) throw new Error("limit exceeded");
+
+  // Hash the exact buffer PDF.js receives, so a replaced file cannot pass as the original.
+  if (sha256 !== undefined && Bun.SHA256.hash(data, "hex") !== sha256) throw new SourceMismatch();
 
   return getDocument({
     data,
@@ -187,6 +193,7 @@ async function inspectPdf(id: string, pdfPath: string) {
 async function renderRegion(
   id: string,
   pdfPath: string,
+  sha256: string,
   pageIndex: number,
   region: Region,
   rotation: 0 | 90 | 180 | 270,
@@ -196,7 +203,7 @@ async function renderRegion(
   let loading: ReturnType<typeof loadDocument> | undefined;
 
   try {
-    loading = loadDocument(pdfPath);
+    loading = loadDocument(pdfPath, sha256);
     const document = await loading.promise;
 
     if (pageIndex >= document.numPages) {
@@ -281,6 +288,17 @@ async function renderRegion(
     writeResponse(Schema.decodeUnknownSync(WorkerSuccess)({ id, ok: true, result }));
     page.cleanup();
   } catch (error) {
+    if (error instanceof SourceMismatch) {
+      writeResponse({
+        id,
+        ok: false,
+        reason: "unavailable",
+        message: "The original PDF does not match its recorded hash.",
+      });
+
+      return;
+    }
+
     if (error instanceof Error && /abort|cancel/i.test(error.message)) {
       writeResponse({ id, ok: false, reason: "cancelled", message: "The render was cancelled." });
 
@@ -420,6 +438,7 @@ async function handleRequest(line: string) {
   await renderRegion(
     decoded.id,
     decoded.pdfPath,
+    decoded.sha256,
     decoded.pageIndex,
     decoded.region,
     decoded.rotation,

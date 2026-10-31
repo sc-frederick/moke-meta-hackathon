@@ -158,8 +158,10 @@ export class Documents extends Context.Service<
 
                 const fitted = yield* validateRenderRequest(sheet, region, dpi);
 
+                // The worker verifies the original's hash on the exact bytes it renders.
                 const rendered = yield* workerRender(worker, {
                   pdfPath,
+                  sha256: originalSha256,
                   pageIndex: sheet.pageIndex,
                   region,
                   rotation: sheet.rotation,
