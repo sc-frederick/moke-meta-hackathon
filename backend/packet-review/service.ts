@@ -3927,7 +3927,8 @@ export class PacketReviews extends Context.Service<
                       ? input.maxCalls
                       : row.payload.maxCalls,
                   error: input.action === "cancel" ? row.payload.error : null,
-                  ...(input.action === "resume" ? { providerFailure: null } : {}),
+                  providerFailure:
+                    input.action === "resume" ? null : (row.payload.providerFailure ?? null),
                 }),
               );
 
