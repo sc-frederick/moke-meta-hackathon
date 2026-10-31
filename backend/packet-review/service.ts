@@ -79,6 +79,16 @@ import {
 } from "../review/prompts/review-prompt.ts";
 import { calculate, CalculationInput } from "./calculations.ts";
 import { readSource, searchSources } from "./sources.ts";
+import {
+  assertAssignedSheet,
+  assertPermitted,
+  assertSetupSheet,
+  defaultSetupLimits,
+  permits,
+  toolRole,
+  type PacketToolRole,
+  type SetupLimits,
+} from "./capabilities.ts";
 import { renderPacketReport } from "./report.ts";
 import { SamInspectionRequest } from "#lib/review/segmentation.ts";
 import { preparePacketSamRequest, decodePacketSamFocus, decodePacketSamResponse } from "./sam.ts";
@@ -106,7 +116,11 @@ const promptVersion = packetPromptVersion;
  * key allows 100 requests and 2M tokens a minute (2026-10-31); 16 sheet reviewers send about 40
  * requests a minute, and the shared request pacer holds any burst inside the limit.
  */
-export const defaultParallel = { minSheets: 4, concurrency: { meta: 32, baseten: 16 } } as const;
+export const defaultParallel = {
+  minSheets: 4,
+  concurrency: { meta: 32, baseten: 16 },
+  setup: defaultSetupLimits,
+} as const;
 
 /** Which conversation made each model or SAM request, and which sheet each sheet reviewer owns. */
 interface SheetAssignments {
@@ -136,6 +150,9 @@ const addPromptUsage = (
 });
 
 const attemptKey = (taskId: number, attempt: number) => `${taskId}:${attempt}`;
+
+/** Admission's answer when coordinator setup has used its request limit. */
+const setupEnded = Symbol("setupEnded");
 
 const ReceiptUsage = Schema.fromJsonString(
   Schema.Struct({
@@ -185,11 +202,31 @@ const changeSheet = (review: PacketReview, sheetId: string, change: SheetChange)
         }),
       );
 
-/** Advance a parallel review to its next stage. */
-const changeStage = (review: PacketReview, stage: "sheets" | "coordination") =>
+/** Advance a parallel review from its sheet stage to coordination. */
+const changeStage = (review: PacketReview, stage: "coordination") =>
   review.parallel === undefined
     ? review
     : new PacketReview(Struct.assign(review, { parallel: { ...review.parallel, stage } }));
+
+/** The project facts and sources every sheet reviewer starts from, as setup left them. */
+const setupSnapshot = (review: PacketReview) => ({
+  sheetIds: review.inspectedThisReviewSheetIds ?? [],
+  projectConfiguration: review.projectConfiguration,
+  sources: review.sources.map(({ id, url, title }) => ({ id, url, title })),
+});
+
+/**
+ * End coordinator setup and fix its snapshot. Sheet reviewers' openings are built from the snapshot,
+ * so a peer's later source or a steered configuration change cannot alter their shared prefix.
+ */
+const startSheets = (review: PacketReview) =>
+  review.parallel?.stage !== "setup"
+    ? review
+    : new PacketReview(
+        Struct.assign(review, {
+          parallel: { ...review.parallel, stage: "sheets" as const, setup: setupSnapshot(review) },
+        }),
+      );
 
 // A technical finding written after finish_sheet requires fresh presentation and notes.
 const invalidateSheetNotes = (review: PacketReview, sheetId: string) =>
@@ -363,6 +400,8 @@ interface Configuration {
   readonly parallel?: {
     readonly minSheets: number;
     readonly concurrency: Readonly<Record<"meta" | "baseten", number>>;
+    /** Coordinator setup's sheet and request limits; defaults to `defaultSetupLimits`. */
+    readonly setup?: SetupLimits;
   };
   readonly runPromise: <A, E>(
     effect: Effect.Effect<A, E>,
@@ -436,6 +475,7 @@ export class PacketReviews extends Context.Service<
           config.queries,
         );
 
+        const setupLimits = config.parallel?.setup ?? defaultSetupLimits;
         const updates = yield* PubSub.unbounded<PacketReview>();
         const runtimes = new Map<string, Runtime>();
         // Early finishes are returned to the reviewer a bounded number of times per review.
@@ -781,15 +821,13 @@ export class PacketReviews extends Context.Service<
           const imageCounts = new Map<number, number>();
           const nudged = new Set<number>();
 
-          const outsideSheet = (conversationId: number, sheetId: string) => {
-            const assigned = assignments.sheets.get(conversationId);
+          const outsideSheet = (
+            conversationId: number,
+            ...sheetIds: ReadonlyArray<string | null>
+          ) => assertAssignedSheet(assignments.sheets.get(conversationId), sheetIds);
 
-            if (assigned !== undefined && assigned !== sheetId)
-              throw error(
-                "input",
-                "You review one assigned sheet. Note references to other sheets in finish_sheet; the coordinator checks them across the set.",
-              );
-          };
+          const toolRoleOf = (review: PacketReview, conversationId: number) =>
+            toolRole(review, assignments.sheets.get(conversationId));
 
           const stages = {
             inventory_packet: "inventory",
@@ -806,6 +844,7 @@ export class PacketReviews extends Context.Service<
             record_finding_summary: "recording",
             record_prior_comment: "recording",
             ask_reviewer: "recording",
+            finish_setup: "recording",
             finish_review: "recording",
             finish_sheet: "recording",
             segment_objects: "segmentation",
@@ -814,8 +853,10 @@ export class PacketReviews extends Context.Service<
             typeof PacketActivityStage.Type
           >;
 
+          /** Authorize a tool for its conversation's current role, then record its activity. */
           const withActivity = async <A>(
             taskId: number,
+            conversationId: number,
             tool: typeof PacketActivityTool.Type,
             work: () => Promise<A>,
             sheet?: PacketReview["sheets"][number],
@@ -842,11 +883,11 @@ export class PacketReviews extends Context.Service<
                   };
 
             await run(
-              mutate(
-                row.project_id,
-                row.id,
-                (review) => new PacketReview(Struct.assign(review, { activity: contextual })),
-              ),
+              mutate(row.project_id, row.id, (review) => {
+                assertPermitted(toolRoleOf(review, conversationId), tool);
+
+                return new PacketReview(Struct.assign(review, { activity: contextual }));
+              }),
             );
 
             try {
@@ -884,6 +925,8 @@ export class PacketReviews extends Context.Service<
               input: S["Type"],
               api: { readonly conversationId: number },
             ) => Promise<O>,
+            // A round of only terminating tools ends the run without another model request.
+            terminate = false,
           ) =>
             defineTool({
               name,
@@ -896,11 +939,13 @@ export class PacketReviews extends Context.Service<
                   onExcessProperty: "error",
                 })(raw);
 
-                const value = await withActivity(api.taskId, name, () =>
+                const value = await withActivity(api.taskId, api.conversationId, name, () =>
                   work(api.taskId, input, api),
                 );
 
-                return { output: [{ type: "text" as const, text: JSON.stringify(value) }] };
+                const output = [{ type: "text" as const, text: JSON.stringify(value) }];
+
+                return terminate ? { output, control: { terminate: true } } : { output };
               },
             });
 
@@ -915,7 +960,8 @@ export class PacketReviews extends Context.Service<
 
           /**
            * One durable SAM path for model requests and host finding zooms. Intent is saved before
-           * dispatch, an unresolved outcome is never resent, and a pause drains the receipt.
+           * dispatch, an unresolved outcome is never resent, and a pause drains the receipt. A sheet
+           * reviewer segments only its own sheet.
            */
           const segment = async (
             taskId: number,
@@ -926,9 +972,11 @@ export class PacketReviews extends Context.Service<
             counted: boolean,
           ) => {
             if (!meta) throw error("unavailable", "SAM is not configured for this review.");
+            outsideSheet(conversationId, image.sheetId);
 
             return await withActivity(
               taskId,
+              conversationId,
               "segment_objects",
               async () => {
                 const prepared = await run(preparePacketSamRequest(image, request));
@@ -1291,15 +1339,21 @@ export class PacketReviews extends Context.Service<
                   ),
                 )(raw);
 
-                await run(
+                const current = await run(
                   query(
                     Effect.gen(function* () {
-                      yield* assertActive(yield* load(row.project_id, row.id));
+                      const loaded = yield* load(row.project_id, row.id);
+                      yield* assertActive(loaded);
+
+                      return loaded.payload;
                     }),
                   ),
                 );
 
                 outsideSheet(api.conversationId, input.sheetId);
+
+                if (toolRoleOf(current, api.conversationId) === "setup")
+                  assertSetupSheet(current, input.sheetId, setupLimits);
 
                 if (
                   row.payload.provider === "baseten" &&
@@ -1316,6 +1370,7 @@ export class PacketReviews extends Context.Service<
 
                 return await withActivity(
                   api.taskId,
+                  api.conversationId,
                   "render_sheet",
                   async () => {
                     const artifact = await run(
@@ -1663,6 +1718,19 @@ export class PacketReviews extends Context.Service<
                     "input",
                     "A sheet reviewer cannot search the whole set. List the suspected missing item under suspectedGaps in finish_sheet; the coordinator checks it.",
                   );
+
+                // A sheet reviewer's finding stays on its sheet, with evidence rendered from it.
+                outsideSheet(
+                  api.conversationId,
+                  ...input.locations.map((location) => location.sheetId),
+                );
+
+                if (assignments.sheets.has(api.conversationId))
+                  for (const artifactId of input.evidenceIds)
+                    outsideSheet(
+                      api.conversationId,
+                      (await run(config.review.artifact(row.project_id, artifactId))).sheetId,
+                    );
                 const id = input.id ?? stableId(row.id, task, "finding");
                 const revision = stableId(row.id, task, "finding-summary");
                 const sheetId = assignments.sheets.get(api.conversationId) ?? null;
@@ -1685,6 +1753,18 @@ export class PacketReviews extends Context.Service<
                   (review) => {
                     const existing = review.findings.find((entry) => entry.id === id);
                     const target = focusTarget(input.locations, review.sheets);
+
+                    // Reusing an id cannot adopt a peer sheet's or the coordinator's finding.
+                    if (
+                      sheetId !== null &&
+                      existing !== undefined &&
+                      ((existing.summary?.sheetId ?? sheetId) !== sheetId ||
+                        existing.locations.some((location) => location.sheetId !== sheetId))
+                    )
+                      throw error(
+                        "input",
+                        "That finding belongs to another sheet or to the coordinator. Note it in finish_sheet; the coordinator updates findings across sheets.",
+                      );
 
                     // A follow-up keeps its zoom while the focused problem area is unchanged.
                     const kept =
@@ -1898,6 +1978,42 @@ export class PacketReviews extends Context.Service<
                 ),
             ),
             tool(
+              "finish_setup",
+              "Coordinator setup only: end setup once the project configuration and governing sources are recorded. List project facts you could not establish in needsInput; each is recorded as Needs input, never guessed. The sheet reviewers start from the configuration and sources saved now.",
+              Schema.Struct({
+                needsInput: Schema.Array(
+                  Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+                ).check(Schema.isMaxLength(50)),
+              }),
+              async (task, input) =>
+                await recordTool(
+                  row,
+                  task,
+                  "finish_setup",
+                  (review) =>
+                    startSheets(
+                      review.parallel?.stage !== "setup"
+                        ? review
+                        : new PacketReview(
+                            Struct.assign(review, {
+                              projectConfiguration: {
+                                ...review.projectConfiguration,
+                                ...Object.fromEntries(
+                                  input.needsInput
+                                    .filter(
+                                      (item) => !Object.hasOwn(review.projectConfiguration, item),
+                                    )
+                                    .map((item) => [item, "Needs input"]),
+                                ),
+                              },
+                            }),
+                          ),
+                    ),
+                  { setup: "saved", needsInput: input.needsInput },
+                ),
+              true,
+            ),
+            tool(
               "finish_review",
               "Save the actual reviewed scope and summary for the offline report. Unreviewed sheets/passes and missing sources remain visible; finishing is not professional approval or user completion.",
               Schema.Struct({ summary: Text, missingInputs: Schema.Array(Schema.String) }),
@@ -2026,6 +2142,7 @@ export class PacketReviews extends Context.Service<
                   )(raw);
 
                   const current = await run(get(row.project_id, row.id));
+                  assertPermitted(toolRoleOf(current, api.conversationId), "segment_objects");
 
                   if (!current.evidenceIds.includes(request.artifactId))
                     throw error(
@@ -2131,6 +2248,8 @@ export class PacketReviews extends Context.Service<
 
           return {
             registry,
+            /** A role's tools in registry order; each role keeps one list for its cached prefix. */
+            toolsFor: (role: PacketToolRole) => tools.filter((entry) => permits(role, entry.name)),
             nextRequest: (conversationId: number | undefined) => {
               if (conversationId === undefined) imageCounts.clear();
               else imageCounts.delete(conversationId);
@@ -2152,6 +2271,7 @@ export class PacketReviews extends Context.Service<
           readonly root: Conversation;
           readonly children: Map<number, Conversation>;
           readonly assignments: SheetAssignments;
+          readonly toolsFor: ReturnType<typeof registryFor>["toolsFor"];
           readonly agent: {
             readonly model: ReturnType<typeof createAdmittedModels>["model"];
             readonly thinkingLevel: "xhigh" | "high";
@@ -2165,7 +2285,11 @@ export class PacketReviews extends Context.Service<
           const requestId = (part: string) => `${work.requestId}:${part}`;
 
           const stage = (next: "sheets" | "coordination") =>
-            run(mutate(row.project_id, row.id, (review) => changeStage(review, next)));
+            run(
+              mutate(row.project_id, row.id, (review) =>
+                next === "sheets" ? startSheets(review) : changeStage(review, next),
+              ),
+            );
 
           // A run replaced by resume or closed for shutdown records nothing further.
           const sheetState = (sheetId: string, change: SheetChange, active = true) =>
@@ -2181,14 +2305,21 @@ export class PacketReviews extends Context.Service<
                 {
                   type: "input",
                   requestId: work.requestId,
-                  content: JSON.stringify({ ...work.input, stage: "setup" }),
+                  content: JSON.stringify({ ...work.input, stage: "setup", setupLimits }),
                 },
                 BACKGROUND_CONTEXT,
               )
             ).wait(BACKGROUND_CONTEXT);
 
-            if (setup.status !== "done" || work.lease.closed) return setup;
-            review = await stage("sheets");
+            if (work.lease.closed) return setup;
+            review = await run(get(row.project_id, row.id));
+
+            // finish_setup or the setup request limit has already saved the snapshot; a final
+            // reply without finish_setup ends setup the same way.
+            if (review.parallel?.stage === "setup") {
+              if (setup.status !== "done") return setup;
+              review = await stage("sheets");
+            }
           }
 
           if (review.parallel?.stage === "sheets") {
@@ -2205,6 +2336,25 @@ export class PacketReviews extends Context.Service<
               role: "sheet",
               firmChecklist: review.firmChecklist,
             });
+
+            const setup = review.parallel.setup ?? setupSnapshot(review);
+
+            // Fields shared by every sheet reviewer come first, most stable first, so the
+            // provider can serve them from the prefix the first reviewer cached. They come from
+            // the setup snapshot, not from facts peers record while the sheets are reviewed.
+            const opening = {
+              stage: "sheet",
+              request: review.request,
+              scope: review.scope,
+              inventory: review.sheets.map(({ id, label, pageIndex, documentName }) => ({
+                id,
+                label,
+                pageIndex,
+                documentName,
+              })),
+              projectConfiguration: setup.projectConfiguration,
+              sources: setup.sources,
+            };
 
             const reviewSheet = async (sheetId: string) => {
               const current = await run(get(row.project_id, row.id));
@@ -2233,6 +2383,7 @@ export class PacketReviews extends Context.Service<
                       model: work.agent.model,
                       instructions: prompt,
                       thinkingLevel: work.agent.thinkingLevel,
+                      tools: work.toolsFor("sheet"),
                     },
                   },
                   BACKGROUND_CONTEXT,
@@ -2247,20 +2398,8 @@ export class PacketReviews extends Context.Service<
                   {
                     type: "input",
                     requestId: requestId(`sheet:${sheet.id}`),
-                    // Fields shared by every sheet reviewer come first, most stable first, so
-                    // the provider can serve them from the prefix the first reviewer cached.
                     content: JSON.stringify({
-                      stage: "sheet",
-                      request: current.request,
-                      scope: current.scope,
-                      inventory: current.sheets.map(({ id, label, pageIndex, documentName }) => ({
-                        id,
-                        label,
-                        pageIndex,
-                        documentName,
-                      })),
-                      projectConfiguration: current.projectConfiguration,
-                      sources: current.sources.map(({ id, url, title }) => ({ id, url, title })),
+                      ...opening,
                       continuation:
                         entry.conversationId === null
                           ? null
@@ -2361,6 +2500,9 @@ export class PacketReviews extends Context.Service<
           const gaps = new Map<string, number>();
 
           for (const gap of progress.gaps) gaps.set(gap.sheetId, (gaps.get(gap.sheetId) ?? 0) + 1);
+
+          // Coordination gets the whole review's tools; the list stays fixed for this stage.
+          await root.configure({ tools: work.toolsFor("coordination") }, BACKGROUND_CONTEXT);
 
           return await (
             await root.submit(
@@ -2485,6 +2627,23 @@ export class PacketReviews extends Context.Service<
                           return saved.response_json;
                         }
 
+                        // Until a sheet reviewer starts, every admitted call is the coordinator's
+                        // setup work, including any after finish_setup in the same run. At the
+                        // limit setup ends with what it recorded; unknown facts stay unrecorded.
+                        const parallel = current.payload.parallel;
+
+                        if (
+                          parallel !== undefined &&
+                          parallel.stage !== "coordination" &&
+                          parallel.sheets.every((entry) => entry.conversationId === null) &&
+                          current.payload.admittedCalls >= setupLimits.requests
+                        ) {
+                          if (parallel.stage === "setup")
+                            yield* save(current, startSheets(current.payload));
+
+                          return setupEnded;
+                        }
+
                         const sql = yield* SqlClient.SqlClient;
 
                         const unresolved = yield* Schema.decodeUnknownEffect(UnresolvedAttempts)(
@@ -2530,8 +2689,15 @@ export class PacketReviews extends Context.Service<
                     ),
                   )
                     .then(async (receipt) => {
-                      if (receipt === null)
+                      if (receipt === null || receipt === setupEnded)
                         await run(get(row.project_id, row.id).pipe(Effect.flatMap(publish)));
+
+                      // This request is never sent; its run ends and the sheet reviewers start.
+                      if (receipt === setupEnded)
+                        throw error(
+                          "cancelled",
+                          "Setup reached its request limit. The sheet reviewers continue from the recorded configuration.",
+                        );
                       toolRegistry.nextRequest(assignments.requests.get(phase["task.id"]));
 
                       return receipt;
@@ -2739,6 +2905,7 @@ export class PacketReviews extends Context.Service<
 
             const thinkingLevel = row.payload.provider === "meta" ? "xhigh" : "high";
 
+            // A parallel coordinator starts with setup's tools; coordination widens them once.
             const root = await harness.root(BACKGROUND_CONTEXT, {
               agent: {
                 model: admitted.model,
@@ -2748,6 +2915,9 @@ export class PacketReviews extends Context.Service<
                   firmChecklist: row.payload.firmChecklist,
                 }),
                 thinkingLevel,
+                tools: toolRegistry.toolsFor(
+                  row.payload.parallel === undefined ? "review" : "setup",
+                ),
               },
             });
 
@@ -2824,6 +2994,7 @@ export class PacketReviews extends Context.Service<
                     root,
                     children,
                     assignments,
+                    toolsFor: toolRegistry.toolsFor,
                     agent: { model: admitted.model, thinkingLevel },
                     input,
                     requestId: resumeRequestId ?? row.id,

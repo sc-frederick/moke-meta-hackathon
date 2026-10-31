@@ -291,6 +291,7 @@ export const PacketActivityTool = Schema.Literals([
   "record_finding_summary",
   "record_prior_comment",
   "ask_reviewer",
+  "finish_setup",
   "finish_review",
   "finish_sheet",
   "segment_objects",
@@ -361,11 +362,26 @@ export const PacketSheetReview = Schema.Struct({
   promptUsage: Schema.optionalKey(PacketPromptUsage),
 });
 
+/** Project facts fixed when coordinator setup ends; every sheet reviewer's opening is built from them. */
+export const PacketSetup = Schema.Struct({
+  /** Sheets the coordinator opened in setup; before coordination it may reopen only these. */
+  sheetIds: Schema.Array(SheetId),
+  projectConfiguration: Schema.Record(Schema.String, Schema.String),
+  sources: Schema.Array(
+    Schema.Struct({
+      id: PacketSource.fields.id,
+      url: PacketSource.fields.url,
+      title: PacketSource.fields.title,
+    }),
+  ),
+});
+
 /** Large reviews split into coordinator setup, concurrent sheet reviewers and cross-sheet coordination. */
 export const PacketParallelReview = Schema.Struct({
   stage: Schema.Literals(["setup", "sheets", "coordination"]),
   concurrency: Schema.Int.check(Schema.isGreaterThan(0)),
   sheets: Schema.Array(PacketSheetReview),
+  setup: Schema.optionalKey(PacketSetup),
 });
 
 /** Durable packet progress and report data sent to the trusted workbench. */
