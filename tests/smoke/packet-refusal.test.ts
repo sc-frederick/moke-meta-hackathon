@@ -52,7 +52,7 @@ test("a request the provider refuses past its budget pauses the review uncharged
 
     expect(unresolved).toEqual([]);
 
-    await session.run(
+    const resuming = await session.run(
       session.packets.control({
         projectId: session.projectId,
         reviewId: started.id,
@@ -61,6 +61,8 @@ test("a request the provider refuses past its budget pauses the review uncharged
         commandId: id(),
       }),
     );
+
+    expect(resuming.providerFailure).toBeNull();
 
     // The scripted reviewer answers without finishing, so the resumed review ends incomplete.
     const resumed = await until(session, started.id, "failed");
