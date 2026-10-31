@@ -50,6 +50,56 @@ The probes sent synthetic text only (repeated policy lines), with `max_tokens` 1
   [Baseten model library](https://www.baseten.co/library/muse-spark-open/)), uncached input was
   56% of their cost, so the cache share remains the main cost lever.
 
+## Live parallel review with the pacer
+
+On 2026-10-31 the Brewery packet (project 01, 29 sheets) ran an Initial Review on Spark Open
+through the real packet service, with the Meta key for SAM, the default parallel settings (16
+Baseten sheet reviewers) and a 600-call budget. The harness was a local script outside the
+repository.
+
+| Measure                                     | Result                                                     |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| Time to the call budget                     | 36.4 min; the review paused at 600 calls                   |
+| Coordinator setup                           | 63 requests, about 25 min, 92.6% cached                    |
+| Sheet reviewers at once                     | 16                                                         |
+| Baseten responses                           | 477, all HTTP 200; no 429 or 529                           |
+| Lowest `x-ratelimit-remaining-requests`     | above 5 on every response                                  |
+| Sheets finished before the budget           | 13 of 29; 82 findings recorded                             |
+| Cached share (473 completed model requests) | 87.4%                                                      |
+| Cost at list prices                         | $10.35 (3.62M uncached, 25.1M cached, 0.48M output tokens) |
+
+One sheet reviewer stopped when a stream returned HTTP 200 but did not complete. Baseten
+documents that a stream can end early without an error event
+([Streaming responses](https://docs.baseten.co/inference/errors#streaming-responses)). It
+was not a refusal, so it was not resent.
+
+The setup stage ran long because Spark Open reviewed sheets there: it rendered 24 sheets and
+recorded 10 findings and a coverage batch before ending setup, although the setup instructions
+ask only for project configuration and sources. Sheet fan-out began about 25 minutes in.
+
+### Where the uncached input came from
+
+- Sheet reviewers' first requests were 2% of the uncached input: they averaged 20,029 cached
+  and 2,054 uncached tokens, so warming the shared prefix before fan-out works.
+- 49 requests whose cached prefix fell below 60% of the previous prompt were 45% of the
+  uncached input. In sheet reviewers the cache fell back to the shared prefix of about 21,000
+  tokens, the position of the conversation's first image. These are the 8-image window's
+  steps: dropping the oldest images rewrites the first image's position.
+- Replaying the 30 journal transcripts through alternative windows, with images costed at
+  7,000 tokens to match the measured prompt totals, gave these prefix-stable shares:
+
+  | Window                               | Share | Images per request |
+  | ------------------------------------ | ----: | -----------------: |
+  | Current: drop the oldest 4 at a time | 89.6% |               5.03 |
+  | Drop the oldest 8 at a time          | 90.6% |               4.56 |
+  | Keep the first 2 and the latest 6    | 87.9% |               5.38 |
+
+  Keeping early images moves each eviction later in the prompt but evicts on every turn, which
+  costs more. The best alternative gains one point and removes a tenth of each request's images,
+  so the window stays as it is. Baseten's 8-image limit keeps Spark Open packet reviews near
+  88 to 90% cached; Meta, which keeps every image, measured 91 to 95% on the same packets
+  ([fast initial review validation](fast-initial-review-validation.md)).
+
 ## Decisions
 
 1. Pace every request on a key in one process through a shared bucket for requests and
@@ -63,7 +113,7 @@ The probes sent synthetic text only (repeated policy lines), with `max_tokens` 1
    six times on its own timer, about 90 seconds in total, and then stopped the review as
    uncertain with a message saying it might have been charged.
 4. Run 16 Baseten sheet reviewers at once instead of 4.
-5. Keep one affinity key per shared prefix.
+5. Keep one affinity key per shared prefix, and keep the current image window.
 
 ## Sources
 
