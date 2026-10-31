@@ -46,7 +46,10 @@ outside `app.asar`, a native `pdf-worker`, the matching canvas addon, PDF.js wor
 assets, licenses, and immutable SQL migrations. `scripts/prepare-pdf-assets.ts`
 stages PDF.js from an explicit runtime allowlist: the legacy worker module plus
 the CMap, standard font and WASM directories with their licenses. Source maps,
-minified duplicates and the web viewer are not shipped. No system Bun or Node is
+minified duplicates and the web viewer are not shipped. `app.asar` carries only
+the production packages the Electron bundle leaves external, Effect and
+electron-effect-rpc. The Modal SDK is a development dependency compiled into
+`app-backend`. No system Bun or Node is
 required by the packaged app. CI launches the packaged application after building
 its installers on each OS, verifying the compiled backend and renderer together.
 
