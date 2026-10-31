@@ -44,7 +44,11 @@
   } from "#lib/review/packet.ts";
   import { packetFindingText } from "#lib/review/packet.ts";
   import { focusOutlines } from "#lib/review/segmentation.ts";
-  import { inInitialReviewPhase, initialReview } from "#lib/review/initial-review.ts";
+  import {
+    inInitialReviewPhase,
+    initialReview,
+    initialReviewRequest,
+  } from "#lib/review/initial-review.ts";
   import { followPacketReviews } from "#lib/review/packet-subscription.ts";
   import ReviewIcon from "./ReviewIcon.svelte";
   import ReviewText from "./ReviewText.svelte";
@@ -374,7 +378,7 @@
           (executionStatus.unresolvedAttempts > 0 && !executionStatus.uncertaintyAcknowledged))),
   );
 
-  const initialReviewModel = "muse-spark-1.3" satisfies typeof ReviewModelId.Type;
+  const initialReviewModel = initialReviewRequest.model;
 
   // Shown until a revised set arrives; a first set made of several PDFs keeps it.
   const initialReviewVisible = $derived(
@@ -1212,10 +1216,9 @@
 
     // The composer shows where this review runs.
     location = initialReviewPlacement.location;
-    // No selection: the first set can span several PDFs, and every one of its sheets is in scope.
     await startDrawingReview(
       command,
-      { model: initialReviewModel, discipline: "auto", maxCalls: null, preset: initialReview.id },
+      initialReviewRequest,
       initialReviewPlacement.location,
       () => undefined,
     );
