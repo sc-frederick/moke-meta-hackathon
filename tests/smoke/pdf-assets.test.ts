@@ -3,7 +3,7 @@ import { loadImage, createCanvas } from "@napi-rs/canvas";
 import { Effect, Schema } from "effect";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { Documents } from "../../backend/documents/documents.ts";
 import { ProjectId, Region, RevisionId, Sheet, SheetId } from "#lib/review/contracts.ts";
 import { canvasNativeFileName, preparePdfAssets } from "../../scripts/prepare-pdf-assets.ts";
@@ -22,7 +22,7 @@ test("staged PDF.js assets are the runtime allowlist and render rotated text on 
 
     const files = (await readdir(pdfjs, { recursive: true, withFileTypes: true }))
       .filter((entry) => entry.isFile())
-      .map((entry) => join(entry.parentPath, entry.name).slice(pdfjs.length + 1));
+      .map((entry) => relative(pdfjs, join(entry.parentPath, entry.name)).replaceAll(sep, "/"));
 
     expect(files.filter((file) => file.startsWith("legacy/"))).toEqual([
       "legacy/build/pdf.worker.mjs",
