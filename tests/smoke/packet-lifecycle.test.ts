@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
-import { Effect, Result, Schema } from "effect";
+import { Clock, Effect, Result, Schema } from "effect";
 import { SqlClient } from "effect/sql";
+import { TestClock } from "effect/testing";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -339,6 +340,18 @@ test.each(["uncertain", "completed"] as const)(
   120000,
 );
 
+/** Idle time between a review stopping and its cancellation, long enough that counting it is unmistakable. */
+const idleMs = 10 * 60_000;
+
+/** Run `operation` on a TestClock advanced `idleMs` past the live time, so no real time passes. */
+const afterIdle = <A, E>(operation: Effect.Effect<A, E>) =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(yield* TestClock.withLive(Clock.currentTimeMillis));
+    yield* TestClock.adjust(idleMs);
+
+    return yield* operation;
+  }).pipe(Effect.provide(TestClock.layer()));
+
 test("provider HTTP diagnostics survive cancellation without rewriting active duration or replaying inference", async () => {
   const directory = await mkdtemp(join(tmpdir(), "moke-audit3-provider-"));
   let sends = 0;
@@ -362,18 +375,20 @@ test("provider HTTP diagnostics survive cancellation without rewriting active du
     expect(failed.error).toContain("HTTP 401");
     expect(failed.error).toContain("may have been charged");
     expect(JSON.stringify(failed)).not.toContain("private-provider-body-credential");
-    await Bun.sleep(25);
 
     const cancelled = await session.run(
-      session.packets.control({
-        projectId: session.projectId,
-        reviewId: failed.id,
-        expectedVersion: failed.version,
-        action: "cancel",
-        commandId: id(),
-      }),
+      afterIdle(
+        session.packets.control({
+          projectId: session.projectId,
+          reviewId: failed.id,
+          expectedVersion: failed.version,
+          action: "cancel",
+          commandId: id(),
+        }),
+      ),
     );
 
+    expect(cancelled.changedAt - failed.changedAt).toBeGreaterThanOrEqual(idleMs);
     expect(cancelled.error).toBe(failed.error);
     expect(cancelled.providerFailure).toEqual(failed.providerFailure);
     expect(cancelled.activeDurationMs).toBe(failed.activeDurationMs);
@@ -418,18 +433,20 @@ test("pause accepts progress advancing since the displayed version and cancellat
     expect(paused.version).toBeGreaterThan(started.version);
     const duration = paused.activeDurationMs;
     release.resolve();
-    await Bun.sleep(25);
 
     const cancelled = await session.run(
-      session.packets.control({
-        projectId: session.projectId,
-        reviewId: started.id,
-        expectedVersion: paused.version,
-        action: "cancel",
-        commandId: id(),
-      }),
+      afterIdle(
+        session.packets.control({
+          projectId: session.projectId,
+          reviewId: started.id,
+          expectedVersion: paused.version,
+          action: "cancel",
+          commandId: id(),
+        }),
+      ),
     );
 
+    expect(cancelled.changedAt - paused.changedAt).toBeGreaterThanOrEqual(idleMs);
     expect(cancelled.activeDurationMs).toBe(duration);
     expect(cancelled.activeSince).toBeNull();
   } finally {
