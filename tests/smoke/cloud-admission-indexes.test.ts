@@ -140,7 +140,9 @@ test("cloud admission queries use indexes after migration 0012 with unchanged re
     });
     expect(database.query("SELECT count(*) AS n FROM packet_reviews").get()).toEqual({ n: 600 });
     expect(
-      database.query("SELECT name FROM __project_kit_migrations ORDER BY name DESC LIMIT 1").get(),
+      database
+        .query("SELECT name FROM __project_kit_migrations WHERE name=?")
+        .get("0012_cloud_admission_indexes.sql"),
     ).toEqual({ name: "0012_cloud_admission_indexes.sql" });
     expect((await readdir(backups)).some((name) => name.includes("before-migration"))).toBe(true);
   } finally {
