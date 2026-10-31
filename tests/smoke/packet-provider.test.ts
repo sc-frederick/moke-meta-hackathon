@@ -987,3 +987,152 @@ test("a connection lost after a refused send stays unresolved", async () => {
   expect(session.refused).toEqual([]);
   expect(session.endings).toEqual([true]);
 });
+
+/** A Meta session whose Files uploads the test holds and releases. */
+function uploadFixture() {
+  const uploads: Array<{
+    readonly signal: AbortSignal | undefined;
+    readonly release: (id: string) => void;
+  }> = [];
+
+  const started = counter();
+  const sent: Array<string> = [];
+  let inFlight = 0;
+  let peak = 0;
+
+  const admitted = createAdmittedModels(
+    {
+      provider: "meta",
+      model: "muse-spark-1.3",
+      apiKey: Redacted.make("packet-meta-fixture-key"),
+      route: "recorded",
+      imageFiles: true,
+      transport: async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+
+        if (!url.endsWith("/files")) {
+          sent.push(Schema.decodeUnknownSync(Schema.String)(init?.body));
+
+          return response("meta");
+        }
+
+        const held = Promise.withResolvers<string>();
+        uploads.push({ signal: init?.signal ?? undefined, release: held.resolve });
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        started.add();
+
+        try {
+          const signal = init?.signal;
+
+          const id = await new Promise<string>((resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+            void held.promise.then(resolve);
+          });
+
+          return Response.json({ id, purpose: "user_data" });
+        } finally {
+          inFlight--;
+        }
+      },
+    },
+    {
+      packetReview: true,
+      maxInputTokens: 1048576,
+      maxOutputTokens: 256000,
+      begin: async () => null,
+      send: async () => undefined,
+      complete: async () => undefined,
+      end: async () => undefined,
+    },
+  );
+
+  const model = admitted.models.getModel(admitted.model.provider, admitted.model.modelId);
+
+  if (!model) throw new Error("Fixture model not available");
+
+  const ask = (images: ReturnType<typeof pictures>, signal?: AbortSignal) =>
+    admitted.telemetry.startSpan(generation, (telemetry) =>
+      admitted.models.completeSimple(
+        model,
+        {
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "Review these crops." }, ...images],
+              timestamp: 0,
+            },
+          ],
+        },
+        signal === undefined ? { telemetry } : { telemetry, signal },
+      ),
+    );
+
+  return { ask, uploads, started, sent, peak: () => peak };
+}
+
+test("cancelling the only request waiting on a held upload stops the upload", async () => {
+  const session = uploadFixture();
+  const [image] = pictures(1);
+
+  if (image === undefined) throw new Error("Missing fixture image");
+  const controller = new AbortController();
+  const cancelled = session.ask([image], controller.signal);
+  await session.started.reached(1);
+  controller.abort();
+
+  // The request settles without the upload ever being released, and nothing is sent.
+  expect((await cancelled).stopReason).toBe("error");
+  expect(session.uploads[0]?.signal?.aborted).toBe(true);
+  expect(session.sent).toEqual([]);
+
+  // A stopped upload is not remembered as a failure; the next request uploads the image again.
+  const next = session.ask([image]);
+  await session.started.reached(2);
+  session.uploads[1]?.release("file-after-cancel");
+  expect((await next).stopReason).toBe("stop");
+  expect(session.sent[0]).toContain('"file_id":"file-after-cancel"');
+});
+
+test("cancelling one of two requests sharing an upload leaves it running for the other", async () => {
+  const session = uploadFixture();
+  const [shared, own] = pictures(2);
+
+  if (shared === undefined || own === undefined) throw new Error("Missing fixture images");
+  const controller = new AbortController();
+  const cancelled = session.ask([shared], controller.signal);
+  await session.started.reached(1);
+
+  // The peer joins the shared upload before it starts its own image's upload.
+  const peer = session.ask([shared, own]);
+  await session.started.reached(2);
+  controller.abort();
+  expect((await cancelled).stopReason).toBe("error");
+  expect(session.uploads[0]?.signal?.aborted).toBe(false);
+
+  session.uploads[0]?.release("file-shared");
+  session.uploads[1]?.release("file-own");
+  expect((await peer).stopReason).toBe("stop");
+  expect(session.started.count).toBe(2);
+  expect(session.sent).toHaveLength(1);
+  expect(session.sent[0]).toContain('"file_id":"file-shared"');
+  expect(session.sent[0]).toContain('"file_id":"file-own"');
+});
+
+test("one review uploads at most eight request images at once", async () => {
+  const session = uploadFixture();
+  const pending = session.ask(pictures(12));
+  await session.started.reached(8);
+
+  for (let released = 0; released < 12; released++) {
+    await session.started.reached(Math.min(12, released + 1));
+    session.uploads[released]?.release(`file-${released}`);
+  }
+
+  expect((await pending).stopReason).toBe("stop");
+  expect(session.started.count).toBe(12);
+  expect(session.peak()).toBe(8);
+
+  for (let index = 0; index < 12; index++)
+    expect(session.sent[0]).toContain(`"file_id":"file-${index}"`);
+});

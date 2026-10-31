@@ -165,6 +165,8 @@ least 90% of prompt tokens served from cache (`cacheRead / (input + cacheRead)`)
   the [Files API](https://dev.meta.ai/docs/file-handling) (`purpose=user_data`,
   24-hour expiry) and send its `file_id`, so later turns no longer resend base64.
   A failed upload leaves that image inline and is not retried for five minutes.
+  A review uploads at most eight images at once. An upload stops when every request
+  waiting for it is cancelled, and the next request uploads that image again.
 
 A probe on 2026-10-30 confirmed that Meta accepts `file_id` images inside
 `function_call_output` and reads them, that a base64 request after the matching

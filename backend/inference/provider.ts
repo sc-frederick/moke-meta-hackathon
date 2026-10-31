@@ -12,7 +12,7 @@ import type {
   ImageContent,
 } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import { Option, Predicate, Redacted, Schema } from "effect";
+import { Effect, Option, Predicate, Redacted, Schema, Semaphore } from "effect";
 import { createHash } from "node:crypto";
 import { type PacerLease, type Refusal, RequestPacer, sharedPacer } from "./pacing.ts";
 import { parseResponseReceipt } from "./response.ts";
@@ -62,6 +62,16 @@ const imageFileLifetimeSeconds = 24 * 60 * 60;
 
 /** A failed upload falls back to inline base64 and is not retried for five minutes. */
 const imageFileRetryMs = 5 * 60_000;
+
+/** One review uploads at most this many request images at once; later images wait their turn. */
+const imageUploadConcurrency = 8;
+
+/** One Files upload, shared by every request of a review that carries the same image bytes. */
+interface ImageUpload {
+  readonly reusableUntil: number;
+  /** Await the file ID until `signal` aborts; when no request still waits, the upload stops. */
+  readonly join: (signal: AbortSignal | undefined) => Promise<string | null>;
+}
 
 const MetaFile = Schema.Struct({
   id: Schema.String.check(Schema.isPattern(/^file-[A-Za-z0-9_-]{1,128}$/)),
@@ -472,66 +482,124 @@ export function createAdmittedModels(
 
   const imageFiles =
     selected.provider === "meta" && (configuration.imageFiles ?? configuration.route === "live")
-      ? new Map<string, { readonly id: Promise<string | null>; readonly reusableUntil: number }>()
+      ? new Map<string, ImageUpload>()
       : undefined;
 
-  /** Upload one delivered image once; concurrent requests for the same bytes share the upload. */
-  const imageFileId = (files: NonNullable<typeof imageFiles>, image: string) => {
+  const uploadSlots = Semaphore.makeUnsafe(imageUploadConcurrency);
+
+  /** Send one image to the Files API once a slot is free; any failure or stop leaves it inline. */
+  const uploadImage = (image: string, sha256: string, signal: AbortSignal) =>
+    Effect.runPromise(
+      Effect.tryPromise(async (stopped) => {
+        const mediaType = image.slice("data:".length, image.indexOf(";"));
+        const form = new FormData();
+        form.append("purpose", "user_data");
+        form.append("expires_after[anchor]", "created_at");
+        form.append("expires_after[seconds]", String(imageFileLifetimeSeconds));
+        form.append(
+          "file",
+          new File(
+            [Buffer.from(image.slice(image.indexOf(",") + 1), "base64")],
+            `${sha256}.${mediaType.slice("image/".length)}`,
+            { type: mediaType },
+          ),
+        );
+
+        const response = await (configuration.transport ?? globalThis.fetch)(`${baseUrl}/files`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${Redacted.value(configuration.apiKey)}` },
+          body: form,
+          signal: AbortSignal.any([stopped, AbortSignal.timeout(60_000)]),
+        });
+
+        if (!response.ok) {
+          await response.body?.cancel();
+
+          return null;
+        }
+
+        return Option.getOrNull(
+          Option.map(
+            Schema.decodeUnknownOption(MetaFile)(await response.json()),
+            (file) => file.id,
+          ),
+        );
+      }).pipe(Semaphore.withPermit(uploadSlots)),
+      { signal },
+    ).catch(() => null);
+
+  /**
+   * Upload one delivered image once; concurrent requests for the same bytes share the upload. Each
+   * request stops waiting when its own signal aborts, and the upload stops only when none waits.
+   */
+  const imageFileId = (
+    files: NonNullable<typeof imageFiles>,
+    image: string,
+    signal: AbortSignal | undefined,
+  ) => {
     const sha256 = createHash("sha256").update(image).digest("hex");
     const known = files.get(sha256);
 
-    if (known !== undefined && known.reusableUntil > Date.now()) return known.id;
-    const mediaType = image.slice("data:".length, image.indexOf(";"));
+    if (known !== undefined && known.reusableUntil > Date.now()) return known.join(signal);
+    const lifetime = new AbortController();
+    const id = uploadImage(image, sha256, lifetime.signal);
+    let settled = false;
+    let waiters = 0;
 
-    const id = (async () => {
-      const form = new FormData();
-      form.append("purpose", "user_data");
-      form.append("expires_after[anchor]", "created_at");
-      form.append("expires_after[seconds]", String(imageFileLifetimeSeconds));
-      form.append(
-        "file",
-        new File(
-          [Buffer.from(image.slice(image.indexOf(",") + 1), "base64")],
-          `${sha256}.${mediaType.slice("image/".length)}`,
-          { type: mediaType },
-        ),
-      );
-
-      const response = await (configuration.transport ?? globalThis.fetch)(`${baseUrl}/files`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${Redacted.value(configuration.apiKey)}` },
-        body: form,
-        signal: AbortSignal.timeout(60_000),
-      });
-
-      if (!response.ok) {
-        await response.body?.cancel();
-
-        return null;
-      }
-
-      return Option.getOrNull(
-        Option.map(Schema.decodeUnknownOption(MetaFile)(await response.json()), (file) => file.id),
-      );
-    })().catch(() => null);
-
-    files.set(sha256, {
-      id,
+    const upload: ImageUpload = {
       reusableUntil: Date.now() + (imageFileLifetimeSeconds - 3600) * 1000,
-    });
+      join: (waiter) => {
+        if (settled) return id;
+
+        if (waiter?.aborted) return Promise.reject(waiter.reason);
+        waiters++;
+
+        // A request that cannot be cancelled holds the upload until it settles.
+        if (waiter === undefined) return id;
+
+        return new Promise((resolve, reject) => {
+          const leave = () => {
+            waiters--;
+
+            // A stopped upload is forgotten, so the next request uploads again without waiting.
+            if (waiters === 0 && !settled) {
+              lifetime.abort();
+
+              if (files.get(sha256) === upload) files.delete(sha256);
+            }
+
+            reject(waiter.reason);
+          };
+
+          waiter.addEventListener("abort", leave, { once: true });
+          void id.then((uploaded) => {
+            waiter.removeEventListener("abort", leave);
+            resolve(uploaded);
+          });
+        });
+      },
+    };
+
+    files.set(sha256, upload);
     void id.then((uploaded) => {
-      if (uploaded === null)
-        files.set(sha256, { id, reusableUntil: Date.now() + imageFileRetryMs });
+      settled = true;
+
+      if (uploaded === null && files.get(sha256) === upload)
+        files.set(sha256, { ...upload, reusableUntil: Date.now() + imageFileRetryMs });
     });
 
-    return id;
+    return upload.join(signal);
   };
 
   /** Replace inline images with Files API references; an image whose upload failed stays inline. */
-  const referenceImages = async (value: Schema.MutableJson): Promise<Schema.MutableJson> => {
+  const referenceImages = async (
+    value: Schema.MutableJson,
+    signal: AbortSignal | undefined,
+  ): Promise<Schema.MutableJson> => {
     if (imageFiles === undefined) return value;
 
-    if (Array.isArray(value)) return Promise.all(value.map(referenceImages));
+    if (Array.isArray(value))
+      return Promise.all(value.map((child) => referenceImages(child, signal)));
 
     if (!Predicate.isObject(value)) return value;
 
@@ -546,7 +614,7 @@ export function createAdmittedModels(
       Predicate.isString(image) &&
       image.startsWith("data:image/")
     ) {
-      const id = await imageFileId(imageFiles, image);
+      const id = await imageFileId(imageFiles, image, signal);
 
       return id === null
         ? value
@@ -555,7 +623,7 @@ export function createAdmittedModels(
 
     return Object.fromEntries(
       await Promise.all(
-        entries.map(async ([key, child]) => [key, await referenceImages(child)] as const),
+        entries.map(async ([key, child]) => [key, await referenceImages(child, signal)] as const),
       ),
     );
   };
@@ -917,6 +985,7 @@ export function createAdmittedModels(
         if (imageFiles !== undefined && payload.input !== undefined)
           changes.input = await referenceImages(
             Schema.decodeUnknownSync(Schema.MutableJson)(JSON.parse(JSON.stringify(payload.input))),
+            options?.signal,
           );
 
         if (admission.packetReview)
