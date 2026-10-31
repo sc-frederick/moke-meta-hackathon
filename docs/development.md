@@ -49,7 +49,11 @@ deduplication, and recovery.
 Normal tests require no provider keys or private drawing pack. Provider adapters
 use local HTTP endpoints or injected transports. Poppler-dependent experiments
 skip when `pdftoppm` is unavailable; production PDF-worker tests still run.
-Vendored lint tests are outside Bun's application test root.
+Vendored lint tests are outside Bun's application test root. After changing a
+local rule customization, run `bun run test:lint-rule-cli`. It drives the
+repository's Oxlint through Bun with the spacing rule: bad input fails, `--fix`
+writes the expected files, and a second pass is stable. The other vendored rule
+tests use the upstream runner and are not part of this repository's commands.
 
 Run one smoke suite with `bun test ./tests/smoke/review.test.ts`. Electron tests
 need `bun run build` first. The Playwright `desktop` project runs the regular

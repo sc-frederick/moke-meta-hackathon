@@ -27,6 +27,7 @@
     "format:check": "bun fmt --check",
     "test": "bun test ./tests/smoke",
     "test:sam": "bun scripts/test-sam.ts",
+    "test:lint-rule-cli": "bun tools/oxlint/anti-slop/rules/require-readable-spacing-cli.test.ts",
     "reconcile:fixtures": "bun scripts/reconcile-fixtures.ts",
     "test:e2e": "bun scripts/isolated-desktop.ts --project=desktop",
     "verify": "bun run check && bun run test && bun run build && bun run test:e2e",

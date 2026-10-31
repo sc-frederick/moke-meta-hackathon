@@ -11,9 +11,12 @@ const probeRoot = mkdtempSync(join(tmpdir(), "anti-slop-spacing-"));
 const config = join(probeRoot, "oxlint.json");
 const first = join(probeRoot, "first.ts");
 const second = join(probeRoot, "second.ts");
+const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
+// Local change: run the repository's pinned Oxlint through Bun, as `bun run lint` does.
 function runSpacingLint(...args: string[]) {
-  const result = spawnSync("pnpm", ["exec", "oxlint", "--config", config, ...args], {
+  const result = spawnSync(process.execPath, ["--bun", "oxlint", "--config", config, ...args], {
+    cwd: repositoryRoot,
     encoding: "utf8",
   });
   return { status: result.status, output: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
