@@ -91,6 +91,13 @@ While it names an active cloud review, all local domain writes, PDF imports,
 render writes, execution controls, and restores are fenced. Read-only review
 snapshots and existing artifact reads remain available. Closing or reopening the
 desktop preserves this fence. A lost connection never releases it.
+The file keeps every receipt, up to 1,000, within an 8 MiB budget that writes and
+reads share. A refused write leaves the previous file in place. Retries compare
+a SHA-256 digest of the request. Imported and cancelled receipts drop their
+finding preview and selected sheet list, about 1 KiB each. A new review is
+admitted only if its receipt and 512 KiB of progress still fit; otherwise it fails
+before allocation or upload. A larger file from an earlier build is compacted the
+same way on the next launch, keeping the active owner and command identities.
 Complete package exports remain available as backups of the preserved local
 workspace; they do not include cloud changes until results have been imported.
 

@@ -7,7 +7,6 @@ import {
   Queue,
   Semaphore,
   Stream,
-  Struct,
   SubscriptionRef,
 } from "effect";
 import { readFile } from "node:fs/promises";
@@ -24,7 +23,16 @@ import {
 } from "#lib/review/cloud.ts";
 import { reviewModels } from "#lib/review/models.ts";
 import { cloudEngineIdentity, type CloudReviewRecord } from "./contracts.ts";
-import { createCloudDirectory, readCloudState, writeCloudState } from "./files.ts";
+import {
+  cloudReceiptReserveBytes,
+  cloudRequestFingerprint,
+  cloudStateBytes,
+  cloudStateMaxBytes,
+  compactCloudReceipt,
+  createCloudDirectory,
+  readCloudState,
+  writeCloudState,
+} from "./files.ts";
 import type { CloudSandboxPort } from "./sandbox-port.ts";
 import {
   cloudCacheVolumeName,
@@ -320,17 +328,12 @@ export class CloudReviews extends Context.Service<
         const save = Effect.fn("CloudReviews.save")(function* (record: CloudReviewRecord) {
           const locked = cloudReviewLocksWorkspace(record.phase);
 
-          const stamped = {
+          // Imported findings replace the preview, and terminal receipts must fit the state file.
+          const saved = compactCloudReceipt({
             ...record,
             revision: Math.max(0, ...jobs.map((job) => job.revision)) + 1,
             syncFailure: locked ? record.syncFailure : null,
-          };
-
-          // Imported findings replace the preview, and terminal receipts must fit the state file.
-          const saved =
-            stamped.packet === undefined || locked
-              ? stamped
-              : { ...stamped, packet: Struct.omit(stamped.packet, ["findingPreview"]) };
+          });
 
           const next = jobs.some((job) => job.id === record.id)
             ? jobs.map((job) => (job.id === record.id ? saved : job))
@@ -507,7 +510,7 @@ export class CloudReviews extends Context.Service<
           start: (request) =>
             Effect.gen(function* () {
               starting = true;
-              const fingerprint = JSON.stringify(request);
+              const fingerprint = cloudRequestFingerprint(request);
 
               const previous = jobs.find(
                 (record) => record.request.commandId === request.commandId,
@@ -546,6 +549,19 @@ export class CloudReviews extends Context.Service<
                 return yield* new CloudReviewError({
                   reason: "limit",
                   message: "The cloud review receipt limit has been reached.",
+                });
+
+              // The new owner's receipt and its progress must fit before any cloud action.
+              if (
+                cloudStateBytes(jobs) +
+                  Buffer.byteLength(JSON.stringify(request)) +
+                  cloudReceiptReserveBytes >
+                cloudStateMaxBytes
+              )
+                return yield* new CloudReviewError({
+                  reason: "limit",
+                  message:
+                    "Cloud review records have no room for another review. Your workspace has not been uploaded.",
                 });
               yield* sandbox.preflight(config.providers ?? [provider]);
               const versions = yield* config.inspect(request);
