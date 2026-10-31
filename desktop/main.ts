@@ -469,6 +469,9 @@ if (!app.requestSingleInstanceLock()) {
           },
         });
 
+        // macOS and Windows take the icon from the app bundle and executable.
+        if (process.platform === "linux") window.setIcon(join(root, "desktop/icons/icon.png"));
+
         window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         window.webContents.on("will-navigate", (event, url) => {
           if (!trusted(url)) event.preventDefault();
