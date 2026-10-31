@@ -173,7 +173,20 @@
   >();
 
   let sourceRequest = 0;
-  let refreshRequest = 0;
+
+  // Each project selection is a generation. Snapshot refreshes within one are coalesced: one
+  // loads while at most one more waits, and callers in between share it. Results and progress
+  // for an earlier generation are never applied.
+  let selection = 0;
+
+  /** The snapshot load in flight for one selection, and the one queued behind it. */
+  interface SnapshotLoads {
+    readonly selection: number;
+    running: Promise<boolean> | null;
+    queued: Promise<boolean> | null;
+  }
+
+  let snapshotLoads: SnapshotLoads = { selection, running: null, queued: null };
 
   let newProjectName = $state("");
   let draft = $state("");
@@ -447,11 +460,12 @@
   // Reviews load after a project switch, so the conversation's model is restored when they arrive.
   let modelChosen = false;
 
+  /** Apply a review update for the selected project; false when it was ignored. */
   function receivePacketReview(review: PacketReview) {
-    if (review.projectId !== selectedProjectId) return;
+    if (review.projectId !== selectedProjectId) return false;
     const previous = packetReviews.find((item) => item.id === review.id);
 
-    if (previous && previous.version > review.version) return;
+    if (previous && previous.version > review.version) return false;
 
     if (previous && previous.state !== review.state && reviewStatusNotices.includes(notice))
       notice = "";
@@ -464,6 +478,8 @@
 
       selectedModel = latest.model;
     }
+
+    return true;
   }
 
   async function trackPacketReviews(projectId: Project["id"]) {
@@ -479,9 +495,9 @@
       projectId,
       signal: controller.signal,
       onReview: (review) => {
-        receivePacketReview(review);
-        // Snapshot refresh must not block the stream acknowledgement.
-        void refresh(projectId);
+        // Snapshot refresh must not block the stream acknowledgement. A replay or a burst of
+        // progress shares one coalesced refresh.
+        if (receivePacketReview(review)) void refresh(projectId);
       },
       onConnectionLost: (lost) => {
         packetConnectionLost = lost;
@@ -788,11 +804,53 @@
     }
   }
 
-  async function refresh(projectId: typeof selectedProjectId = selectedProjectId) {
-    const request = ++refreshRequest;
-    const result = await client.snapshot(projectId, eventCursor);
+  function selectProjectId(id: Project["id"] | null) {
+    if (id === selectedProjectId) return;
+    selectedProjectId = id;
+    selection++;
+    // The previous project's progress no longer refreshes or replaces this selection.
+    packetSubscription?.abort();
+    packetSubscription = null;
+  }
 
-    if (request !== refreshRequest) return false;
+  /** Refresh the selected project's snapshot; resolves once a load started after this call ends. */
+  function refresh(projectId: typeof selectedProjectId = selectedProjectId): Promise<boolean> {
+    if (projectId !== selectedProjectId) return Promise.resolve(false);
+
+    if (snapshotLoads.selection !== selection)
+      snapshotLoads = { selection, running: null, queued: null };
+    const loads = snapshotLoads;
+
+    if (loads.queued) return loads.queued;
+
+    if (!loads.running) return startSnapshotLoad(loads);
+
+    const next = () => {
+      loads.queued = null;
+
+      return loads.selection === selection ? startSnapshotLoad(loads) : false;
+    };
+
+    loads.queued = loads.running.then(next, next);
+
+    return loads.queued;
+  }
+
+  function startSnapshotLoad(loads: SnapshotLoads) {
+    const running = loadSnapshot(loads.selection).finally(() => {
+      if (loads.running === running) loads.running = null;
+    });
+
+    loads.running = running;
+
+    return running;
+  }
+
+  async function loadSnapshot(generation: number) {
+    const result = await client.snapshot(selectedProjectId, eventCursor);
+
+    // Another project was selected meanwhile, even if this is the newest response.
+    if (generation !== selection) return false;
 
     if (!result.ok) {
       error = result.error.message;
@@ -827,6 +885,7 @@
       eventCursor = result.value.events.at(-1)?.sequence ?? eventCursor;
     }
 
+    // A null selection asks for the default project; adopting it continues the same selection.
     if (selectedProjectId === null && result.value.project !== null) {
       selectedProjectId = result.value.project.id;
     }
@@ -857,7 +916,7 @@
     }
 
     error = "";
-    selectedProjectId = result.value.projectId;
+    selectProjectId(result.value.projectId);
     await refresh(result.value.projectId);
     busy = false;
 
@@ -928,13 +987,17 @@
     reviewFindingId = null;
     executionStatus = null;
     eventCursor = 0;
-    selectedProjectId = entry.id;
+    selectProjectId(entry.id);
+    const chosen = selection;
     selectedConversationId = null;
     notice = "";
     error = "";
     selectedFindingId = null;
     await refresh(entry.id);
-    const first = snapshot?.conversations[0];
+
+    // A later selection owns the workbench, and its own request chooses the conversation.
+    if (chosen !== selection || snapshot?.project?.id !== entry.id) return;
+    const first = snapshot.conversations[0];
     await chooseConversation(conversationId ?? first?.id ?? null, false);
   }
 
@@ -1812,7 +1875,7 @@
 
         if (remote.ok && remote.value && cloudReviewLocksWorkspace(remote.value.phase)) {
           cloudStatus = latestCloudReviewStatus(cloudStatus, remote.value);
-          selectedProjectId = remote.value.projectId;
+          selectProjectId(remote.value.projectId);
           eventCursor = 0;
           await refresh(remote.value.projectId);
           selectedConversationId =
@@ -1831,7 +1894,7 @@
         snapshot = result.value;
 
         if (result.value.project) {
-          selectedProjectId = result.value.project.id;
+          selectProjectId(result.value.project.id);
           selectedConversationId = result.value.conversations[0]?.id ?? null;
           projectConversations = { [result.value.project.id]: result.value.conversations };
           expandedProjects = [result.value.project.id];
