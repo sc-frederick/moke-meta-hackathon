@@ -410,6 +410,34 @@ test("pause drains the admitted model response and admits no next tool until res
   }
 });
 
+test("a count check the provider refuses past its budget ends uncharged and admits a new run", async () => {
+  const path = await directory();
+  let sends = 0;
+
+  // A provider wait longer than the 10-minute refusal budget ends the attempt at once.
+  const fixture = open(path, async () => {
+    sends++;
+
+    return Response.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "retry-after": "900" } },
+    );
+  });
+
+  try {
+    const run = await fixture.start();
+    const failed = await until(() => fixture.status(run), "failed");
+    expect(sends).toBe(1);
+    expect(failed.unresolvedAttempts).toBe(0);
+    const next = await fixture.start();
+    await until(() => fixture.status(next), "failed");
+    expect(sends).toBe(2);
+  } finally {
+    await fixture.runtime.dispose();
+    await rm(path, { recursive: true, force: true });
+  }
+});
+
 test("timeout remains uncertain across reopen, resume, and a fresh generation", async () => {
   const path = await directory();
   let sends = 0;
