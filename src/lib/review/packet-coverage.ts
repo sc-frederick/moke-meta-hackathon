@@ -133,6 +133,64 @@ export function packetCoverageProgress(
   };
 }
 
+/** Status counts for a set of coverage records. */
+export interface PacketCoverageCounts {
+  readonly total: number;
+  readonly checked: number;
+  readonly issues: number;
+  readonly needsInput: number;
+  readonly unreviewed: number;
+  readonly notApplicable: number;
+}
+
+/** One sheet's coverage records in ledger order, with their status counts. */
+export interface PacketSheetCoverage {
+  readonly rows: ReadonlyArray<typeof PacketCoverage.Type>;
+  readonly counts: PacketCoverageCounts;
+}
+
+/** Count coverage records by status in one pass. */
+export function countPacketCoverage(
+  rows: ReadonlyArray<typeof PacketCoverage.Type>,
+): PacketCoverageCounts {
+  const counts = { checked: 0, issue: 0, needs_input: 0, unreviewed: 0, not_applicable: 0 };
+
+  for (const row of rows) counts[row.status]++;
+
+  return {
+    total: rows.length,
+    checked: counts.checked,
+    issues: counts.issue,
+    needsInput: counts.needs_input,
+    unreviewed: counts.unreviewed,
+    notApplicable: counts.not_applicable,
+  };
+}
+
+/**
+ * Group coverage records by sheet and count each sheet's statuses in one pass, so filters and
+ * sheet search work on the grouped records instead of rescanning the ledger for every sheet.
+ */
+export function indexPacketCoverage(
+  rows: ReadonlyArray<typeof PacketCoverage.Type>,
+): ReadonlyMap<(typeof PacketSheet.Type)["id"], PacketSheetCoverage> {
+  const grouped = new Map<(typeof PacketSheet.Type)["id"], Array<typeof PacketCoverage.Type>>();
+
+  for (const row of rows) {
+    const sheet = grouped.get(row.sheetId);
+
+    if (sheet) sheet.push(row);
+    else grouped.set(row.sheetId, [row]);
+  }
+
+  return new Map(
+    [...grouped].map(([sheetId, sheetRows]) => [
+      sheetId,
+      { rows: sheetRows, counts: countPacketCoverage(sheetRows) },
+    ]),
+  );
+}
+
 /** Saved project-configuration keys are camelCase field names; show them as plain labels. */
 export function configurationLabel(name: string): string {
   const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();

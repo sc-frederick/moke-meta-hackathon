@@ -7,7 +7,12 @@
     packetVerdictLabels,
     type PacketReview,
   } from "#lib/review/packet.ts";
-  import { configurationLabel, packetCoverageProgress } from "#lib/review/packet-coverage.ts";
+  import {
+    configurationLabel,
+    countPacketCoverage,
+    indexPacketCoverage,
+    packetCoverageProgress,
+  } from "#lib/review/packet-coverage.ts";
   import { ReviewDiscipline, reviewDisciplines } from "#lib/review/disciplines.ts";
   import ReviewText from "./ReviewText.svelte";
   import { ReviewSourceUrl } from "#lib/review/source-url.ts";
@@ -145,22 +150,11 @@
   let expandedSheetId = $state<string | null>(null);
   let coveragePage = $state(0);
 
-  function summarizeCoverage(rows: ReadonlyArray<CoverageRow>) {
-    return {
-      total: rows.length,
-      checked: rows.filter((row) => row.status === "checked").length,
-      issues: rows.filter((row) => row.status === "issue").length,
-      needsInput: rows.filter((row) => row.status === "needs_input").length,
-      unreviewed: rows.filter((row) => row.status === "unreviewed").length,
-      notApplicable: rows.filter((row) => row.status === "not_applicable").length,
-    };
-  }
-
   const disciplineCoverage = $derived(
     reviewDisciplines.flatMap((discipline) => {
       const rows = coverageProgress.rows.filter((row) => row.discipline === discipline.id);
 
-      return rows.length > 0 ? [{ ...discipline, ...summarizeCoverage(rows) }] : [];
+      return rows.length > 0 ? [{ ...discipline, ...countPacketCoverage(rows) }] : [];
     }),
   );
 
@@ -168,21 +162,28 @@
     includeEarlierCoverage ? coverageProgress.ledger : coverageProgress.rows,
   );
 
+  // Grouped once per coverage change; the filters and sheet search below reuse the groups.
+  const sheetCoverage = $derived(indexPacketCoverage(detailCoverage));
+
+  function matchesFilters(row: CoverageRow) {
+    if (disciplineFilter !== "all" && row.discipline !== disciplineFilter) return false;
+
+    if (coverageFilter === "all") return true;
+
+    if (coverageFilter !== "attention") return row.status === coverageFilter;
+
+    return (
+      row.status === "unreviewed" ||
+      row.status === "needs_input" ||
+      row.status === "issue" ||
+      (row.status === "not_applicable" && row.note.trim().length === 0)
+    );
+  }
+
   const matchingCoverage = $derived(
-    detailCoverage.filter((row) => {
-      if (disciplineFilter !== "all" && row.discipline !== disciplineFilter) return false;
-
-      if (coverageFilter === "all") return true;
-
-      if (coverageFilter !== "attention") return row.status === coverageFilter;
-
-      return (
-        row.status === "unreviewed" ||
-        row.status === "needs_input" ||
-        row.status === "issue" ||
-        (row.status === "not_applicable" && row.note.trim().length === 0)
-      );
-    }),
+    new Map(
+      [...sheetCoverage].map(([sheetId, entry]) => [sheetId, entry.rows.filter(matchesFilters)]),
+    ),
   );
 
   const coverageSheets = $derived(
@@ -194,17 +195,10 @@
       )
         return [];
 
-      const matching = matchingCoverage.filter((row) => row.sheetId === sheet.id);
+      const matching = matchingCoverage.get(sheet.id) ?? [];
+      const counts = sheetCoverage.get(sheet.id)?.counts;
 
-      return matching.length > 0
-        ? [
-            {
-              sheet,
-              matching,
-              counts: summarizeCoverage(detailCoverage.filter((row) => row.sheetId === sheet.id)),
-            },
-          ]
-        : [];
+      return matching.length > 0 && counts ? [{ sheet, matching, counts }] : [];
     }),
   );
 

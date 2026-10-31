@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import type { Revision, RevisionCorrespondence } from "./contracts.ts";
-import type { PacketReview } from "./packet.ts";
+import type { PacketReview, StartPacketReview } from "./packet.ts";
 
 /**
  * The preset first-submittal request sent by the Initial Review button. The text is part of the
@@ -18,6 +18,21 @@ export const initialReview = {
     "Rank findings by severity, Critical first. For each finding, state what the drawings show, what governs, and the specific correction. State uncertainty explicitly: an item you cannot confirm from the drawings or the governing text stays Needs input, with the missing source named. Do not mark a sheet or pass reviewed without inspecting it. End with a short summary of the most serious items and what the design team needs to provide.",
   ].join("\n\n"),
 } as const;
+
+/**
+ * The fixed settings the Initial Review button sends with its saved message. There is no sheet
+ * selection: the first set can span several PDFs, and every one of its sheets is in scope. The
+ * composer's model, scope and optional call budget do not apply.
+ */
+export const initialReviewRequest = {
+  model: "muse-spark-1.3",
+  discipline: "auto",
+  maxCalls: null,
+  preset: initialReview.id,
+} as const satisfies Pick<
+  typeof StartPacketReview.Type,
+  "model" | "discipline" | "maxCalls" | "preset"
+>;
 
 /** Recorded with a review started from a preset, beside its prompt version and instruction revision. */
 export const ReviewPreset = Schema.Literal(initialReview.id);
