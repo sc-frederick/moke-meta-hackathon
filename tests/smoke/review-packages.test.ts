@@ -34,6 +34,7 @@ import {
   hasReviewBearingRows,
   recoverInterruptedRestore,
   restoreReviewPackage,
+  validateReviewPackage,
   type PackagesConfig,
 } from "../../backend/review/packages.ts";
 import { BackendConfig } from "#lib/backend-rpc.ts";
@@ -1218,3 +1219,26 @@ test("pre-packet packages remain readable when the new packet tables are absent"
     await rm(root, { recursive: true, force: true });
   }
 }, 60000);
+
+test("invalid package preflight reports the missing manifest before maintenance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-invalid-package-"));
+
+  try {
+    const error = await Effect.runPromise(
+      validateReviewPackage(
+        {
+          dataDirectory: join(directory, "live"),
+          migrationDirectory: resolve("migrations"),
+          queries: Semaphore.makeUnsafe(1),
+          quiesce: Effect.die("must not quiesce on preflight"),
+        },
+        directory,
+      ).pipe(Effect.flip),
+    );
+
+    expect(error.reason).toBe("incomplete");
+    expect(error.message).toContain("manifest is missing");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

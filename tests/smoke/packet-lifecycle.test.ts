@@ -338,3 +338,103 @@ test.each(["uncertain", "completed"] as const)(
   },
   120000,
 );
+
+test("provider HTTP diagnostics survive cancellation without rewriting active duration or replaying inference", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-audit3-provider-"));
+  let sends = 0;
+
+  const session = await open(directory, async () => {
+    sends++;
+
+    return Response.json(
+      { error: { message: "private-provider-body-credential" } },
+      { status: 401 },
+    );
+  });
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review all sheets.")),
+    );
+
+    const failed = await until(session, started.id, "uncertain");
+    expect(failed.providerFailure).toMatchObject({ category: "http", httpStatus: 401 });
+    expect(failed.error).toContain("HTTP 401");
+    expect(failed.error).toContain("may have been charged");
+    expect(JSON.stringify(failed)).not.toContain("private-provider-body-credential");
+    await Bun.sleep(25);
+
+    const cancelled = await session.run(
+      session.packets.control({
+        projectId: session.projectId,
+        reviewId: failed.id,
+        expectedVersion: failed.version,
+        action: "cancel",
+        commandId: id(),
+      }),
+    );
+
+    expect(cancelled.error).toBe(failed.error);
+    expect(cancelled.providerFailure).toEqual(failed.providerFailure);
+    expect(cancelled.activeDurationMs).toBe(failed.activeDurationMs);
+    expect(cancelled.activeSince).toBeNull();
+    expect(sends).toBe(1);
+  } finally {
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 120000);
+
+test("pause accepts progress advancing since the displayed version and cancellation excludes paused waiting", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "moke-audit3-pause-"));
+  const dispatched = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+
+  const session = await open(directory, async () => {
+    dispatched.resolve();
+    await release.promise;
+
+    return response([], "Paused inspection receipt.");
+  });
+
+  try {
+    const started = await session.run(
+      session.packets.start(await session.request("Review all sheets.")),
+    );
+
+    await dispatched.promise;
+
+    const paused = await session.run(
+      session.packets.control({
+        projectId: session.projectId,
+        reviewId: started.id,
+        expectedVersion: started.version,
+        action: "pause",
+        commandId: id(),
+      }),
+    );
+
+    expect(paused.state).toBe("paused");
+    expect(paused.version).toBeGreaterThan(started.version);
+    const duration = paused.activeDurationMs;
+    release.resolve();
+    await Bun.sleep(25);
+
+    const cancelled = await session.run(
+      session.packets.control({
+        projectId: session.projectId,
+        reviewId: started.id,
+        expectedVersion: paused.version,
+        action: "cancel",
+        commandId: id(),
+      }),
+    );
+
+    expect(cancelled.activeDurationMs).toBe(duration);
+    expect(cancelled.activeSince).toBeNull();
+  } finally {
+    release.resolve();
+    await session.dispose();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 120000);
